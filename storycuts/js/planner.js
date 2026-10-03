@@ -135,11 +135,12 @@ Shot types:
 
 Editing rules:
 - Open on "face" for the hook. End on "face" (or "scene_bubble") for the punchline or sign-off.
-- Cut to scenes when the creator describes events, places, people doing things, or dialogue. Aim for roughly 40-65% of runtime illustrated.
+- Follow the pacing the creator asks for (given with the transcript).
 - Shots usually last 1.5-5 seconds; cut on natural phrase boundaries. Never make a shot shorter than 1 second.
 - Scenes must act out the story in order, literally and specifically (who is where doing what), not generic keyword decoration.
 - Consecutive scenes in the same place keep the same setting. Characters keep the same look throughout: only use character ids you define.
 - Define every person (or pet) in the story as a character, including the storyteller (id "me") when "I" appear in the story. Give characters distinct, fitting looks (e.g. dad: bald + mustache; grandma: bun + glasses) and unique shirt colours, and a one-sentence visual description.
+- Every character who appears in a scene's image_prompt must also be listed in that scene's actors (that's how the illustrator gets their reference image).
 - Each scene is drawn by an AI illustrator from "image_prompt" plus reference images of the characters. Write image_prompt as a specific, visual description of the single moment: who (by name) is where, doing what, with which expressions and props, and the framing (wide shot, close-up...). Exaggerate emotions for comedy. Never ask for text, signs, captions or speech bubbles in the image.
 - Define every recurring place as a location with a fixed visual description (e.g. "Dad's small kitchen: yellow walls, white cabinets, old gas stove by a window, morning light") and set each scene's location_id. Scenes in the same place must use the same location so it looks identical across shots.
 - Also fill the structured fields (setting, actors, poses...) to match.
@@ -211,9 +212,17 @@ function segmentsFromWordIndices(raw, words) {
   return segs;
 }
 
-export async function planWithClaude(apiKey, words, duration, { model = DEFAULT_MODEL, notes = '' } = {}) {
+export const PACING = {
+  mostly: 'PACING: mostly story. Open on "face" for the hook (one shot, about 2-5 seconds). After that, illustrate most of the story: about 75-85% of the runtime should be scenes. Cut back to the face only briefly (about 1-3 seconds) for lines that do not need a visual: asides, opinions, reactions, punchlines. Avoid face shots longer than about 4 seconds after the opening. End on a short face shot if the last line is a punchline or sign-off.',
+  balanced: 'PACING: balanced. Open on "face" for the hook. Cut to scenes when the creator describes events, places, people doing things or dialogue; stay on the face for commentary, reactions and punchlines. Aim for roughly 50-60% of runtime illustrated.',
+  story: 'PACING: story only. Every shot must be a "scene" (no "face" shots at all, not even the opening): illustrate everything, including the hook, commentary and reactions (show the storyteller "me" reacting when there is no action).',
+};
+
+export async function planWithClaude(apiKey, words, duration, { model = DEFAULT_MODEL, notes = '', pacing = 'mostly', cast = [] } = {}) {
+  const castText = cast.filter((c) => c.name?.trim()).map((c) => `- ${c.name.trim()}${c.description?.trim() ? `: ${c.description.trim()}` : ''}`).join('\n');
   const user = `Video length: ${duration.toFixed(1)}s. ${words.length} words.
-${notes ? `Creator's notes: ${notes}\n` : ''}
+${PACING[pacing] || PACING.mostly}
+${castText ? `The creator has already defined these characters. Use them (keep their names and looks; give them ids based on their names), and add any other characters the story needs:\n${castText}\n` : ''}${notes ? `Creator's notes: ${notes}\n` : ''}
 Transcript (index|word, with start times):
 ${transcriptForPrompt(words)}
 
