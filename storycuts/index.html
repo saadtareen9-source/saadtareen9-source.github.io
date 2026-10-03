@@ -34,6 +34,9 @@
     <symbol id="i-wand" viewBox="0 0 24 24"><path d="M4 20L15 9m2-5v3m0 6v-1m4-4h-3m-6 0h1m6.5-4.5l-2 2m-7 7l-1 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="16" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2-.5-2.5-1.2M12 6.5v11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -77,7 +80,31 @@
               <span class="shot-tag">YOU</span>
             </div>
             <div class="shot shot-scene">
-              <div class="scene-art"></div>
+              <svg class="scene-svg" viewBox="0 0 180 380" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <defs>
+                  <linearGradient id="hv-wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff4d6"/><stop offset="1" stop-color="#ffe2b8"/></linearGradient>
+                  <linearGradient id="hv-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fd8ff"/><stop offset="1" stop-color="#d9f1ff"/></linearGradient>
+                </defs>
+                <rect width="180" height="380" fill="url(#hv-wall)"/>
+                <rect x="104" y="70" width="56" height="64" rx="4" fill="url(#hv-sky)" stroke="#5b4a3a" stroke-width="3"/>
+                <path d="M132 70v64M104 102h56" stroke="#5b4a3a" stroke-width="3"/>
+                <rect x="0" y="262" width="180" height="118" fill="#e9c995"/>
+                <path d="M0 262h180" stroke="#5b4a3a" stroke-width="3"/>
+                <rect x="112" y="200" width="68" height="62" rx="3" fill="#f3f3f3" stroke="#5b4a3a" stroke-width="3"/>
+                <rect x="120" y="214" width="50" height="34" rx="2" fill="none" stroke="#5b4a3a" stroke-width="2.5"/>
+                <path d="M118 197h56" stroke="#3a3a3a" stroke-width="5" stroke-linecap="round"/>
+                <ellipse cx="140" cy="192" rx="16" ry="4.5" fill="#2f2f2f"/>
+                <path d="M154 191l14-6" stroke="#2f2f2f" stroke-width="4" stroke-linecap="round"/>
+                <g class="flame"><path d="M132 190c0-12 8-14 6-24 7 6 10 12 8 24z" fill="#ff8a3d"/><path d="M137 190c0-7 4-8 3-14 4 4 5 8 4 14z" fill="#ffd34d"/></g>
+                <g class="smoke" fill="#9a9a9a"><circle cx="138" cy="150" r="12"/><circle cx="124" cy="126" r="15"/><circle cx="146" cy="108" r="13"/><circle cx="118" cy="92" r="10"/></g>
+                <g stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" fill="none">
+                  <circle cx="56" cy="150" r="18" fill="#fff"/>
+                  <path d="M56 168v52M56 220l-14 40M56 220l14 40M56 184l-26 -12M56 184l26 -12"/>
+                </g>
+                <rect x="45" y="176" width="22" height="34" rx="9" fill="#e4572e"/>
+                <g fill="#1a1a1a"><circle cx="50" cy="146" r="4.2" fill="#fff" stroke="#1a1a1a" stroke-width="2.2"/><circle cx="63" cy="146" r="4.2" fill="#fff" stroke="#1a1a1a" stroke-width="2.2"/><circle cx="50" cy="146" r="1.6"/><circle cx="63" cy="146" r="1.6"/><path d="M47 156c3-3 7-3 9 0 2-3 6-3 9 0-3 2-6 2-9 1-3 1-6 1-9-1z"/><ellipse cx="56" cy="162" rx="3" ry="3.6"/></g>
+                <g class="excl" fill="#e63946"><path d="M82 112l3 20h-6z"/><circle cx="82" cy="137" r="2.6"/></g>
+              </svg>
               <span class="shot-tag">SCENE</span>
             </div>
             <div class="cap"><span>MY DAD</span> <b>FREEZES</b></div>
@@ -158,23 +185,23 @@
           <div class="opt-group">
             <span class="opt-label">Format</span>
             <div class="seg" id="seg-format">
-              <button data-aspect="vertical" class="on"><i class="ar ar-v"></i>9:16 <small>TikTok · Reels · Shorts</small></button>
-              <button data-aspect="horizontal"><i class="ar ar-h"></i>16:9 <small>YouTube</small></button>
+              <button data-aspect="vertical" class="on"><i class="ar ar-v"></i><span class="t">9:16 <small>TikTok · Reels · Shorts</small></span></button>
+              <button data-aspect="horizontal"><i class="ar ar-h"></i><span class="t">16:9 <small>YouTube</small></span></button>
             </div>
           </div>
           <div class="opt-group">
             <span class="opt-label">Edit pacing</span>
             <div class="seg" id="seg-pacing">
-              <button data-pacing="mostly" class="on"><i class="pc"><b class="f" style="flex:1.2"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b></i>Mostly story <small>Your intro, then mostly scenes</small></button>
-              <button data-pacing="balanced"><i class="pc"><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1"></b></i>Balanced <small>About half and half</small></button>
-              <button data-pacing="story"><i class="pc"><b class="s" style="flex:1"></b></i>Story only <small>Scenes the whole way</small></button>
+              <button data-pacing="mostly" class="on"><i class="pc"><b class="f" style="flex:1.2"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b></i><span class="t">Mostly story <small>Your intro, then mostly scenes</small></span></button>
+              <button data-pacing="balanced"><i class="pc"><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1"></b></i><span class="t">Balanced <small>About half and half</small></span></button>
+              <button data-pacing="story"><i class="pc"><b class="s" style="flex:1"></b></i><span class="t">Story only <small>Scenes the whole way</small></span></button>
             </div>
           </div>
           <div class="opt-group">
             <span class="opt-label">During scenes</span>
             <div class="seg" id="seg-face">
-              <button data-face="full" class="on"><i class="fm fm-full"></i>Full-frame cuts <small>Scene or your face</small></button>
-              <button data-face="bubble"><i class="fm fm-bubble"></i>Face bubble <small>Your face in a corner</small></button>
+              <button data-face="full" class="on"><i class="fm fm-full"></i><span class="t">Full-frame cuts <small>Scene or your face</small></span></button>
+              <button data-face="bubble"><i class="fm fm-bubble"></i><span class="t">Face bubble <small>Your face in a corner</small></span></button>
             </div>
           </div>
         </div>
@@ -260,60 +287,87 @@
 
       <!-- 4 EDITOR -->
       <div class="panel locked editor" id="panel-editor" data-step="4">
-        <div class="panel-head"><span class="num">4</span><div><h3>Edit &amp; export</h3><p>Click any shot on the timeline to change it. Everything updates live.</p></div></div>
+        <div class="panel-head"><span class="num">4</span><div><h3>Edit &amp; export</h3><p>Scrub the timeline, tap any clip to change it, add sound effects, then export.</p></div></div>
 
-        <div class="toolbar">
-          <button class="icon-btn" id="btn-undo" data-tip="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
-          <div class="seg small" id="seg-aspect">
-            <button data-aspect="vertical" class="on">9:16</button>
-            <button data-aspect="horizontal">16:9</button>
-          </div>
-          <span class="grow"></span>
-          <span class="muted small" id="scenes-cost"></span>
-          <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
-        </div>
-        <div class="progress hidden" id="gen-progress"><div></div></div>
-        <div class="status" id="scenes-status"></div>
-
-        <div class="review">
-          <div class="player">
+        <div class="ed">
+          <div class="ed-view">
             <div class="stage" id="stage"><canvas id="preview"></canvas></div>
-            <div class="controls">
-              <button class="play" id="btn-play" aria-label="Play"><svg><use href="#i-play"/></svg></button>
-              <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Seek">
-              <span id="time">0:00</span>
+            <div class="transport">
+              <span id="time" class="tc">0:00.0</span>
+              <div class="transport-mid">
+                <button class="icon-btn" id="btn-undo" data-tip="Undo" disabled><svg><use href="#i-undo"/></svg></button>
+                <button class="play" id="btn-play" aria-label="Play"><svg><use href="#i-play"/></svg></button>
+                <button class="icon-btn" id="btn-split" data-tip="Split at playhead"><svg><use href="#i-scissors"/></svg></button>
+              </div>
+              <div class="zoom"><button class="icon-btn sm" id="zoom-out" aria-label="Zoom out">−</button><button class="icon-btn sm" id="zoom-in" aria-label="Zoom in">+</button></div>
             </div>
           </div>
-          <div class="inspector" id="inspector"><p class="muted">Select a shot on the timeline.</p></div>
-        </div>
 
-        <div class="timeline-wrap">
-          <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
-          <div class="legend"><span class="key face">Your face</span><span class="key scene">Scene</span><span class="key scene_bubble bubble-only">Scene + face</span></div>
-        </div>
-
-        <details class="transcript-box">
-          <summary>Transcript</summary>
-          <div class="transcript" id="transcript"></div>
-        </details>
-
-        <div class="export">
-          <div class="export-opts">
-            <label class="switch"><input type="checkbox" id="opt-captions" checked><span></span>Captions</label>
-            <label class="switch"><input type="checkbox" id="opt-upper" checked><span></span>UPPERCASE</label>
-            <label class="switch"><input type="checkbox" id="opt-punch" checked><span></span>Zoom on face cuts</label>
-            <label class="switch"><input type="checkbox" id="opt-watermark"><span></span>"made with StoryCuts"</label>
-            <label class="range-field">Face framing <input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
+          <div class="ed-side">
+            <nav class="ed-tabs" id="ed-tabs" role="tablist">
+              <button data-tab="shot" class="on"><svg><use href="#i-film"/></svg>Shot</button>
+              <button data-tab="sound"><svg><use href="#i-music"/></svg>Sound</button>
+              <button data-tab="captions"><svg><use href="#i-text"/></svg>Captions</button>
+              <button data-tab="export"><svg><use href="#i-download"/></svg>Export</button>
+            </nav>
+            <div class="ed-panel" data-pane="shot">
+              <div class="pane-bar">
+                <span class="muted small" id="scenes-cost"></span>
+                <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
+              </div>
+              <div class="progress hidden" id="gen-progress"><div></div></div>
+              <div class="status" id="scenes-status"></div>
+              <div class="inspector" id="inspector"><p class="muted">Tap a clip on the timeline.</p></div>
+            </div>
+            <div class="ed-panel" data-pane="sound" hidden>
+              <div class="mix">
+                <label class="range-field">Voice <input type="range" id="vol-voice" min="0" max="1.5" step="0.05" value="1"></label>
+                <label class="range-field">Sound FX <input type="range" id="vol-sfx" min="0" max="1.5" step="0.05" value="0.8"></label>
+              </div>
+              <div id="sfx-selected"></div>
+              <p class="pane-title">Add a sound at the playhead</p>
+              <div class="sfx-lib" id="sfx-lib"></div>
+            </div>
+            <div class="ed-panel" data-pane="captions" hidden>
+              <div class="toggles">
+                <label class="switch"><input type="checkbox" id="opt-captions" checked><span></span>Captions</label>
+                <label class="switch"><input type="checkbox" id="opt-upper" checked><span></span>UPPERCASE</label>
+                <label class="switch"><input type="checkbox" id="opt-punch" checked><span></span>Zoom on face cuts</label>
+                <label class="switch"><input type="checkbox" id="opt-watermark"><span></span>"made with StoryCuts" tag</label>
+              </div>
+              <label class="range-field">Face framing <input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
+              <details class="transcript-box"><summary>Transcript</summary><div class="transcript" id="transcript"></div></details>
+            </div>
+            <div class="ed-panel" data-pane="export" hidden>
+              <span class="opt-label">Format</span>
+              <div class="seg small" id="seg-aspect">
+                <button data-aspect="vertical" class="on"><i class="ar ar-v"></i><span class="t">9:16</span></button>
+                <button data-aspect="horizontal"><i class="ar ar-h"></i><span class="t">16:9</span></button>
+              </div>
+              <button class="btn primary lg wide" id="btn-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
+              <div class="progress hidden" id="ex-progress"><div></div></div>
+              <div class="status" id="ex-status"></div>
+              <p class="muted small">Export plays your video once in real time while it records (sound effects included). Keep this tab open until it finishes.</p>
+              <div class="tool-row">
+                <button class="btn glass sm" id="btn-srt"><svg><use href="#i-download"/></svg>Captions .srt</button>
+                <button class="btn glass sm" id="btn-save"><svg><use href="#i-download"/></svg>Save project</button>
+                <label class="btn glass sm">Open project<input type="file" id="load-project" accept=".json,application/json" hidden></label>
+              </div>
+            </div>
           </div>
-          <div class="export-actions">
-            <button class="btn glass sm" id="btn-srt" data-tip="Caption file for any editor"><svg><use href="#i-download"/></svg>Captions .srt</button>
-            <button class="btn glass sm" id="btn-save" data-tip="Download your edit to reopen later"><svg><use href="#i-download"/></svg>Save project</button>
-            <label class="btn glass sm" data-tip="Reopen a saved project">Open project<input type="file" id="load-project" accept=".json,application/json" hidden></label>
-            <button class="btn primary lg" id="btn-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
+
+          <div class="tl" id="tl">
+            <div class="tl-scroll" id="tl-scroll">
+              <div class="tl-content" id="tl-content">
+                <div class="tl-ruler" id="tl-ruler"></div>
+                <div class="tl-track shots" id="timeline"></div>
+                <div class="tl-track fx" id="tl-fx"></div>
+                <div class="tl-track voice"><canvas id="tl-wave"></canvas></div>
+              </div>
+            </div>
+            <div class="tl-labels"><span>Shots</span><span>FX</span><span>Voice</span></div>
+            <div class="tl-head" id="playhead"></div>
           </div>
-          <div class="progress hidden" id="ex-progress"><div></div></div>
-          <div class="status" id="ex-status"></div>
-          <p class="muted small">Export plays your video once in real time while it records. Keep this tab open until it finishes.</p>
         </div>
       </div>
     </section>

@@ -7,6 +7,7 @@ import {
   SEGMENT_TYPES, SETTINGS, POSES, EXPRESSIONS, HAIR, ACCESSORIES, PROPS, EFFECTS, FACINGS, COLORS,
 } from './constants.js';
 import { newId, slug } from './qc.js';
+import { SFX } from './sfx.js';
 
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 // $ per million tokens (input, output) for the cost preview.
@@ -114,9 +115,10 @@ const planSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['start_word', 'type', 'reason', 'scene'],
+        required: ['start_word', 'type', 'reason', 'sfx', 'scene'],
         properties: {
           start_word: { type: 'integer', description: 'index of the first word of this shot' },
+          sfx: { type: 'string', enum: ['none', ...SFX.map((x) => x.id)], description: 'sound effect at the start of this shot, or "none"' },
           type: { type: 'string', enum: SEGMENT_TYPES },
           reason: { type: 'string', description: 'one short line: why this shot' },
           scene: sceneSchema,
@@ -144,7 +146,8 @@ Editing rules:
 - Each scene is drawn by an AI illustrator from "image_prompt" plus reference images of the characters. Write image_prompt as a specific, visual description of the single moment: who (by name) is where, doing what, with which expressions and props, and the framing (wide shot, close-up...). Exaggerate emotions for comedy. Never ask for text, signs, captions or speech bubbles in the image.
 - Define every recurring place as a location with a fixed visual description (e.g. "Dad's small kitchen: yellow walls, white cabinets, old gas stove by a window, morning light") and set each scene's location_id. Scenes in the same place must use the same location so it looks identical across shots.
 - Also fill the structured fields (setting, actors, poses...) to match.
-- Put reported dialogue in short speech bubbles (max ~8 words). Use sound effects sparingly, only for big moments.
+- Put reported dialogue in short speech bubbles (max ~8 words). Use the comic-text sound_effect overlay sparingly, only for big moments.
+- Add sound effects ("sfx") like a storytime editor would: on surprises, impacts, reveals, phone moments, fails and punchlines, plus an occasional whoosh on a big cut. Roughly one shot in three; use "none" otherwise. Match the sound to the moment (e.g. phone_buzz for a text, record_scratch or dun_dun for a sudden turn, sad_trombone for a fail, ding for an idea).
 - Place actors with x between 0.15 and 0.85, at least 0.25 apart; characters interacting should face each other.
 - For "face" shots, still fill "scene" with a simple placeholder (setting "blank", no actors); it is ignored.
 - Segments are given by start_word (index into the transcript); each runs until the next segment starts. The first segment starts at word 0.`;
@@ -207,7 +210,7 @@ function segmentsFromWordIndices(raw, words) {
   for (const s of sorted) {
     const i = Math.max(0, Math.min(words.length - 1, s.start_word | 0));
     if (segs.length && words[i].s <= segs[segs.length - 1].start) continue;
-    segs.push({ id: newId(), start: segs.length ? words[i].s : 0, type: s.type, reason: s.reason, scene: s.type === 'face' ? null : s.scene });
+    segs.push({ id: newId(), start: segs.length ? words[i].s : 0, type: s.type, reason: s.reason, sfx: s.sfx, scene: s.type === 'face' ? null : s.scene });
   }
   return segs;
 }
@@ -369,7 +372,7 @@ const PROP_WORDS = [
   ['book', /\b(book|homework|notes)\b/], ['cup', /\b(coffee|tea|cup|drink)\b/], ['bag', /\b(bag|backpack|purse)\b/],
 ];
 
-const SFX = { boom: 'BOOM!', crash: 'CRASH!', bang: 'BANG!', slam: 'SLAM!', explod: 'KABOOM!', smash: 'SMASH!' };
+const COMIC_TEXT = { boom: 'BOOM!', crash: 'CRASH!', bang: 'BANG!', slam: 'SLAM!', explod: 'KABOOM!', smash: 'SMASH!' };
 
 const ACTION = /\b(walk\w*|ran|run\w*|went|came|grab\w*|threw|fell|jump\w*|open\w*|drove|look\w*|saw|sees|turn\w*|knock\w*|cook\w*|call\w*|yell\w*|scream\w*|froze|hit|push\w*|pull\w*|dropp\w*|start\w*|tried|said|says|goes|told|asked|walks|comes|gets|got)\b/;
 
@@ -472,7 +475,7 @@ export function heuristicPlan(words, duration) {
       type,
       reason: type === 'face' ? (isFirst ? 'Hook on your face.' : isLast ? 'Punchline on your face.' : 'Commentary: stay on you.')
         : type === 'scene' ? 'Describes an action: show it.' : 'Action plus your reaction.',
-      scene: type === 'face' ? null : { setting: lastSetting, actors, props, effects, sound_effect: loud ? SFX[Object.keys(SFX).find((k) => loud[1].startsWith(k))] : '' },
+      scene: type === 'face' ? null : { setting: lastSetting, actors, props, effects, sound_effect: loud ? COMIC_TEXT[Object.keys(COMIC_TEXT).find((k) => loud[1].startsWith(k))] : '' },
     });
   });
   return { title: 'My story', characters, segments: segs };

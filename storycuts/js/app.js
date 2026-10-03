@@ -1,4 +1,5 @@
-import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, ASPECTS, shotType } from './render.js';
+import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType } from './render.js';
+import { SFX, sfxInfo, SfxPlayer } from './sfx.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
@@ -30,6 +31,7 @@ const state = {
   history: [],
   cache: {},
   busy: false,
+  sfxPlayer: new SfxPlayer(),
 };
 
 function toast(msg, ms = 3400) {
@@ -189,14 +191,14 @@ function save() {
   const p = state.project;
   if (!p) return;
   store.set(storageKey(), {
-    v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters, locations: p.locations,
+    v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx,
     segments: p.segments, settings: p.settings, approved: p.approved,
   });
 }
 
 function snapshot() {
   const p = state.project;
-  state.history.push(JSON.stringify({ words: p.words, characters: p.characters, locations: p.locations, segments: p.segments, approved: p.approved }));
+  state.history.push(JSON.stringify({ words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx, segments: p.segments, approved: p.approved }));
   if (state.history.length > 60) state.history.shift();
   $('#btn-undo').disabled = false;
 }
@@ -230,7 +232,9 @@ function defaultSettings() {
 
 function loadProject(duration) {
   const saved = store.get(storageKey());
-  state.project = { title: 'My story', duration, words: [], characters: [], locations: [], segments: [], approved: false, settings: defaultSettings() };
+  state.project = { title: 'My story', duration, words: [], characters: [], locations: [], sfx: [], segments: [], approved: false, settings: defaultSettings() };
+  state.peaks = undefined;
+  faceThumbs.clear();
   state.history = [];
   state.selected = null;
   state.cache = {};
@@ -255,7 +259,7 @@ function refresh() {
   renderPipeline();
   renderStepper();
   if (p.characters.length) renderChars();
-  if (p.approved) { renderTimeline(); renderInspector(); }
+  if (p.approved) { renderTimeline(); renderInspector(); ensurePeaks(); }
   renderTranscript();
   renderPrep();
   updateCosts();
@@ -739,6 +743,7 @@ async function createVideo() {
         p.characters = raw.characters;
         p.locations = (raw.locations || []).map((l) => ({ ...l, id: slug(l.id) }));
         p.segments = raw.segments;
+        p.sfx = raw.segments.filter((sg) => sg.sfx && sg.sfx !== 'none' && sfxInfo(sg.sfx)).map((sg) => ({ id: newId(), type: sg.sfx, t: +(sg.start + 0.05).toFixed(2), vol: 1 }));
         p.approved = false;
         runQC(p);
         save();
@@ -793,7 +798,7 @@ async function usePaste() {
 function resetPlan() {
   if (!confirm('Start over? This clears the plan, cast and scenes for this video (your transcript is kept).')) return;
   snapshot();
-  Object.assign(state.project, { characters: [], locations: [], segments: [], approved: false });
+  Object.assign(state.project, { characters: [], locations: [], sfx: [], segments: [], approved: false });
   state.stages = {};
   state.selected = null;
   save();
@@ -959,6 +964,7 @@ async function approveAndDraw() {
   state.stages = { ...(state.stages || {}), cast: 'done' };
   if (!state.selected) state.selected = p.segments.find((s) => s.type !== 'face')?.id;
   refresh();
+  ensurePeaks();
   scrollTo('#panel-editor');
   const todo = sceneSegs().filter(needsImage);
   if (todo.length && hasImageKey()) {
@@ -1034,7 +1040,9 @@ $('#btn-gen-scenes').addEventListener('click', () => {
   generateScenes(list);
 });
 
-// ---------- step 4: preview + timeline ----------
+// ---------- step 4: editor (CapCut-style) ----------
+
+const fmtTC = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
 function sizePreview() {
   const { w, h } = ASPECTS[state.aspect];
@@ -1051,16 +1059,17 @@ function drawPreview() {
   state.cache.preview = true;
   state.cache.onImage = () => requestAnimationFrame(drawPreview);
   const seg = drawFrame(c.getContext('2d'), c.width, c.height, t, p, state.media.el, state.cache);
-  $('#time').textContent = `${fmtTime(t)} / ${fmtTime(p.duration)}`;
-  if (!state.scrubbing) $('#scrub').value = Math.round((t / p.duration) * 1000);
-  $('#playhead').style.left = `${(t / p.duration) * 100}%`;
-  $$('.block').forEach((b) => b.classList.toggle('live', b.dataset.id === seg.id));
+  $('#time').textContent = window.innerWidth < 640 ? fmtTC(t) : `${fmtTC(t)} / ${fmtTC(p.duration)}`;
+  if (!state.userScrolling) scrollTimelineTo(t);
+  $$('#timeline .clip').forEach((b) => b.classList.toggle('live', b.dataset.id === seg.id));
 }
+
+function graph() { return audioGraph(state.media?.video || null); }
 
 function loop() {
   drawPreview();
   if (state.media && !state.media.paused) requestAnimationFrame(loop);
-  else $('#btn-play').innerHTML = icon('play');
+  else { $('#btn-play').innerHTML = icon('play'); state.sfxPlayer.stop(); }
 }
 
 async function togglePlay() {
@@ -1069,49 +1078,357 @@ async function togglePlay() {
   if (m.paused) {
     if (m.time >= state.project.duration - 0.05) await m.seek(0);
     await m.play();
+    const g = graph();
+    setMix(g, state.project.settings);
+    state.sfxPlayer.start(g, state.project.sfx || [], m.time);
     $('#btn-play').innerHTML = icon('pause');
     loop();
   } else {
     m.pause();
+    state.sfxPlayer.stop();
   }
+}
+
+async function seekTo(t, { follow = true } = {}) {
+  const m = state.media;
+  if (!m) return;
+  const playing = !m.paused;
+  await m.seek(Math.max(0, Math.min(state.project.duration - 0.01, t)));
+  if (playing) state.sfxPlayer.start(graph(), state.project.sfx || [], m.time);
+  if (follow) scrollTimelineTo(m.time);
+  drawPreview();
 }
 
 const shotText = (seg) => wordsIn(state.project.words, seg.start, seg.end).map((w) => w.w).join(' ');
 
-function renderTimeline() {
+// --- timeline geometry ---
+const TL = { pps: 0, pad: 0 };
+
+function tlSetup() {
+  const sc = $('#tl-scroll');
   const p = state.project;
-  const el = $('#timeline');
-  el.querySelectorAll('.block').forEach((b) => b.remove());
-  p.segments.forEach((s) => {
-    const type = shotType(s, p.settings);
-    const b = document.createElement('button');
-    const st = type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
-    b.className = `block ${type} ${st} ${s.id === state.selected ? 'sel' : ''}`;
-    b.dataset.id = s.id;
-    b.style.left = `${(s.start / p.duration) * 100}%`;
-    b.style.width = `calc(${((s.end - s.start) / p.duration) * 100}% - 2px)`;
-    b.title = `${fmtTime(s.start)} · ${type === 'face' ? 'Your face' : 'Scene'}: ${shotText(s)}`;
-    b.textContent = shotText(s).split(' ').slice(0, 3).join(' ');
-    el.appendChild(b);
-  });
-  renderTranscript();
+  TL.pad = Math.round(sc.clientWidth / 2);
+  if (!TL.pps) TL.pps = Math.max(28, Math.min(120, sc.clientWidth / 9));
+  const width = Math.ceil(p.duration * TL.pps);
+  const content = $('#tl-content');
+  content.style.width = `${width + TL.pad * 2}px`;
+  content.style.setProperty('--pad', `${TL.pad}px`);
+  // ruler
+  const steps = [0.5, 1, 2, 5, 10, 15, 30, 60];
+  const step = steps.find((x) => x * TL.pps >= 70) || 60;
+  let html = '';
+  for (let t = 0; t <= p.duration + 0.001; t += step) {
+    html += `<span style="left:${TL.pad + t * TL.pps}px">${fmtTime(t)}</span>`;
+    if (step * TL.pps >= 140) html += `<i style="left:${TL.pad + (t + step / 2) * TL.pps}px"></i>`;
+  }
+  $('#tl-ruler').innerHTML = html;
 }
 
-$('#timeline').addEventListener('click', (e) => {
-  const b = e.target.closest('.block');
-  if (b) select(b.dataset.id, true);
-});
+function scrollTimelineTo(t) {
+  const sc = $('#tl-scroll');
+  const x = Math.round(t * TL.pps);
+  if (Math.abs(sc.scrollLeft - x) < 1) return;
+  state.ignoreScrollAt = x;
+  sc.scrollLeft = x;
+}
+
+// thumbnails: scene images and frames from the creator's video
+const thumbUrls = new Map();
+function sceneThumb(key, onReady) {
+  if (thumbUrls.has(key)) return thumbUrls.get(key);
+  thumbUrls.set(key, null);
+  getBlob(key).then((b) => { if (b) { thumbUrls.set(key, URL.createObjectURL(b)); onReady(); } });
+  return null;
+}
+
+const faceThumbs = new Map();
+let thumbQueue = Promise.resolve();
+function faceThumb(t, onReady) {
+  const k = Math.round(t * 2) / 2;
+  if (faceThumbs.has(k)) return faceThumbs.get(k);
+  faceThumbs.set(k, null);
+  thumbQueue = thumbQueue.then(async () => {
+    const c = document.createElement('canvas');
+    c.width = 72; c.height = 128;
+    const ctx = c.getContext('2d');
+    try {
+      if (state.media instanceof DemoMedia) {
+        state.media.render(k);
+        ctx.drawImage(state.media.canvas, 0, 0, 72, 128);
+      } else if (state.objectUrl) {
+        if (!state.thumbVideo || state.thumbVideo.dataset.src !== state.objectUrl) {
+          state.thumbVideo = Object.assign(document.createElement('video'), { muted: true, playsInline: true, preload: 'auto', src: state.objectUrl });
+          state.thumbVideo.dataset.src = state.objectUrl;
+          await new Promise((r) => { state.thumbVideo.onloadeddata = r; setTimeout(r, 3000); });
+        }
+        const v = state.thumbVideo;
+        await new Promise((r) => { v.onseeked = r; v.currentTime = Math.min(k + 0.3, v.duration - 0.05); setTimeout(r, 1500); });
+        const sc = Math.max(72 / v.videoWidth, 128 / v.videoHeight);
+        ctx.drawImage(v, (72 - v.videoWidth * sc) / 2, (128 - v.videoHeight * sc) / 2, v.videoWidth * sc, v.videoHeight * sc);
+      }
+      faceThumbs.set(k, c.toDataURL('image/jpeg', 0.7));
+      onReady();
+    } catch { /* thumbnail is cosmetic */ }
+  });
+  return null;
+}
+
+let tlRefreshTimer;
+const tlRefreshSoon = () => { clearTimeout(tlRefreshTimer); tlRefreshTimer = setTimeout(renderTimeline, 120); };
+
+function renderTimeline() {
+  const p = state.project;
+  if (!p?.approved) return;
+  tlSetup();
+  const el = $('#timeline');
+  el.innerHTML = p.segments.map((s, i) => {
+    const type = shotType(s, p.settings);
+    const st = type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
+    const thumb = type === 'face' ? faceThumb(s.start, tlRefreshSoon) : s.image?.key ? sceneThumb(s.image.key, tlRefreshSoon) : null;
+    const sel = s.id === state.selected;
+    return `<div class="clip ${type} ${st} ${sel ? 'sel' : ''}" data-id="${s.id}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
+      <div class="thumbs" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
+      <span class="cap">${type === 'face' ? icon('user') : ''}${esc(shotText(s).split(' ').slice(0, 4).join(' '))}</span>
+      ${sel ? `${i > 0 ? '<b class="trim l" data-edge="l"></b>' : ''}${i < p.segments.length - 1 ? '<b class="trim r" data-edge="r"></b>' : ''}` : ''}
+    </div>`;
+  }).join('');
+  renderFxTrack();
+  drawWave();
+  renderTranscript();
+  scrollTimelineTo(state.media?.time || 0);
+}
+
+function renderFxTrack() {
+  const p = state.project;
+  const fx = (p.sfx || []).slice().sort((a, b) => a.t - b.t);
+  $('#tl-fx').innerHTML = fx.map((c) => {
+    const info = sfxInfo(c.type) || { name: c.type, icon: '♪', dur: 0.5 };
+    return `<div class="fxclip ${c.id === state.selectedFx ? 'sel' : ''}" data-id="${c.id}" style="left:${TL.pad + c.t * TL.pps}px;width:${Math.max(34, info.dur * TL.pps)}px"><span>${info.icon}</span><em>${esc(info.name)}</em></div>`;
+  }).join('') || `<span class="fx-empty" style="left:${TL.pad + 8}px">No sound effects yet. Add some in the Sound tab.</span>`;
+}
+
+// voice waveform (from the video's own audio)
+async function ensurePeaks() {
+  if (state.peaks !== undefined || !state.file) return;
+  state.peaks = null;
+  try {
+    const samples = await decodeAudio(state.file, 8000);
+    const per = 80; // 10ms buckets at 8kHz
+    const peaks = new Float32Array(Math.ceil(samples.length / per));
+    for (let i = 0; i < peaks.length; i++) {
+      let m = 0;
+      for (let j = i * per, e = Math.min(samples.length, j + per); j < e; j++) m = Math.max(m, Math.abs(samples[j]));
+      peaks[i] = m;
+    }
+    const max = peaks.reduce((a, b) => Math.max(a, b), 0.001);
+    state.peaks = peaks.map((v) => v / max);
+    drawWave();
+  } catch { state.peaks = null; }
+}
+
+function drawWave() {
+  const cv = $('#tl-wave');
+  const sc = $('#tl-scroll');
+  const w = sc.clientWidth, h = cv.parentElement.clientHeight || 34;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = w * dpr; cv.height = h * dpr;
+  cv.style.width = `${w}px`; cv.style.height = `${h}px`;
+  cv.style.left = `${sc.scrollLeft}px`;
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  const p = state.project;
+  if (!p) return;
+  const x0 = TL.pad, mid = h / 2;
+  if (!state.peaks) {
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(state.file ? 'Reading audio…' : 'The demo has no voice track (sound effects still play)', w / 2 + 30, mid + 4);
+    return;
+  }
+  const g = ctx.createLinearGradient(0, 0, w, 0);
+  g.addColorStop(0, '#2dd4bf'); g.addColorStop(1, '#22d3ee');
+  ctx.fillStyle = g;
+  for (let px = 0; px < w; px += 2) {
+    const t = (px + sc.scrollLeft - x0) / TL.pps;
+    if (t < 0 || t > p.duration) continue;
+    const v = state.peaks[Math.floor(t * 100)] || 0;
+    const bh = Math.max(1.5, v * (h - 6));
+    ctx.fillRect(px, mid - bh / 2, 1.4, bh);
+  }
+}
+
+// scrolling the timeline scrubs the video
+$('#tl-scroll').addEventListener('scroll', () => {
+  const sc = $('#tl-scroll');
+  drawWave();
+  if (state.ignoreScrollAt != null && Math.abs(sc.scrollLeft - state.ignoreScrollAt) < 2) { state.ignoreScrollAt = null; return; }
+  if (!state.project?.approved || !state.media) return;
+  state.userScrolling = true;
+  clearTimeout(state.userScrollTimer);
+  state.userScrollTimer = setTimeout(() => { state.userScrolling = false; }, 150);
+  if (!state.media.paused) { state.media.pause(); state.sfxPlayer.stop(); }
+  cancelAnimationFrame(state.scrubRaf);
+  state.scrubRaf = requestAnimationFrame(() => seekTo(sc.scrollLeft / TL.pps, { follow: false }));
+}, { passive: true });
+
+function zoom(f) {
+  const t = state.media?.time || 0;
+  TL.pps = Math.max(12, Math.min(260, TL.pps * f));
+  renderTimeline();
+  scrollTimelineTo(t);
+}
+$('#zoom-in').addEventListener('click', () => zoom(1.4));
+$('#zoom-out').addEventListener('click', () => zoom(1 / 1.4));
+$('#tl-scroll').addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12); } }, { passive: false });
+window.addEventListener('resize', () => { if (state.project?.approved) renderTimeline(); });
+
+// clips: tap to select, drag trim handles, drag sound effects
+(function timelinePointer() {
+  let drag = null;
+  $('#tl-content').addEventListener('pointerdown', (e) => {
+    const trim = e.target.closest('.trim');
+    const fx = e.target.closest('.fxclip');
+    const clip = e.target.closest('.clip');
+    if (!trim && !fx && !clip) return;
+    drag = { x0: e.clientX, moved: false, trim, fx, clip };
+    if (trim) {
+      const seg = currentSeg();
+      const i = state.project.segments.indexOf(seg);
+      drag.index = trim.dataset.edge === 'l' ? i : i + 1;
+      drag.t0 = state.project.segments[drag.index].start;
+      e.preventDefault();
+    }
+    if (fx) {
+      const c = state.project.sfx.find((x) => x.id === fx.dataset.id);
+      drag.c = c; drag.t0 = c.t;
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x0;
+    if (!drag.moved && Math.abs(dx) < 4) return;
+    if (!drag.moved) { drag.moved = true; if (drag.trim || drag.fx) snapshot(); }
+    if (drag.trim) {
+      setBoundary(drag.index, drag.t0 + dx / TL.pps);
+      renderTimeline();
+    } else if (drag.fx) {
+      drag.c.t = Math.max(0, Math.min(state.project.duration - 0.1, drag.t0 + dx / TL.pps));
+      renderFxTrack();
+    }
+  });
+  window.addEventListener('pointerup', () => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (d.moved) {
+      if (d.trim || d.fx) { save(); if (d.trim) renderInspector(); else renderSoundPane(); }
+      return;
+    }
+    if (d.fx) selectFx(d.fx.dataset.id);
+    else if (d.clip) select(d.clip.dataset.id, true);
+  });
+}());
 
 async function select(id, seek) {
   state.selected = id;
+  state.selectedFx = null;
   const seg = state.project.segments.find((s) => s.id === id);
-  $$('.block').forEach((b) => b.classList.toggle('sel', b.dataset.id === id));
+  renderTimeline();
   renderInspector();
-  if (seek && seg && state.media) {
-    await state.media.seek(Math.min(seg.start + 0.25 * Math.min(1, seg.end - seg.start), state.project.duration));
-    drawPreview();
-  }
+  showTab('shot');
+  if (seek && seg && state.media) await seekTo(seg.start + Math.min(0.2, (seg.end - seg.start) / 3));
 }
+
+// tabs
+function showTab(name) {
+  $$('#ed-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+  $$('.ed-panel').forEach((p) => { p.hidden = p.dataset.pane !== name; });
+  if (name === 'sound') renderSoundPane();
+  requestAnimationFrame(updateSegThumbs);
+}
+$('#ed-tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
+
+// sound effects pane
+function selectFx(id) {
+  state.selectedFx = id;
+  renderFxTrack();
+  showTab('sound');
+  const c = state.project.sfx.find((x) => x.id === id);
+  if (c) state.sfxPlayer.preview(graph(), c.type, c.vol ?? 1);
+}
+
+function renderSoundPane() {
+  const p = state.project;
+  if (!p) return;
+  $('#vol-voice').value = p.settings.voiceVol ?? 1;
+  $('#vol-sfx').value = p.settings.sfxVol ?? 0.8;
+  $('#vol-voice').closest('label').hidden = !state.file;
+  const c = (p.sfx || []).find((x) => x.id === state.selectedFx);
+  $('#sfx-selected').innerHTML = c ? `
+    <div class="fx-card">
+      <div class="fx-card-head"><span class="fx-ico">${sfxInfo(c.type)?.icon || '♪'}</span><div><b>${esc(sfxInfo(c.type)?.name || c.type)}</b><small class="muted">at ${fmtTC(c.t)} · drag it on the timeline to move</small></div></div>
+      <label class="range-field">Volume <input type="range" data-fx="vol" min="0" max="1.5" step="0.05" value="${c.vol ?? 1}"></label>
+      <div class="tool-row">
+        <button class="btn glass sm" data-fx="play">${icon('play')}Play</button>
+        <button class="btn glass sm" data-fx="here">Move to playhead</button>
+        <button class="btn glass sm danger" data-fx="del">${icon('trash')}Delete</button>
+      </div>
+    </div>` : '';
+  $('#sfx-lib').innerHTML = SFX.map((x) => `
+    <button class="sfx-tile" data-add="${x.id}"><span>${x.icon}</span><b>${esc(x.name)}</b><i class="pv" data-pv="${x.id}" title="Preview">${icon('play')}</i></button>`).join('');
+}
+
+$('#sfx-lib').addEventListener('click', (e) => {
+  const pv = e.target.closest('[data-pv]');
+  if (pv) { e.stopPropagation(); state.sfxPlayer.preview(graph(), pv.dataset.pv, state.project.settings.sfxVol ?? 0.8); return; }
+  const add = e.target.closest('[data-add]');
+  if (!add || !state.project) return;
+  snapshot();
+  const c = { id: newId(), type: add.dataset.add, t: +(state.media?.time || 0).toFixed(2), vol: 1 };
+  state.project.sfx = [...(state.project.sfx || []), c];
+  save();
+  state.selectedFx = c.id;
+  renderFxTrack(); renderSoundPane();
+  state.sfxPlayer.preview(graph(), c.type, (state.project.settings.sfxVol ?? 0.8));
+  toast(`${sfxInfo(c.type).name} added at ${fmtTC(c.t)}`);
+});
+$('#sfx-selected').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fx]');
+  const c = state.project?.sfx?.find((x) => x.id === state.selectedFx);
+  if (!b || !c) return;
+  if (b.dataset.fx === 'play') state.sfxPlayer.preview(graph(), c.type, c.vol ?? 1);
+  if (b.dataset.fx === 'here') { snapshot(); c.t = +(state.media?.time || 0).toFixed(2); save(); renderFxTrack(); renderSoundPane(); }
+  if (b.dataset.fx === 'del') { snapshot(); state.project.sfx = state.project.sfx.filter((x) => x !== c); state.selectedFx = null; save(); renderFxTrack(); renderSoundPane(); }
+});
+$('#sfx-selected').addEventListener('change', (e) => {
+  const c = state.project?.sfx?.find((x) => x.id === state.selectedFx);
+  if (c && e.target.dataset.fx === 'vol') { snapshot(); c.vol = +e.target.value; save(); state.sfxPlayer.preview(graph(), c.type, c.vol); }
+});
+['#vol-voice', '#vol-sfx'].forEach((sel) => $(sel).addEventListener('input', (e) => {
+  if (!state.project) return;
+  state.project.settings[sel === '#vol-voice' ? 'voiceVol' : 'sfxVol'] = +e.target.value;
+  setMix(graph(), state.project.settings);
+  save();
+}));
+
+function splitAtPlayhead() {
+  const p = state.project;
+  const now = state.media.time;
+  const seg = segmentAt(p.segments, now);
+  const i = p.segments.indexOf(seg);
+  if (now < seg.start + 0.4 || now > seg.end - 0.4) { toast('Move the playhead further inside a clip to split it.'); return; }
+  edit(() => {
+    const copy = JSON.parse(JSON.stringify(seg));
+    copy.id = newId(); copy.start = now; copy.reason = 'Split from the previous shot.';
+    seg.end = now;
+    p.segments.splice(i + 1, 0, copy);
+    state.selected = copy.id;
+  });
+}
+$('#btn-split').addEventListener('click', splitAtPlayhead);
 
 function renderTranscript() {
   const p = state.project;
@@ -1297,7 +1614,7 @@ async function doExport() {
   try {
     if (!state.media.paused) state.media.pause();
     const { blob, ext } = await exportVideo(state.project, state.media, {
-      aspect: state.aspect, signal: ac.signal, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
+      aspect: state.aspect, signal: ac.signal, sfxPlayer: state.sfxPlayer, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
     });
     if (ac.signal.aborted) { setStatus('#ex-status', 'Export cancelled.'); return; }
     download(blob, `${baseName()}-storycuts-${state.aspect}.${ext}`);
@@ -1324,8 +1641,8 @@ async function loadProjectFile(file) {
     if (!state.project) { toast(`Upload the matching video first (${data.video}).`); return; }
     if (Math.abs(data.duration - state.project.duration) > 0.5) toast(`Heads up: this project was made for a different video (${data.video}).`, 6000);
     snapshot();
-    const { words, characters, segments, settings, approved, title } = data;
-    Object.assign(state.project, { words, characters, segments, settings: { ...state.project.settings, ...settings }, approved, title });
+    const { words, characters, segments, settings, approved, title, locations = [], sfx = [] } = data;
+    Object.assign(state.project, { words, characters, locations, sfx, segments, settings: { ...state.project.settings, ...settings }, approved, title });
     runQC(state.project);
     save(); syncOptionsUI(); refresh();
     toast('Project loaded.');
@@ -1348,13 +1665,6 @@ $('#btn-use-paste').addEventListener('click', usePaste);
 $('#btn-reset').addEventListener('click', resetPlan);
 $('#btn-approve').addEventListener('click', approveAndDraw);
 $('#btn-play').addEventListener('click', togglePlay);
-$('#scrub').addEventListener('input', async (e) => {
-  if (!state.project) return;
-  state.scrubbing = true;
-  await state.media?.seek((+e.target.value / 1000) * state.project.duration);
-  drawPreview();
-  state.scrubbing = false;
-});
 $('#transcript').addEventListener('click', async (e) => {
   const i = e.target.dataset.i;
   if (i == null || !state.media) return;
@@ -1373,6 +1683,11 @@ document.addEventListener('keydown', (e) => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !typing) { e.preventDefault(); undo(); }
   if (e.key === ' ' && state.project?.approved && !typing && document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); togglePlay(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && state.selectedFx && state.project) {
+    e.preventDefault(); snapshot();
+    state.project.sfx = state.project.sfx.filter((x) => x.id !== state.selectedFx);
+    state.selectedFx = null; save(); renderFxTrack(); renderSoundPane();
+  }
 });
 $('#video').addEventListener('seeked', drawPreview);
 

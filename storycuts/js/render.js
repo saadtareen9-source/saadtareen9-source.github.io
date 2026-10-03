@@ -205,19 +205,40 @@ export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
 // ---------- audio routing (shared by preview and export) ----------
 
 const graphs = new WeakMap();
+const NO_VIDEO = {};
+/**
+ * Audio mix shared by preview and export:
+ *   voice (the video's own audio) ─┐
+ *   sound effects ─────────────────┼─> speakers + a recordable stream
+ * `video` may be null (the demo has no audio track).
+ */
 export function audioGraph(video) {
-  let g = graphs.get(video);
+  const keyObj = video || NO_VIDEO;
+  let g = graphs.get(keyObj);
   if (!g) {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const src = ac.createMediaElementSource(video);
     const dest = ac.createMediaStreamDestination();
-    src.connect(ac.destination);
-    src.connect(dest);
-    g = { ac, src, dest };
-    graphs.set(video, g);
+    const master = ac.createGain();
+    master.connect(ac.destination);
+    const sfx = ac.createGain();
+    sfx.connect(master); sfx.connect(dest);
+    let voice = null;
+    if (video) {
+      const src = ac.createMediaElementSource(video);
+      voice = ac.createGain();
+      src.connect(voice);
+      voice.connect(master); voice.connect(dest);
+    }
+    g = { ac, dest, master, sfx, voice };
+    graphs.set(keyObj, g);
   }
   if (g.ac.state === 'suspended') g.ac.resume();
   return g;
+}
+
+export function setMix(graph, settings) {
+  if (graph.voice) graph.voice.gain.value = settings.voiceVol ?? 1;
+  graph.sfx.gain.value = settings.sfxVol ?? 0.8;
 }
 
 function pickMime() {
@@ -237,7 +258,7 @@ function pickMime() {
  * composited canvas (plus the original audio) is recorded.
  * `media` is the app's media wrapper (see app.js): { el, video?, time, seek, play, pause, onEnded }.
  */
-export async function exportVideo(project, media, { aspect = 'vertical', onProgress = () => {}, signal } = {}) {
+export async function exportVideo(project, media, { aspect = 'vertical', onProgress = () => {}, signal, sfxPlayer } = {}) {
   const { w: W, h: H } = ASPECTS[aspect];
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -245,7 +266,9 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
   const cache = {};
   const mimeType = pickMime();
   const stream = canvas.captureStream(30);
-  if (media.video) audioGraph(media.video).dest.stream.getAudioTracks().forEach((tr) => stream.addTrack(tr));
+  const graph = audioGraph(media.video || null);
+  setMix(graph, project.settings);
+  graph.dest.stream.getAudioTracks().forEach((tr) => stream.addTrack(tr));
   const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: aspect === 'vertical' ? 8e6 : 10e6, audioBitsPerSecond: 160e3 });
   const chunks = [];
   rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
@@ -265,6 +288,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
     if (stopped) return;
     stopped = true;
     media.pause();
+    sfxPlayer?.stop();
     setTimeout(() => rec.state !== 'inactive' && rec.stop(), 200);
   };
   signal?.addEventListener('abort', stop);
@@ -278,6 +302,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
     if (t >= project.duration - 0.03) stop();
   };
   await media.play();
+  sfxPlayer?.start(graph, project.sfx || [], 0);
   // a timer (not requestAnimationFrame) so a briefly hidden tab keeps rendering
   const iv = setInterval(draw, 1000 / 30);
   const blob = await done;
