@@ -1,1 +1,12 @@
-{ "anchors": {} }
+{
+  "anchors": {
+    "stick": "stick.jpg",
+    "cartoon": "cartoon.jpg",
+    "anime": "anime.jpg",
+    "3d": "3d.jpg",
+    "realistic": "realistic.jpg",
+    "comic": "comic.jpg",
+    "sketch": "sketch.jpg",
+    "storybook": "storybook.jpg"
+  }
+}
