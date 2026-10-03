@@ -33,6 +33,8 @@ export function normalizeCharacters(chars, report = []) {
       hairColor: /^#[0-9a-f]{6}$/i.test(c.hairColor || '') ? c.hairColor : '#2b2b2b',
       accessory: pick(c.accessory, ACCESSORIES, 'none'),
       height: clamp(c.height ?? 1, 0.75, 1.25),
+      ...(c.image ? { image: c.image } : {}),
+      ...(c.useVideoLook != null ? { useVideoLook: !!c.useVideoLook } : {}),
     });
   });
   if (!out.some((c) => c.id === 'me')) {
@@ -121,7 +123,8 @@ export function normalizeScene(scene, characters, report = [], segIndex = null) 
   let sfx = String(s.sound_effect || '').trim().replace(/[^\p{L}\p{N}!?' -]/gu, '');
   if (sfx.length > 12) { sfx = sfx.split(/\s+/)[0].slice(0, 12); note('sfx', 'Trimmed a long sound effect.'); }
 
-  return { setting, actors, props, effects, sound_effect: sfx };
+  const image_prompt = String(s.image_prompt || '').trim().slice(0, 900);
+  return { image_prompt, setting, actors, props, effects, sound_effect: sfx };
 }
 
 /**
@@ -138,6 +141,7 @@ export function normalizeSegments(segments, characters, duration, report = []) {
       type: pick(s.type, SEGMENT_TYPES, 'face'),
       reason: String(s.reason || '').slice(0, 200),
       scene: s.scene ? normalizeScene(s.scene, characters, report, null) : null,
+      ...(s.image ? { image: s.image } : {}),
     }))
     .sort((a, b) => a.start - b.start);
 

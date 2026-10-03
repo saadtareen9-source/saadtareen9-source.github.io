@@ -1,7 +1,8 @@
 // Compositor: turns (video, plan, time) into a frame. The same function drives
 // the live preview and the export, so what you review is what you get.
 
-import { drawScene } from './draw.js';
+import { drawScene, drawSoundEffect } from './draw.js';
+import { bitmapFor, preloadBitmap } from './images.js';
 
 export const ASPECTS = {
   vertical: { w: 1080, h: 1920, label: '9:16 (TikTok, Reels, Shorts)' },
@@ -85,6 +86,21 @@ function drawCaptions(ctx, W, H, pages, t, style) {
 
 // ---------- frame ----------
 
+/** AI illustration with a slow push-in and drift, plus a little pop on the cut. */
+function drawKenBurns(ctx, img, W, H, local, dur, idx) {
+  const prog = Math.min(1, local / Math.max(0.5, dur));
+  const ease = prog * prog * (3 - 2 * prog);
+  const pop = local < 0.18 ? 1.035 - (local / 0.18) * 0.035 : 1;
+  const zoom = (1.02 + ease * 0.08) * pop;
+  const scale = Math.max(W / img.width, H / img.height) * zoom;
+  const dw = img.width * scale, dh = img.height * scale;
+  const dir = idx % 2 ? 1 : -1;
+  const maxX = (dw - W) / 2, maxY = (dh - H) / 2;
+  const x = (W - dw) / 2 + dir * maxX * (ease - 0.5) * 0.8;
+  const y = (H - dh) / 2 + maxY * (0.5 - ease) * 0.5;
+  ctx.drawImage(img, x, y, dw, dh);
+}
+
 export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
   const { segments, characters, settings } = project;
   const seg = segmentAt(segments, t);
@@ -99,9 +115,27 @@ export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
     const zoom = settings.punchIn && faceShots % 2 === 1 ? 1.15 : 1;
     drawVideoCover(ctx, video, 0, 0, W, H, fx, fy, zoom);
   } else {
-    drawScene(ctx, W, H, seg.scene, characters, local, dur, {
-      sfxSide: seg.type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right',
-    });
+    const sfxSide = seg.type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
+    const bmp = seg.image?.key ? bitmapFor(seg.image.key, cache.onImage) : null;
+    if (bmp) {
+      drawKenBurns(ctx, bmp, W, H, local, dur, idx);
+      drawSoundEffect(ctx, seg.scene.sound_effect, W, H, local, Math.min(W, H) / 1000, sfxSide);
+    } else {
+      // no AI image yet: a quick drawn draft stands in
+      drawScene(ctx, W, H, seg.scene, characters, local, dur, { sfxSide });
+      if (cache.preview) {
+        const fs = Math.min(W, H) * 0.035;
+        ctx.save();
+        ctx.font = `700 ${fs}px system-ui, sans-serif`;
+        const label = cache.pending?.has(seg.id) ? 'Drawing…' : 'Draft · no AI image yet';
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(20,20,20,0.75)';
+        ctx.fillRect(fs * 0.6, H - fs * 2.6, tw + fs * 1.2, fs * 1.7);
+        ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+        ctx.fillText(label, fs * 1.2, H - fs * 1.75);
+        ctx.restore();
+      }
+    }
     if (seg.type === 'scene_bubble') {
       const R = Math.min(W, H) * (H > W ? 0.2 : 0.17);
       const pad = Math.min(W, H) * 0.045;
@@ -184,6 +218,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
   rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
 
   media.pause();
+  await Promise.all(project.segments.filter((sg) => sg.image?.key).map((sg) => preloadBitmap(sg.image.key)));
   await media.seek(0);
   drawFrame(ctx, W, H, 0, project, media.el, cache);
 

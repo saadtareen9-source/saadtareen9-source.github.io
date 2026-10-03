@@ -79,7 +79,12 @@
     <!-- 4 -->
     <section class="card locked" id="step-chars" data-step="4">
       <h2><b>4</b> Approve your cast</h2>
-      <p class="muted">Everyone in your story gets one design that stays the same in every scene. Tweak anything, then approve.</p>
+      <p class="muted">Everyone in your story gets one design, and every scene is drawn from it so they look the same throughout. Edit the descriptions, draw their looks, then approve.</p>
+      <div class="row">
+        <button class="primary" id="btn-gen-chars">Draw the characters with AI</button>
+        <span class="muted" id="chars-cost"></span>
+      </div>
+      <div class="status" id="chars-status"></div>
       <div class="chars" id="chars"></div>
       <div class="row">
         <button id="btn-add-char">+ Add character</button>
@@ -89,7 +94,13 @@
 
     <!-- 5 -->
     <section class="card locked wide" id="step-review" data-step="5">
-      <h2><b>5</b> Review the edit</h2>
+      <h2><b>5</b> Generate the scenes &amp; review</h2>
+      <div class="row gen-bar">
+        <button class="primary" id="btn-gen-scenes">Generate all scene images</button>
+        <span class="muted" id="scenes-cost"></span>
+      </div>
+      <div class="progress hidden" id="gen-progress"><div></div></div>
+      <div class="status" id="scenes-status"></div>
       <div class="review">
         <div class="player">
           <div class="aspect-toggle" role="tablist">
@@ -147,12 +158,24 @@
         <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-…">
       </label>
       <small class="muted">Used only for "Plan with Claude" and "Redo with AI". Stored in this browser only and sent directly to api.anthropic.com. Get one at console.anthropic.com.</small>
-      <label class="field">Model
+      <label class="field">Claude model
         <select id="model">
           <option value="claude-opus-5-5">Claude Opus 5.5 (best edits)</option>
           <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
         </select>
       </label>
+      <hr>
+      <label class="field">Google Gemini API key (for AI images)
+        <input id="gemini-key" type="password" autocomplete="off" placeholder="AIza…">
+      </label>
+      <small class="muted">Draws your characters and scenes. Get a free key at aistudio.google.com. Stored in this browser only and sent directly to Google.</small>
+      <label class="field">Image model
+        <select id="image-model"></select>
+      </label>
+      <label class="field">Art style
+        <select id="art-style"></select>
+      </label>
+      <label class="check"><input type="checkbox" id="opt-qc" checked> Have Claude check every image and redraw bad ones</label>
       <div class="row end">
         <button value="cancel" class="ghost">Close</button>
         <button value="save" class="primary" id="btn-save-settings">Save</button>
@@ -162,7 +185,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast"></div>
-  <footer>StoryCuts prototype · scenes are drawn live from your edit plan, so characters never drift.</footer>
+  <footer>StoryCuts prototype · illustrations by Gemini, editing and quality checks by Claude.</footer>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

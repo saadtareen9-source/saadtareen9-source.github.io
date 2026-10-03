@@ -37,8 +37,12 @@ async function client(apiKey) {
 const sceneSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['setting', 'actors', 'props', 'effects', 'sound_effect'],
+  required: ['image_prompt', 'setting', 'actors', 'props', 'effects', 'sound_effect'],
   properties: {
+    image_prompt: {
+      type: 'string',
+      description: 'What the illustration shows, for an illustrator: who (by character name) is where, doing what, with what expressions, key props, camera framing. 2-4 sentences. No text, captions or speech bubbles in the image.',
+    },
     setting: { type: 'string', enum: SETTINGS },
     actors: {
       type: 'array',
@@ -75,7 +79,7 @@ const characterSchema = {
   properties: {
     id: { type: 'string', description: 'short snake_case id; the storyteller is always "me"' },
     name: { type: 'string' },
-    description: { type: 'string' },
+    description: { type: 'string', description: 'Visual design for the illustrator: age, build, hair, clothing, one or two signature details. One sentence.' },
     color: { type: 'string', enum: COLORS, description: 'shirt colour, unique per character' },
     hair: { type: 'string', enum: HAIR },
     hairColor: { type: 'string', enum: ['#2b2b2b', '#6b4423', '#c8a165', '#d35400', '#9e9e9e', '#e84393'] },
@@ -121,7 +125,9 @@ Editing rules:
 - Shots usually last 1.5-5 seconds; cut on natural phrase boundaries. Never make a shot shorter than 1 second.
 - Scenes must act out the story in order, literally and specifically (who is where doing what), not generic keyword decoration.
 - Consecutive scenes in the same place keep the same setting. Characters keep the same look throughout: only use character ids you define.
-- Define every person in the story as a character, including the storyteller (id "me") when "I" appear in the story. Give characters distinct, fitting looks (e.g. dad: bald + mustache; grandma: bun + glasses) and unique shirt colours.
+- Define every person (or pet) in the story as a character, including the storyteller (id "me") when "I" appear in the story. Give characters distinct, fitting looks (e.g. dad: bald + mustache; grandma: bun + glasses) and unique shirt colours, and a one-sentence visual description.
+- Each scene is drawn by an AI illustrator from "image_prompt" plus reference images of the characters. Write image_prompt as a specific, visual description of the single moment: who (by name) is where, doing what, with which expressions and props, and the framing (wide shot, close-up...). Exaggerate emotions for comedy. Never ask for text, signs, captions or speech bubbles in the image.
+- Also fill the structured fields (setting, actors, poses...) to match; they're used for previews and drafts.
 - Put reported dialogue in short speech bubbles (max ~8 words). Use sound effects sparingly, only for big moments.
 - Place actors with x between 0.15 and 0.85, at least 0.25 apart; characters interacting should face each other.
 - For "face" shots, still fill "scene" with a simple placeholder (setting "blank", no actors); it is ignored.
@@ -150,7 +156,7 @@ export function estimateCost(words, model = DEFAULT_MODEL) {
   return { inTok, outTok, usd, shots };
 }
 
-async function callClaude(apiKey, { model, system, user, schema, effort = 'medium', maxTokens = 32000 }) {
+export async function callClaude(apiKey, { model, system, user, schema, effort = 'medium', maxTokens = 32000 }) {
   const anthropic = await client(apiKey);
   const base = {
     model,
