@@ -20,6 +20,9 @@
     .card .meta b { font-family: var(--display); }
     .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
     .steps { color: var(--text-2); line-height: 1.8; }
+    .art > a { position: absolute; inset: 0; }
+    .art-err { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; padding: 18px; text-align: center; background: rgba(20, 12, 20, 0.85); color: var(--err); font-size: 0.85rem; }
+    .art-err small { color: var(--text-2); line-height: 1.4; }
     .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; }
   </style>
 </head>
@@ -35,7 +38,7 @@
     <ol class="steps">
       <li>Make sure your OpenAI and Claude keys are saved on the main StoryCuts page (API keys). Claude checks every image (including counting fingers) and it's redrawn automatically if anything is off.</li>
       <li>Click <b>Draw all styles</b> (or Draw on single ones). Redraw any you don't love. Every style draws the same scene, so you can compare them.</li>
-      <li>Click <b>Download all</b> (or Download on single ones) and drag the files into your chat with Claude. They'll be added to the site.</li>
+      <li>Click <b>Download all</b> (or Download on single ones) and drag the files into your chat with Claude. They'll be added to the site.<br><span class="muted">On a phone: tap a picture to open it full size, then press and hold it and choose Save to Photos. If the page is open inside the Claude app, use the share button to open it in Safari or Chrome first.</span></li>
     </ol>
     <div class="bar">
       <label class="field" style="min-width:260px">Quality
@@ -58,12 +61,13 @@
     const get = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
     const urls = {};
     const checks = {};
+    const errors = {};
 
     function render() {
       const dl = document.querySelector('#dl-all'); if (dl) dl.disabled = !Object.keys(urls).length;
       $('#grid').innerHTML = Object.entries(STYLES).map(([id, s]) => `
         <div class="card" data-id="${id}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
-          <div class="art">${busy.has(id) ? '<div class="art-busy"><small>Drawing &amp; checking…</small></div>' : urls[id] ? `<img src="${urls[id]}" alt="">${checks[id] ? (checks[id].pass ? `<span class="qc-badge ok live">✓ Checked ${checks[id].score}/10</span>` : `<span class="qc-badge warn live" title="${checks[id].issues.join('; ')}">⚠ ${checks[id].issues[0] || 'Check it'}</span>`) : '<span class="qc-badge live">Not checked</span>'}` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
+          <div class="art">${busy.has(id) ? '<div class="art-busy"><small>Drawing &amp; checking…</small></div>' : errors[id] && !urls[id] ? `<div class="art-err"><b>Couldn't draw this one</b><small>${errors[id]}</small></div>` : urls[id] ? `<a href="${urls[id]}" target="_blank" rel="noopener" title="Open full size"><img src="${urls[id]}" alt=""></a>${checks[id] ? (checks[id].pass ? `<span class="qc-badge ok live">✓ Checked ${checks[id].score}/10</span>` : `<span class="qc-badge warn live" title="${checks[id].issues.join('; ')}">⚠ ${checks[id].issues[0] || 'Check it'}</span>`) : '<span class="qc-badge live">Not checked</span>'}` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
           <div class="meta">
             <b>${s.label}</b>
             <div class="row">
@@ -102,10 +106,11 @@
         if (urls[id]) URL.revokeObjectURL(urls[id]);
         urls[id] = URL.createObjectURL(best.blob);
         checks[id] = best.qc;
+        delete errors[id];
         return true;
       } catch (err) {
         console.error(err);
-        $('#status').textContent = `Couldn't draw ${STYLES[id].label}: ${err.message}`; $('#status').className = 'status err';
+        errors[id] = err.message;
         return false;
       } finally { busy.delete(id); render(); }
     }
@@ -115,6 +120,7 @@
       if (!id || busy.has(id)) return;
       $('#status').textContent = `Drawing ${STYLES[id].label}… (up to a minute)`; $('#status').className = 'status busy';
       if (await draw(id)) { $('#status').textContent = `${STYLES[id].label} drawn. Happy with it? Download it.`; $('#status').className = 'status ok'; }
+      else { $('#status').textContent = `Couldn't draw ${STYLES[id].label}: ${errors[id]}`; $('#status').className = 'status err'; }
     });
 
     $('#draw-all').addEventListener('click', async () => {
@@ -127,9 +133,11 @@
       let done = 0;
       const queue = [...ids];
       const worker = async () => { while (queue.length) { const id = queue.shift(); await draw(id); done++; $('#prog').firstElementChild.style.width = `${(done / ids.length) * 100}%`; $('#status').textContent = `Drawn ${done} of ${ids.length}…`; $('#status').className = 'status busy'; } };
-      await Promise.all([worker(), worker()]);
+      await worker(); // one at a time: new OpenAI accounts only allow a few images per minute
       $('#draw-all').disabled = false;
-      $('#status').textContent = 'Done. Redraw any you don\'t love, then Download all and send the files to Claude.'; $('#status').className = 'status ok';
+      const failed = ids.filter((id) => errors[id]);
+      if (failed.length) { $('#status').textContent = `${failed.length} couldn't be drawn (see the cards). Wait a minute, then press Draw all styles again to retry just those.`; $('#status').className = 'status err'; }
+      else { $('#status').textContent = 'Done. Redraw any you don\'t love, then Download all and send the files to Claude.'; $('#status').className = 'status ok'; }
     });
 
     $('#dl-all').addEventListener('click', async () => {

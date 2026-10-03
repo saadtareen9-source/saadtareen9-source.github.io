@@ -61,13 +61,6 @@ export const STYLES = {
     avoid: 'photorealism, 3D rendering, soft airbrushed shading, muddy colours',
     prompt: 'Punchy comic-book illustration, dynamic inked line art, halftone shading, saturated colors, exaggerated funny expressions, cinematic framing.',
   },
-  clay: {
-    label: 'Claymation',
-    blurb: 'Handmade stop-motion charm',
-    tint: ['#fcd34d', '#fb923c'],
-    avoid: '2D illustration, photorealism, smooth CGI plastic, line art',
-    prompt: 'Claymation stop-motion scene: handmade plasticine characters with visible fingerprints and texture, miniature handcrafted sets, soft studio lighting, charming and slightly goofy.',
-  },
   sketch: {
     label: 'Sketch',
     blurb: 'Hand-drawn pencil and ink',
@@ -320,13 +313,22 @@ function partsToPrompt(parts) {
   return { prompt: texts.join('\n'), images };
 }
 
+/** How long to wait before retrying a rate-limited or failed request (ms). */
+function retryDelay(res, body, attempt) {
+  const h = Number(res.headers.get('retry-after'));
+  if (Number.isFinite(h) && h > 0) return Math.min(65, h + 1) * 1000;
+  const m = /try again in (?:(\d+)m)?\s*(\d+(?:\.\d+)?)s/i.exec(body?.error?.message || '');
+  if (m) return Math.min(65, (+(m[1] || 0)) * 60 + (+m[2]) + 1) * 1000;
+  return Math.min(60000, 4000 * 2 ** attempt);
+}
+
 async function openaiImage(apiKey, modelId, parts, aspectRatio) {
   const info = modelInfo(modelId);
   const model = modelId.split('@')[0];
   const { prompt, images } = partsToPrompt(parts);
   const size = OPENAI_SIZES[aspectRatio] || 'auto';
   let res;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt <= 6; attempt++) {
     if (images.length) {
       // reference images go to the edits endpoint as multipart form data
       const form = new FormData();
@@ -344,11 +346,16 @@ async function openaiImage(apiKey, modelId, parts, aspectRatio) {
       });
     }
     if (res.status !== 429 && res.status < 500) break;
-    await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+    if (attempt === 6) break;
+    // Rate limited: wait as long as OpenAI asks (new accounts allow only a few images per minute).
+    const body = await res.clone().json().catch(() => ({}));
+    if (body?.error?.code === 'insufficient_quota') break;
+    await new Promise((r) => setTimeout(r, retryDelay(res, body, attempt)));
   }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json?.error?.message || `HTTP ${res.status}`;
+    if (res.status === 429 && json?.error?.code !== 'insufficient_quota') throw new Error('OpenAI\'s rate limit for your account was hit. Wait a minute and try again (new OpenAI accounts can only make a few images per minute; it goes up as you use it).');
     if (res.status === 401) throw new Error('Your OpenAI API key was rejected. Check it in Settings.');
     if (/billing|quota|insufficient/i.test(msg)) throw new Error(`OpenAI says: ${msg} (add credit at platform.openai.com → Billing).`);
     if (/verif/i.test(msg)) throw new Error(`OpenAI says: ${msg} (image models may require verifying your organization at platform.openai.com → Settings → Organization).`);
