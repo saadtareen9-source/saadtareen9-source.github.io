@@ -361,49 +361,118 @@ function loadDemo() {
 
 // ---------- step 2: style & options ----------
 
+// Coverflow style picker: the centred card is the selected style.
+const styleIds = () => [...Object.keys(STYLES), 'custom'];
+
 function renderStyles() {
   const cur = state.project?.settings.style || store.get('storycuts:style', 'stick');
   $('#style-track').innerHTML = Object.entries(STYLES).map(([id, s]) => `
-    <button class="style-card ${id === cur ? 'on' : ''}" data-style="${id}" role="radio" aria-checked="${id === cur}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
+    <button class="style-card" data-style="${id}" role="option" aria-label="${esc(s.label)}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
       <span class="thumb">
-        <span class="ph"><b>${esc(s.label.split(' ')[0])}</b></span>
-        ${s.thumb ? `<img src="${esc(s.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+        <span class="ph"><b>${esc(s.label)}</b></span>
+        ${s.thumb ? `<img src="${esc(s.thumb)}" alt="" onerror="this.remove()">` : ''}
       </span>
       <span class="tick">${icon('check')}</span>
       <span class="meta"><b>${esc(s.label)}</b><small>${esc(s.blurb)}</small></span>
     </button>`).join('') + `
-    <button class="style-card custom ${cur === 'custom' ? 'on' : ''}" data-style="custom" role="radio" aria-checked="${cur === 'custom'}">
+    <button class="style-card custom" data-style="custom" role="option" aria-label="Create your own style">
       <span class="thumb"><span class="ph"><span class="plus">+</span></span><img class="ref-thumb" alt="" hidden></span>
       <span class="tick">${icon('check')}</span>
       <span class="meta"><b>Create your own</b><small>Describe it or upload an example</small></span>
     </button>`;
-  updateSlideButtons();
+  $('#style-dots').innerHTML = styleIds().map((id, i) => `<button class="dot" data-i="${i}" aria-label="${esc(id === 'custom' ? 'Create your own' : STYLES[id].label)}"></button>`).join('');
+  state.styleIndex = Math.max(0, styleIds().indexOf(cur));
+  layoutStyles(true);
   syncStyleExtras();
 }
 
-function updateSlideButtons() {
-  const t = $('#style-track');
-  $('#style-prev').disabled = t.scrollLeft < 8;
-  $('#style-next').disabled = t.scrollLeft + t.clientWidth > t.scrollWidth - 8;
+/** Position every card relative to the centred one (wrapping around). */
+function layoutStyles(instant = false, drag = 0) {
+  const ids = styleIds();
+  const n = ids.length;
+  const cards = $$('#style-track .style-card');
+  const track = $('#style-track');
+  track.classList.toggle('instant', instant || drag !== 0);
+  const w = cards[0]?.offsetWidth || 300;
+  const step = Math.min(w * 0.62, track.clientWidth * 0.3);
+  cards.forEach((card, i) => {
+    let d = i - state.styleIndex;
+    if (d > n / 2) d -= n;
+    if (d < -n / 2) d += n;
+    const pos = d + drag;
+    const a = Math.abs(pos);
+    card.style.transform = `translateX(calc(-50% + ${pos * step}px)) translateZ(${-a * 120}px) rotateY(${Math.max(-1, Math.min(1, -pos)) * 18}deg) scale(${Math.max(0.6, 1 - a * 0.16)})`;
+    card.style.zIndex = String(100 - Math.round(a * 10));
+    card.style.opacity = a > 2.6 ? '0' : '1';
+    card.style.pointerEvents = a > 2.6 ? 'none' : '';
+    card.style.setProperty('--dim', String(Math.min(0.62, a * 0.32)));
+    const center = Math.round(a * 100) === 0;
+    card.classList.toggle('on', center);
+    card.setAttribute('aria-selected', center);
+    card.tabIndex = center ? 0 : -1;
+  });
+  $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === state.styleIndex));
+  if (instant) requestAnimationFrame(() => track.classList.remove('instant'));
 }
 
-$('#style-track').addEventListener('scroll', updateSlideButtons, { passive: true });
-$('#style-prev').addEventListener('click', () => $('#style-track').scrollBy({ left: -$('#style-track').clientWidth * 0.8, behavior: 'smooth' }));
-$('#style-next').addEventListener('click', () => $('#style-track').scrollBy({ left: $('#style-track').clientWidth * 0.8, behavior: 'smooth' }));
-$('#style-track').addEventListener('click', (e) => {
-  const card = e.target.closest('.style-card');
-  if (!card || !state.project) return;
-  const id = card.dataset.style;
+function selectStyleIndex(i) {
+  const ids = styleIds();
+  const n = ids.length;
+  state.styleIndex = ((i % n) + n) % n;
+  layoutStyles();
+  const id = ids[state.styleIndex];
+  if (!state.project) { store.set('storycuts:style', id); return; }
   if (id === state.project.settings.style) return;
   const hadArt = state.project.characters.some((c) => c.image?.key);
   state.project.settings.style = id;
   store.set('storycuts:style', id);
   save();
-  $$('.style-card').forEach((c) => { c.classList.toggle('on', c === card); c.setAttribute('aria-checked', c === card); });
   syncStyleExtras();
-  if (hadArt) toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500);
-  if (id === 'custom') setTimeout(() => $('#custom-style').focus(), 50);
+  clearTimeout(selectStyleIndex.t);
+  if (hadArt) selectStyleIndex.t = setTimeout(() => toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500), 700);
+}
+
+$('#style-prev').addEventListener('click', () => selectStyleIndex(state.styleIndex - 1));
+$('#style-next').addEventListener('click', () => selectStyleIndex(state.styleIndex + 1));
+$('#style-dots').addEventListener('click', (e) => { const d = e.target.closest('.dot'); if (d) selectStyleIndex(+d.dataset.i); });
+$('#style-track').addEventListener('click', (e) => {
+  const card = e.target.closest('.style-card');
+  if (!card || state.styleDragged) return;
+  const i = styleIds().indexOf(card.dataset.style);
+  if (i !== state.styleIndex) selectStyleIndex(i);
+  else if (card.dataset.style === 'custom') $('#custom-style').focus();
 });
+$('#style-track').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') { e.preventDefault(); selectStyleIndex(state.styleIndex - 1); $('#style-track .style-card.on')?.focus(); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); selectStyleIndex(state.styleIndex + 1); $('#style-track .style-card.on')?.focus(); }
+});
+
+// drag / swipe
+(function coverflowDrag() {
+  const track = $('#style-track');
+  let down = false, x0 = 0, dx = 0;
+  const unit = () => Math.min(($('#style-track .style-card')?.offsetWidth || 300) * 0.62, track.clientWidth * 0.3);
+  track.addEventListener('pointerdown', (e) => { down = true; x0 = e.clientX; dx = 0; state.styleDragged = false; });
+  window.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    dx = e.clientX - x0;
+    if (Math.abs(dx) > 6) { state.styleDragged = true; track.classList.add('dragging'); }
+    if (state.styleDragged) layoutStyles(false, dx / unit());
+  });
+  window.addEventListener('pointerup', () => {
+    if (!down) return;
+    down = false;
+    track.classList.remove('dragging');
+    if (state.styleDragged) {
+      const moveBy = Math.round(-dx / unit());
+      if (moveBy) selectStyleIndex(state.styleIndex + moveBy); else layoutStyles();
+      setTimeout(() => { state.styleDragged = false; }, 0);
+    }
+  });
+  window.addEventListener('resize', () => layoutStyles(true));
+  // the stage never scrolls; cards are positioned with transforms
+  track.addEventListener('scroll', () => { if (track.scrollLeft) track.scrollLeft = 0; });
+}());
 
 function syncStyleExtras() {
   const s = state.project?.settings;
@@ -1350,50 +1419,6 @@ document.addEventListener('pointerout', (e) => {
   const el = e.target.closest?.('.style-card');
   if (el && !el.contains(e.relatedTarget)) { el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); }
 });
-
-/** Style carousel: drag with momentum, page dots. */
-(function carousel() {
-  const track = $('#style-track');
-  let down = false, startX = 0, startLeft = 0, lastX = 0, lastT = 0, vel = 0, moved = false, raf = 0;
-  track.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'mouse') return;
-    down = true; moved = false;
-    startX = lastX = e.clientX; startLeft = track.scrollLeft; lastT = performance.now(); vel = 0;
-    cancelAnimationFrame(raf);
-  });
-  window.addEventListener('pointermove', (e) => {
-    if (!down) return;
-    const dx = e.clientX - startX;
-    if (!moved && Math.abs(dx) > 6) { moved = true; track.classList.add('dragging'); }
-    if (!moved) return;
-    track.scrollLeft = startLeft - dx;
-    const now = performance.now();
-    vel = (e.clientX - lastX) / Math.max(1, now - lastT);
-    lastX = e.clientX; lastT = now;
-  });
-  window.addEventListener('pointerup', () => {
-    if (!down) return;
-    down = false;
-    if (!moved) return;
-    let v = vel * 16;
-    const glide = () => {
-      track.scrollLeft -= v;
-      v *= 0.94;
-      if (Math.abs(v) > 0.4) raf = requestAnimationFrame(glide);
-      else track.classList.remove('dragging');
-    };
-    raf = requestAnimationFrame(glide);
-  });
-  track.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
-  const dots = () => {
-    const pages = Math.max(1, Math.ceil(track.scrollWidth / track.clientWidth - 0.05));
-    const cur = Math.round((track.scrollLeft / Math.max(1, track.scrollWidth - track.clientWidth)) * (pages - 1));
-    $('#style-dots').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, i) => `<i class="${i === cur ? 'on' : ''}"></i>`).join('') : '';
-  };
-  track.addEventListener('scroll', () => requestAnimationFrame(dots), { passive: true });
-  window.addEventListener('resize', dots);
-  setTimeout(dots, 300);
-}());
 
 /** Reveal sections as they scroll into view. */
 const io = new IntersectionObserver((entries) => entries.forEach((en) => {

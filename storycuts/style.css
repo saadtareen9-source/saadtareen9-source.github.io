@@ -594,3 +594,42 @@ details > *:not(summary) { animation: rise 0.45s var(--ease) both; }
 .inspector > * { animation: rise 0.45s var(--ease) both; }
 .prep-body { align-content: start; }
 .prep-body > .btn, .prep-body .tool-row { justify-self: start; }
+
+/* ======================================================================
+   Coverflow style picker
+   ====================================================================== */
+.slider { position: relative; margin: 0 -8px; }
+.slider::before, .slider::after { width: 90px; bottom: 0; z-index: 150; }
+.style-track {
+  position: relative; display: block; height: clamp(440px, 46vw, 520px); overflow: hidden;
+  padding: 0; perspective: 1400px; perspective-origin: 50% 40%; cursor: grab; touch-action: pan-y; user-select: none;
+}
+.style-track.dragging { cursor: grabbing; }
+.style-track .style-card {
+  position: absolute; top: 18px; left: 50%; width: min(300px, 62vw); margin: 0;
+  transition: transform 0.7s var(--ease), opacity 0.5s var(--ease), box-shadow 0.5s var(--ease), border-color 0.4s;
+  transform-origin: 50% 50%; -webkit-tap-highlight-color: transparent;
+}
+.style-track.instant .style-card { transition: none; }
+.style-track .style-card::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: rgba(8, 8, 16, var(--dim, 0)); z-index: 4; pointer-events: none; transition: background 0.6s var(--ease); }
+.style-track .style-card .thumb { aspect-ratio: 4 / 5; }
+.style-track .style-card .meta { text-align: center; padding: 16px 18px 18px; }
+.style-track .style-card .meta b { font-size: 1.15rem; }
+.style-track .style-card .tick { opacity: 0; transform: scale(0.6); transition: 0.4s var(--ease); }
+.style-track .style-card.on .tick { opacity: 1; transform: none; }
+.style-track .style-card.on { border-color: transparent; box-shadow: 0 0 0 2px #f0abfc, 0 40px 80px -30px rgba(236, 72, 153, 0.75), 0 0 60px -20px rgba(139, 92, 246, 0.6); }
+.style-track .style-card.on:hover .thumb img, .style-track .style-card.on:hover .ph { transform: scale(1.05); }
+.style-track .style-card:not(.on):hover::before { background: rgba(8, 8, 16, calc(var(--dim, 0) - 0.15)); }
+.style-track .style-card .ph b { font-size: clamp(1.6rem, 3vw, 2.4rem); color: rgba(20, 20, 30, 0.32); }
+.slide-btn { top: 42%; display: grid !important; width: 50px; height: 50px; z-index: 200; }
+.slide-btn.prev { left: 10px; }
+.slide-btn.next { right: 10px; }
+.slide-btn:hover { box-shadow: 0 0 0 1px rgba(240, 171, 252, 0.5), 0 12px 30px -10px rgba(236, 72, 153, 0.7); }
+.slide-btn:active { transform: scale(0.95); }
+@media (max-width: 640px) { .slide-btn { width: 40px; height: 40px; } .slider::before, .slider::after { width: 30px; } }
+.dots { gap: 8px; margin-top: 4px; }
+.dots .dot { width: 8px; height: 8px; padding: 0; border: none; border-radius: 999px; background: rgba(255, 255, 255, 0.22); cursor: pointer; transition: width 0.45s var(--ease), background 0.3s; }
+.dots .dot:hover { background: rgba(255, 255, 255, 0.45); }
+.dots .dot.on { width: 26px; background: var(--grad); }
+.style-track, .style-track.dragging { scroll-snap-type: none; scroll-behavior: auto; overflow: hidden; }
+.style-track .style-card { scroll-snap-align: none; }
