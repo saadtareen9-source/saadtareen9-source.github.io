@@ -3,7 +3,7 @@ import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, s
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, decodeAudio, speechSpans } from './transcribe.js';
 import {
-  IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency,
+  IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
@@ -1170,6 +1170,7 @@ document.addEventListener('keydown', (e) => {
 $('#video').addEventListener('seeked', drawPreview);
 
 renderStyles();
+loadStyleManifest().then(() => renderStyles());
 updateKeysDot();
 sizePreview();
 renderStepper();
