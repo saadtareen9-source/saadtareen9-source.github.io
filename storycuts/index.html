@@ -106,13 +106,15 @@
       <div class="studio-head">
         <h2 class="section-title">Studio</h2>
         <ol class="stepper" id="stepper">
-          <li data-s="1"><span>1</span>Upload</li>
-          <li data-s="2"><span>2</span>Style</li>
-          <li data-s="3"><span>3</span>Create</li>
-          <li data-s="4"><span>4</span>Edit &amp; export</li>
+          <li data-s="1"><button><span>1</span><em>Upload</em></button></li>
+          <li data-s="2"><button><span>2</span><em>Style</em></button></li>
+          <li data-s="3"><button><span>3</span><em>Settings</em></button></li>
+          <li data-s="4"><button><span>4</span><em>Create</em></button></li>
+          <li data-s="5"><button><span>5</span><em>Edit</em></button></li>
         </ol>
       </div>
 
+      <div class="wizard" id="wizard">
       <!-- 1 UPLOAD -->
       <div class="panel" id="panel-upload" data-step="1">
         <div class="panel-head"><span class="num">1</span><div><h3>Upload your video</h3><p>A vertical phone video of you telling a story works best. 30 seconds to 5 minutes.</p></div></div>
@@ -127,15 +129,16 @@
           <button class="btn link" id="btn-demo">No video handy? Use the demo story</button>
         </div>
         <div class="file-chip hidden" id="video-info"></div>
+        <div class="wiz-nav"><span></span><button class="btn primary lg" data-next="2" disabled>Continue<svg><use href="#i-right"/></svg></button></div>
       </div>
 
       <!-- 2 STYLE -->
-      <div class="panel locked" id="panel-style" data-step="2">
-        <div class="panel-head"><span class="num">2</span><div><h3>Choose your style</h3><p>Every character and scene is drawn in this style.</p></div></div>
+      <div class="panel" id="panel-style" data-step="2">
+        <div class="panel-head"><span class="num">2</span><div><h3>Choose your style</h3><p>Swipe through the styles. The one in the middle is selected.</p></div></div>
         <div class="slider">
-          <button class="slide-btn prev" id="style-prev" aria-label="Previous styles"><svg><use href="#i-left"/></svg></button>
-          <div class="style-track" id="style-track" role="radiogroup" aria-label="Art style"></div>
-          <button class="slide-btn next" id="style-next" aria-label="More styles"><svg><use href="#i-right"/></svg></button>
+          <button class="slide-btn prev" id="style-prev" aria-label="Previous style"><svg><use href="#i-left"/></svg></button>
+          <div class="style-track" id="style-track" role="listbox" aria-label="Art style" tabindex="0"></div>
+          <button class="slide-btn next" id="style-next" aria-label="Next style"><svg><use href="#i-right"/></svg></button>
         </div>
         <div class="dots" id="style-dots"></div>
         <div class="custom-box hidden" id="custom-box">
@@ -157,35 +160,40 @@
         <label class="field style-notes">Extra details <span class="hint">optional · added to whichever style you pick</span>
           <input id="style-notes" maxlength="400" placeholder="e.g. pastel colours, rainy mood, characters with big expressive eyes">
         </label>
-        <div class="options">
-          <div class="opt-group">
-            <span class="opt-label">Format</span>
-            <div class="seg" id="seg-format">
-              <button data-aspect="vertical" class="on"><i class="ar ar-v"></i><span class="t">9:16 <small>TikTok · Reels · Shorts</small></span></button>
-              <button data-aspect="horizontal"><i class="ar ar-h"></i><span class="t">16:9 <small>YouTube</small></span></button>
-            </div>
-          </div>
-          <div class="opt-group">
-            <span class="opt-label">Edit pacing</span>
-            <div class="seg" id="seg-pacing">
-              <button data-pacing="mostly" class="on"><i class="pc"><b class="f" style="flex:1.2"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b></i><span class="t">Mostly story <small>Your intro, then mostly scenes</small></span></button>
-              <button data-pacing="balanced"><i class="pc"><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1"></b></i><span class="t">Balanced <small>About half and half</small></span></button>
-              <button data-pacing="story"><i class="pc"><b class="s" style="flex:1"></b></i><span class="t">Story only <small>Scenes the whole way</small></span></button>
-            </div>
-          </div>
-          <div class="opt-group">
-            <span class="opt-label">During scenes</span>
-            <div class="seg" id="seg-face">
-              <button data-face="full" class="on"><i class="fm fm-full"></i><span class="t">Full-frame cuts <small>Scene or your face</small></span></button>
-              <button data-face="bubble"><i class="fm fm-bubble"></i><span class="t">Face bubble <small>Your face in a corner</small></span></button>
-            </div>
+        <div class="wiz-nav"><button class="btn ghost lg" data-back="1"><svg><use href="#i-left"/></svg>Back</button><button class="btn primary lg" data-next="3" id="btn-style-next">Continue<svg><use href="#i-right"/></svg></button></div>
+      </div>
+
+      <!-- 3 SETTINGS -->
+      <div class="panel" id="panel-settings" data-step="3">
+        <div class="panel-head"><span class="num">3</span><div><h3>Video settings</h3><p>How your video is framed and edited. You can change these later.</p></div></div>
+        <div class="opt-group">
+          <span class="opt-label">Format</span>
+          <div class="choices two" id="seg-format">
+            <button data-aspect="vertical" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span><span class="ct"><b>Vertical 9:16</b><small>TikTok, Reels, Shorts</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-aspect="horizontal"><span class="ci"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span><span class="ct"><b>Horizontal 16:9</b><small>YouTube</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
+        <div class="opt-group">
+          <span class="opt-label">Edit pacing</span>
+          <div class="choices three" id="seg-pacing">
+            <button data-pacing="mostly"><span class="ct"><b>Mostly story</b><small>Your intro, then mostly illustrations with quick cuts back to you</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="balanced" class="on"><span class="ct"><b>Balanced <em class="rec">Recommended</em></b><small>About half you on camera, half illustrations</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="story"><span class="ct"><b>Story only</b><small>Illustrations the whole way, your voice over them</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+          </div>
+        </div>
+        <div class="opt-group">
+          <span class="opt-label">During scenes</span>
+          <div class="choices two" id="seg-face">
+            <button data-face="full" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Full-frame cuts</b><small>Show the scene or your face</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+          </div>
+        </div>
+        <div class="wiz-nav"><button class="btn ghost lg" data-back="2"><svg><use href="#i-left"/></svg>Back</button><button class="btn primary lg" data-next="4">Continue<svg><use href="#i-right"/></svg></button></div>
       </div>
 
       <!-- 3 CREATE -->
-      <div class="panel locked" id="panel-create" data-step="3">
-        <div class="panel-head"><span class="num">3</span><div><h3>Create your video</h3><p>We transcribe your story, plan the edit, design your cast, then draw every scene.</p></div></div>
+      <div class="panel" id="panel-create" data-step="4">
+        <div class="panel-head"><span class="num">4</span><div><h3>Create your video</h3><p>We transcribe your story, plan the edit, design your cast, then draw every scene.</p></div></div>
         <div class="prep">
           <div class="prep-card spot" id="prep-transcript">
             <div class="prep-ico"><svg><use href="#i-film"/></svg></div>
@@ -259,11 +267,12 @@
           <div class="chars" id="chars"></div>
           <button class="btn primary lg" id="btn-approve"><svg><use href="#i-check"/></svg>Looks good, draw the scenes</button>
         </div>
+        <div class="wiz-nav"><button class="btn ghost lg" data-back="3"><svg><use href="#i-left"/></svg>Back</button><button class="btn glass lg" data-next="5" id="btn-to-editor" hidden>Open the editor<svg><use href="#i-right"/></svg></button></div>
       </div>
 
       <!-- 4 EDITOR -->
-      <div class="panel locked editor" id="panel-editor" data-step="4">
-        <div class="panel-head"><span class="num">4</span><div><h3>Edit &amp; export</h3><p>Scrub the timeline, tap any clip to change it, add sound effects, then export.</p></div></div>
+      <div class="panel editor" id="panel-editor" data-step="5">
+        <div class="panel-head"><span class="num">5</span><div><h3>Edit &amp; export</h3><p>Scrub the timeline, tap any clip to change it, add sound effects, then export.</p></div></div>
 
         <div class="ed">
           <div class="ed-view">
@@ -345,6 +354,8 @@
             <div class="tl-head" id="playhead"></div>
           </div>
         </div>
+        <div class="wiz-nav"><button class="btn ghost lg" data-back="4"><svg><use href="#i-left"/></svg>Back to create</button><span></span></div>
+      </div>
       </div>
     </section>
 
