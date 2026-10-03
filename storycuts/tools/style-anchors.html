@@ -34,8 +34,8 @@
     <p class="lead">Each built-in style gets one official reference image. It's attached to every character and scene drawn in that style, so the look stays the same for every user, every time. It's also the thumbnail on the style slider.</p>
     <ol class="steps">
       <li>Make sure your OpenAI key is saved on the main StoryCuts page (API keys).</li>
-      <li>Click <b>Draw</b> on a style. Redraw until you love it. Every style draws the same scene, so you can compare them.</li>
-      <li>Click <b>Download</b> on the ones you're happy with and send the files to Claude. They'll be added to the site.</li>
+      <li>Click <b>Draw all styles</b> (or Draw on single ones). Redraw any you don't love. Every style draws the same scene, so you can compare them.</li>
+      <li>Click <b>Download all</b> (or Download on single ones) and drag the files into your chat with Claude. They'll be added to the site.</li>
     </ol>
     <div class="bar">
       <label class="field" style="min-width:260px">Quality
@@ -44,8 +44,11 @@
           <option value="gpt-image-2">Medium (about $0.05 each)</option>
         </select>
       </label>
+      <button class="btn primary" id="draw-all">Draw all styles</button>
+      <button class="btn glass" id="dl-all" disabled>Download all</button>
       <span class="status" id="status"></span>
     </div>
+    <div class="progress hidden" id="prog"><div></div></div>
     <div class="grid" id="grid"></div>
   </div>
   <div class="toast" id="toast"></div>
@@ -56,13 +59,14 @@
     const urls = {};
 
     function render() {
+      const dl = document.querySelector('#dl-all'); if (dl) dl.disabled = !Object.keys(urls).length;
       $('#grid').innerHTML = Object.entries(STYLES).map(([id, s]) => `
         <div class="card" data-id="${id}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
-          <div class="art">${urls[id] ? `<img src="${urls[id]}" alt="">` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
+          <div class="art">${busy.has(id) ? '<div class="art-busy"><small>Drawing…</small></div>' : urls[id] ? `<img src="${urls[id]}" alt="">` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
           <div class="meta">
             <b>${s.label}</b>
             <div class="row">
-              <button class="btn primary sm" data-draw="${id}">${urls[id] || s.anchor ? 'Redraw' : 'Draw'}</button>
+              <button class="btn primary sm" data-draw="${id}" ${busy.has(id) ? 'disabled' : ''}>${urls[id] || s.anchor ? 'Redraw' : 'Draw'}</button>
               ${urls[id] ? `<a class="btn glass sm" href="${urls[id]}" download="${id}.png">Download</a>` : ''}
             </div>
           </div>
@@ -74,23 +78,51 @@
       return `ART STYLE: ${s.prompt} Avoid: ${s.avoid}. Polished, professional, finished artwork; this image defines the house style for an entire series, so make it a clean, beautiful, representative example of the style.\n\nScene: ${STYLE_SUBJECT}\n\nAbsolutely no text, letters, logos or watermarks.`;
     }
 
-    $('#grid').addEventListener('click', async (e) => {
-      const id = e.target.dataset?.draw;
-      if (!id) return;
+    const busy = new Set();
+    async function draw(id) {
       const key = get('storycuts:okey');
-      if (!key) { $('#status').textContent = 'No OpenAI key found. Save it on the main StoryCuts page first.'; $('#status').className = 'status err'; return; }
-      e.target.classList.add('busy');
-      $('#status').textContent = `Drawing ${STYLES[id].label}… (up to a minute)`; $('#status').className = 'status busy';
+      if (!key) { $('#status').textContent = 'No OpenAI key found. Save it on the main StoryCuts page (API keys) first, in this same browser.'; $('#status').className = 'status err'; return false; }
+      busy.add(id); render();
       try {
         const blob = await drawImage({ openai: key }, $('#quality').value, [{ text: prompt(id) }], '9:16');
         if (urls[id]) URL.revokeObjectURL(urls[id]);
         urls[id] = URL.createObjectURL(blob);
-        $('#status').textContent = `${STYLES[id].label} drawn.`; $('#status').className = 'status ok';
+        return true;
       } catch (err) {
         console.error(err);
         $('#status').textContent = `Couldn't draw ${STYLES[id].label}: ${err.message}`; $('#status').className = 'status err';
+        return false;
+      } finally { busy.delete(id); render(); }
+    }
+
+    $('#grid').addEventListener('click', async (e) => {
+      const id = e.target.dataset?.draw;
+      if (!id || busy.has(id)) return;
+      $('#status').textContent = `Drawing ${STYLES[id].label}… (up to a minute)`; $('#status').className = 'status busy';
+      if (await draw(id)) { $('#status').textContent = `${STYLES[id].label} drawn. Happy with it? Download it.`; $('#status').className = 'status ok'; }
+    });
+
+    $('#draw-all').addEventListener('click', async () => {
+      const ids = Object.keys(STYLES).filter((id) => !urls[id]);
+      if (!ids.length) { $('#status').textContent = 'All styles are drawn. Use Redraw on any you want to change.'; return; }
+      const cost = ids.length * ($('#quality').value.includes('high') ? 0.15 : 0.05);
+      if (!confirm(`Draw ${ids.length} styles? Roughly $${cost.toFixed(2)} of OpenAI credit.`)) return;
+      $('#draw-all').disabled = true;
+      $('#prog').classList.remove('hidden');
+      let done = 0;
+      const queue = [...ids];
+      const worker = async () => { while (queue.length) { const id = queue.shift(); await draw(id); done++; $('#prog').firstElementChild.style.width = `${(done / ids.length) * 100}%`; $('#status').textContent = `Drawn ${done} of ${ids.length}…`; $('#status').className = 'status busy'; } };
+      await Promise.all([worker(), worker()]);
+      $('#draw-all').disabled = false;
+      $('#status').textContent = 'Done. Redraw any you don\'t love, then Download all and send the files to Claude.'; $('#status').className = 'status ok';
+    });
+
+    $('#dl-all').addEventListener('click', async () => {
+      for (const [id, url] of Object.entries(urls)) {
+        const a = Object.assign(document.createElement('a'), { href: url, download: `${id}.png` });
+        document.body.appendChild(a); a.click(); a.remove();
+        await new Promise((r) => setTimeout(r, 400));
       }
-      render();
     });
 
     loadStyleManifest().then(render);

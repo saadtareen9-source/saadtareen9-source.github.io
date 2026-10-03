@@ -775,3 +775,10 @@ details > *:not(summary) { animation: rise 0.45s var(--ease) both; }
   .transport .tc { font-size: 0.74rem; }
   .ed .play { width: 48px; height: 48px; }
 }
+.transport .tc { white-space: nowrap; }
+@media (max-width: 640px) {
+  .transport { grid-template-columns: auto 1fr auto; }
+  .transport-mid { justify-content: center; gap: 10px; }
+  .transport .tc { font-size: 0.74rem; }
+  .ed .play { width: 48px; height: 48px; }
+}
