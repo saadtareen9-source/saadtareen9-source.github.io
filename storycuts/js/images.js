@@ -16,21 +16,55 @@ export const IMAGE_MODELS = [
 
 export const modelInfo = (id) => IMAGE_MODELS.find((m) => m.id === id) || IMAGE_MODELS[0];
 
+// `tint` colours the style card. To show a real preview image, add it under
+// assets/styles/ and set `thumb: 'assets/styles/<id>.jpg'` on the style.
 export const STYLES = {
   stick: {
     label: 'Stick figures',
+    blurb: 'Funny, simple, made for storytime',
+    tint: ['#fde68a', '#fca5a5'],
     prompt: 'Charming hand-drawn stick-figure cartoon in the style of popular animated storytime YouTube channels: characters have round white heads with simple expressive faces, thick clean black outlines, simple colored clothing, flat pastel colors, soft simple backgrounds, bright and funny, clean composition.',
   },
   cartoon: {
     label: 'Flat cartoon',
+    blurb: 'Bold, bright explainer look',
+    tint: ['#93c5fd', '#c4b5fd'],
     prompt: 'Modern flat 2D cartoon illustration, bold clean outlines, rounded friendly character designs with big expressive faces, vibrant flat colors with subtle shading, simple uncluttered backgrounds, like a high-quality animated explainer video.',
+  },
+  anime: {
+    label: 'Anime',
+    blurb: 'Expressive, cinematic, cel-shaded',
+    tint: ['#f9a8d4', '#a5b4fc'],
+    prompt: 'Clean modern anime illustration, crisp line art, cel shading, expressive faces and reactions, vivid colors, cinematic anime background art, high quality key-visual look.',
+  },
+  '3d': {
+    label: '3D animated',
+    blurb: 'Feature-film 3D characters',
+    tint: ['#67e8f9', '#86efac'],
+    prompt: 'Stylized 3D animated movie still: appealing rounded characters with big expressive eyes, soft global illumination, subsurface skin shading, rich colors, shallow depth of field, like a frame from a modern family animated feature.',
+  },
+  realistic: {
+    label: 'Realistic',
+    blurb: 'Cinematic, photo-real scenes',
+    tint: ['#cbd5e1', '#fcd34d'],
+    prompt: 'Cinematic photorealistic film still, natural lighting, realistic people and places, 35mm lens, shallow depth of field, subtle film grain, emotionally expressive faces.',
   },
   comic: {
     label: 'Comic book',
+    blurb: 'Inked lines, punchy colour',
+    tint: ['#fdba74', '#f87171'],
     prompt: 'Punchy comic-book illustration, dynamic inked line art, halftone shading, saturated colors, exaggerated funny expressions, cinematic framing.',
+  },
+  clay: {
+    label: 'Claymation',
+    blurb: 'Handmade stop-motion charm',
+    tint: ['#fcd34d', '#fb923c'],
+    prompt: 'Claymation stop-motion scene: handmade plasticine characters with visible fingerprints and texture, miniature handcrafted sets, soft studio lighting, charming and slightly goofy.',
   },
   storybook: {
     label: 'Storybook',
+    blurb: 'Soft watercolour warmth',
+    tint: ['#bbf7d0', '#fde68a'],
     prompt: 'Warm children\'s storybook illustration, soft gouache and watercolor textures, gentle colors, cute rounded characters, cozy detailed backgrounds.',
   },
 };
@@ -387,7 +421,7 @@ export async function generateSceneImage(project, seg, { keys, opts, projectKey,
   const ids = [...new Set(seg.scene.actors.map((a) => a.character_id))];
   const cast = ids.map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);
   const refs = (await Promise.all(cast.map(refFor))).filter(Boolean);
-  const bubbleNote = seg.type === 'scene_bubble'
+  const bubbleNote = seg.type === 'scene_bubble' && project.settings.faceMode === 'bubble'
     ? `Keep the ${project.settings.bubbleSide === 'left' ? 'top-left' : 'top-right'} corner free of important detail (a face overlay goes there).` : '';
   const brief = `${sceneBrief(project, seg)}${note ? ` ${note}` : ''}`;
   const buildParts = (hints) => {

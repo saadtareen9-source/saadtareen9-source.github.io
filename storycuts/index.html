@@ -3,192 +3,316 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>StoryCuts: tell your story, we'll illustrate it</title>
-  <meta name="description" content="Upload a video of yourself telling a story. StoryCuts edits it into an illustrated video: your face for the best moments, stick-figure scenes for the action, the same characters throughout.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='22' r='14' fill='white' stroke='black' stroke-width='6'/><path d='M50 36v32M50 68l-16 26M50 68l16 26M50 46l-20 14M50 46l20-14' stroke='black' stroke-width='6' stroke-linecap='round'/></svg>">
+  <title>StoryCuts: turn your storytime into an illustrated video</title>
+  <meta name="description" content="Upload a video of yourself telling a story. StoryCuts keeps your face for the best moments and cuts to AI illustrations that act out what you're saying, with the same characters throughout.">
+  <meta name="theme-color" content="#0b0b14">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%238b5cf6'/><stop offset='.55' stop-color='%23ec4899'/><stop offset='1' stop-color='%23f59e0b'/></linearGradient></defs><rect width='64' height='64' rx='16' fill='url(%23g)'/><path d='M24 18l22 14-22 14z' fill='white'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="22" r="14" fill="#fff" stroke="#141414" stroke-width="7"/><path d="M50 36v32M50 68l-16 26M50 68l16 26M50 46l-20 14M50 46l20-14" stroke="#141414" stroke-width="7" stroke-linecap="round" fill="none"/></svg>
-      <span>StoryCuts</span>
-    </div>
-    <nav>
-      <button class="ghost" id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
-      <button class="ghost" id="btn-settings">Settings</button>
+  <!-- icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.5 0-.9-.7-1.3-.7-2.2 0-.9.8-1.6 1.7-1.6H17a4 4 0 004-4c0-4.7-4-8.7-9-8.7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="7.5" cy="11" r="1.3" fill="currentColor"/><circle cx="10" cy="7" r="1.3" fill="currentColor"/><circle cx="14.5" cy="7" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1" fill="currentColor"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 010 11H11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10.8 12.2L20 3m-3 3l3 3m-6 0l2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M4 19h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="17" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8.5L20 18M8 15.5L20 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><path d="M4 7h6l4 5-4 5H4M20 12h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-wand" viewBox="0 0 24 24"><path d="M4 20L15 9m2-5v3m0 6v-1m4-4h-3m-6 0h1m6.5-4.5l-2 2m-7 7l-1 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2-.5-2.5-1.2M12 6.5v11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="StoryCuts home">
+      <span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>
+      StoryCuts
+    </a>
+    <nav class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#studio">Studio</a>
+      <a href="#faq">FAQ</a>
     </nav>
+    <button class="btn ghost sm" id="btn-keys" data-tip="Connect your AI accounts"><svg><use href="#i-key"/></svg><span>API keys</span><i class="dot" id="keys-dot"></i></button>
   </header>
 
-  <section class="hero" id="hero">
-    <h1>Tell your story on camera.<br><span>We'll turn it into a cartoon around you.</span></h1>
-    <p>Upload a storytime video. StoryCuts keeps your face for the hook, punchlines and reactions, and cuts away to stick-figure scenes that act out what you're describing, with the same characters every time.</p>
-  </section>
-
-  <main id="app">
-    <!-- 1 -->
-    <section class="card" id="step-upload" data-step="1">
-      <h2><b>1</b> Upload your video</h2>
-      <label class="drop" id="drop">
-        <input type="file" id="file" accept="video/*" hidden>
-        <strong>Drop a video here</strong> or click to choose.
-        <small>Phone videos work great. Everything stays in your browser; your video is never uploaded anywhere.</small>
-      </label>
-      <label class="check"><input type="checkbox" id="rights"> I own this video or have the rights to edit it.</label>
-      <div class="row hidden" id="video-info"></div>
-      <p class="row"><button class="link" id="btn-demo">No video handy? Try the built-in demo story</button></p>
-    </section>
-
-    <!-- 2 -->
-    <section class="card locked" id="step-transcript" data-step="2">
-      <h2><b>2</b> Transcript</h2>
-      <div class="row">
-        <button class="primary" id="btn-transcribe">Transcribe automatically</button>
-        <select id="asr-quality" title="Model size">
-          <option value="fast">Fast (Whisper base)</option>
-          <option value="accurate">Accurate (Whisper small)</option>
-        </select>
-        <span class="muted">Free, runs on your device.</span>
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow"><i></i> AI editor for storytime creators</span>
+        <h1>Tell your story on camera.<br><span class="grad">We'll illustrate it.</span></h1>
+        <p class="lead">Upload a video of yourself telling a story. StoryCuts keeps your face for the hook and the punchlines, and cuts to scenes that act out what you're describing, with the same characters in every shot.</p>
+        <div class="hero-ctas">
+          <a class="btn primary lg" href="#studio"><svg><use href="#i-upload"/></svg>Upload your video</a>
+          <button class="btn glass lg" id="cta-demo"><svg><use href="#i-play"/></svg>Try the demo story</button>
+        </div>
+        <ul class="trust">
+          <li><svg><use href="#i-shield"/></svg>Your video stays on your device</li>
+          <li><svg><use href="#i-coin"/></svg>Pay only for what you generate</li>
+          <li><svg><use href="#i-user"/></svg>You stay the star</li>
+        </ul>
       </div>
-      <details id="paste-box">
-        <summary>…or paste the transcript yourself</summary>
-        <textarea id="paste-text" rows="5" placeholder="So my dad walks into the kitchen, sees the smoke, and just freezes…"></textarea>
-        <button id="btn-use-paste">Use this text</button>
-        <small class="muted">StoryCuts lines the words up with the speech in your audio.</small>
-      </details>
-      <div class="status" id="asr-status"></div>
-      <div class="transcript hidden" id="transcript"></div>
-    </section>
-
-    <!-- 3 -->
-    <section class="card locked" id="step-plan" data-step="3">
-      <h2><b>3</b> Plan the edit</h2>
-      <p class="muted">The editor decides, line by line: <span class="tag face">your face</span> for the hook, punchlines and reactions, a <span class="tag scene">stick-figure scene</span> when you describe something happening, or <span class="tag scene_bubble">scene + your face</span> when both matter.</p>
-      <label class="field">Notes for the editor (optional)
-        <input id="plan-notes" placeholder="e.g. my dad is very tall, the dog is called Biscuit, keep it chaotic">
-      </label>
-      <div class="row">
-        <button class="primary" id="btn-plan-ai">Plan with Claude</button>
-        <span class="muted" id="cost"></span>
-      </div>
-      <div class="row"><button class="link" id="btn-plan-quick">No API key? Use the quick offline planner</button></div>
-      <div class="status" id="plan-status"></div>
-      <div class="qc hidden" id="qc"></div>
-    </section>
-
-    <!-- 4 -->
-    <section class="card locked" id="step-chars" data-step="4">
-      <h2><b>4</b> Approve your cast</h2>
-      <p class="muted">Everyone in your story gets one design, and every scene is drawn from it so they look the same throughout. Edit the descriptions, draw their looks, then approve.</p>
-      <div class="row">
-        <button class="primary" id="btn-gen-chars">Draw the characters with AI</button>
-        <span class="muted" id="chars-cost"></span>
-      </div>
-      <div class="status" id="chars-status"></div>
-      <div class="chars" id="chars"></div>
-      <div class="row">
-        <button id="btn-add-char">+ Add character</button>
-        <button class="primary" id="btn-approve">Approve cast</button>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="phone">
+          <div class="phone-screen">
+            <div class="shot shot-face">
+              <div class="face-sil"></div>
+              <span class="shot-tag">YOU</span>
+            </div>
+            <div class="shot shot-scene">
+              <div class="scene-art"></div>
+              <span class="shot-tag">SCENE</span>
+            </div>
+            <div class="cap"><span>MY DAD</span> <b>FREEZES</b></div>
+          </div>
+        </div>
+        <div class="float-card fc1"><svg><use href="#i-spark"/></svg><div><b>Scene drawn</b><small>Dad freezes in a smoky kitchen</small></div></div>
+        <div class="float-card fc2"><svg><use href="#i-check"/></svg><div><b>Quality checked</b><small>Characters match · no stray text</small></div></div>
       </div>
     </section>
 
-    <!-- 5 -->
-    <section class="card locked wide" id="step-review" data-step="5">
-      <h2><b>5</b> Generate the scenes &amp; review</h2>
-      <div class="row gen-bar">
-        <button class="primary" id="btn-gen-scenes">Generate all scene images</button>
-        <span class="muted" id="scenes-cost"></span>
+    <!-- HOW -->
+    <section class="how" id="how">
+      <h2 class="section-title">From talking head to illustrated story in three steps</h2>
+      <div class="how-grid">
+        <article class="how-card"><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Upload</h3><p>Film yourself telling a story on your phone and drop the video in.</p></article>
+        <article class="how-card"><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Pick a style</h3><p>Stick figures, anime, 3D, realistic and more. Your cast is designed once and stays consistent.</p></article>
+        <article class="how-card"><span class="how-ico"><svg><use href="#i-film"/></svg></span><h3>Review &amp; export</h3><p>An AI editor plans every cut. Tweak anything, then export for TikTok, Reels, Shorts or YouTube.</p></article>
       </div>
-      <div class="progress hidden" id="gen-progress"><div></div></div>
-      <div class="status" id="scenes-status"></div>
-      <div class="review">
-        <div class="player">
-          <div class="aspect-toggle" role="tablist">
+    </section>
+
+    <!-- STUDIO -->
+    <section class="studio" id="studio">
+      <div class="studio-head">
+        <h2 class="section-title">Studio</h2>
+        <ol class="stepper" id="stepper">
+          <li data-s="1"><span>1</span>Upload</li>
+          <li data-s="2"><span>2</span>Style</li>
+          <li data-s="3"><span>3</span>Create</li>
+          <li data-s="4"><span>4</span>Edit &amp; export</li>
+        </ol>
+      </div>
+
+      <!-- 1 UPLOAD -->
+      <div class="panel" id="panel-upload" data-step="1">
+        <div class="panel-head"><span class="num">1</span><div><h3>Upload your video</h3><p>A vertical phone video of you telling a story works best. 30 seconds to 5 minutes.</p></div></div>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="video/*" hidden>
+          <span class="drop-ico"><svg><use href="#i-upload"/></svg></span>
+          <strong>Drop your video here</strong>
+          <span>or <u>browse your files</u> · MP4, MOV or WebM</span>
+        </label>
+        <div class="upload-foot">
+          <label class="check"><input type="checkbox" id="rights"><span class="box"><svg><use href="#i-check"/></svg></span>I own this video or have the rights to edit it</label>
+          <button class="btn link" id="btn-demo">No video handy? Use the demo story</button>
+        </div>
+        <div class="file-chip hidden" id="video-info"></div>
+      </div>
+
+      <!-- 2 STYLE -->
+      <div class="panel locked" id="panel-style" data-step="2">
+        <div class="panel-head"><span class="num">2</span><div><h3>Choose your style</h3><p>Every character and scene is drawn in this style.</p></div></div>
+        <div class="slider">
+          <button class="slide-btn prev" id="style-prev" aria-label="Previous styles"><svg><use href="#i-left"/></svg></button>
+          <div class="style-track" id="style-track" role="radiogroup" aria-label="Art style"></div>
+          <button class="slide-btn next" id="style-next" aria-label="More styles"><svg><use href="#i-right"/></svg></button>
+        </div>
+        <div class="options">
+          <div class="opt-group">
+            <span class="opt-label">Format</span>
+            <div class="seg" id="seg-format">
+              <button data-aspect="vertical" class="on"><i class="ar ar-v"></i>9:16 <small>TikTok · Reels · Shorts</small></button>
+              <button data-aspect="horizontal"><i class="ar ar-h"></i>16:9 <small>YouTube</small></button>
+            </div>
+          </div>
+          <div class="opt-group">
+            <span class="opt-label">During scenes</span>
+            <div class="seg" id="seg-face">
+              <button data-face="full" class="on"><i class="fm fm-full"></i>Full-frame cuts <small>Scene or your face</small></button>
+              <button data-face="bubble"><i class="fm fm-bubble"></i>Face bubble <small>Your face in a corner</small></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 CREATE -->
+      <div class="panel locked" id="panel-create" data-step="3">
+        <div class="panel-head"><span class="num">3</span><div><h3>Create your video</h3><p>We transcribe your story, plan the edit, design your cast, then draw every scene.</p></div></div>
+        <div class="create-row">
+          <button class="btn primary xl" id="btn-create"><svg><use href="#i-spark"/></svg><span>Create my video</span></button>
+          <div class="create-meta"><span id="create-cost" class="muted"></span><button class="btn link sm" id="btn-reset" hidden>Start over</button></div>
+        </div>
+        <ol class="pipeline" id="pipeline">
+          <li data-stage="transcribe"><i></i><div><b>Transcribe</b><small>Every word, with timing</small></div></li>
+          <li data-stage="plan"><i></i><div><b>Plan the edit</b><small>When to show you, when to cut away</small></div></li>
+          <li data-stage="cast"><i></i><div><b>Design your cast</b><small>One look per character</small></div></li>
+          <li data-stage="scenes"><i></i><div><b>Draw the scenes</b><small>Checked and redrawn if needed</small></div></li>
+        </ol>
+        <div class="status" id="create-status"></div>
+
+        <div class="paste hidden" id="paste-box">
+          <p><b>Automatic transcription didn't work on this device.</b> Paste what you say in the video and we'll line it up with your audio.</p>
+          <textarea id="paste-text" rows="4" placeholder="So my dad walks into the kitchen, sees the smoke, and just freezes…"></textarea>
+          <button class="btn primary" id="btn-use-paste">Use this transcript &amp; continue</button>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced options</summary>
+          <div class="adv-grid">
+            <label class="field">Notes for the AI editor
+              <input id="plan-notes" placeholder="e.g. my dad is very tall, the dog is called Biscuit">
+            </label>
+            <label class="field">Transcription
+              <select id="asr-quality"><option value="fast">Fast (Whisper base)</option><option value="accurate">Accurate (Whisper small)</option></select>
+            </label>
+          </div>
+        </details>
+
+        <div class="cast hidden" id="cast">
+          <div class="cast-head">
+            <div><h4>Meet your cast</h4><p>Edit a description and redraw anyone you don't love. Then we'll draw the scenes.</p></div>
+            <div class="cast-actions">
+              <button class="btn glass sm" id="btn-add-char" data-tip="Add a person or pet">+ Character</button>
+              <button class="btn glass sm" id="btn-gen-chars" data-tip="Draw anyone missing a design"><svg><use href="#i-redo"/></svg>Draw all</button>
+            </div>
+          </div>
+          <div class="status" id="chars-status"></div>
+          <div class="chars" id="chars"></div>
+          <button class="btn primary lg" id="btn-approve"><svg><use href="#i-check"/></svg>Looks good, draw the scenes</button>
+        </div>
+      </div>
+
+      <!-- 4 EDITOR -->
+      <div class="panel locked editor" id="panel-editor" data-step="4">
+        <div class="panel-head"><span class="num">4</span><div><h3>Edit &amp; export</h3><p>Click any shot on the timeline to change it. Everything updates live.</p></div></div>
+
+        <div class="toolbar">
+          <button class="icon-btn" id="btn-undo" data-tip="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
+          <div class="seg small" id="seg-aspect">
             <button data-aspect="vertical" class="on">9:16</button>
             <button data-aspect="horizontal">16:9</button>
           </div>
-          <div class="stage" id="stage"><canvas id="preview"></canvas></div>
-          <div class="controls">
-            <button id="btn-play" class="primary round" aria-label="Play">▶</button>
-            <input type="range" id="scrub" min="0" max="1000" value="0">
-            <span id="time">0:00</span>
-          </div>
-          <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
-          <div class="legend"><span class="tag face">face</span><span class="tag scene">scene</span><span class="tag scene_bubble">scene + face</span></div>
+          <span class="grow"></span>
+          <span class="muted small" id="scenes-cost"></span>
+          <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
         </div>
-        <div class="inspector" id="inspector"><p class="muted">Select a shot on the timeline.</p></div>
+        <div class="progress hidden" id="gen-progress"><div></div></div>
+        <div class="status" id="scenes-status"></div>
+
+        <div class="review">
+          <div class="player">
+            <div class="stage" id="stage"><canvas id="preview"></canvas></div>
+            <div class="controls">
+              <button class="play" id="btn-play" aria-label="Play"><svg><use href="#i-play"/></svg></button>
+              <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Seek">
+              <span id="time">0:00</span>
+            </div>
+          </div>
+          <div class="inspector" id="inspector"><p class="muted">Select a shot on the timeline.</p></div>
+        </div>
+
+        <div class="timeline-wrap">
+          <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
+          <div class="legend"><span class="key face">Your face</span><span class="key scene">Scene</span><span class="key scene_bubble bubble-only">Scene + face</span></div>
+        </div>
+
+        <details class="transcript-box">
+          <summary>Transcript</summary>
+          <div class="transcript" id="transcript"></div>
+        </details>
+
+        <div class="export">
+          <div class="export-opts">
+            <label class="switch"><input type="checkbox" id="opt-captions" checked><span></span>Captions</label>
+            <label class="switch"><input type="checkbox" id="opt-upper" checked><span></span>UPPERCASE</label>
+            <label class="switch"><input type="checkbox" id="opt-punch" checked><span></span>Zoom on face cuts</label>
+            <label class="switch"><input type="checkbox" id="opt-watermark"><span></span>"made with StoryCuts"</label>
+            <label class="range-field">Face framing <input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
+          </div>
+          <div class="export-actions">
+            <button class="btn glass sm" id="btn-srt" data-tip="Caption file for any editor"><svg><use href="#i-download"/></svg>Captions .srt</button>
+            <button class="btn glass sm" id="btn-save" data-tip="Download your edit to reopen later"><svg><use href="#i-download"/></svg>Save project</button>
+            <label class="btn glass sm" data-tip="Reopen a saved project">Open project<input type="file" id="load-project" accept=".json,application/json" hidden></label>
+            <button class="btn primary lg" id="btn-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
+          </div>
+          <div class="progress hidden" id="ex-progress"><div></div></div>
+          <div class="status" id="ex-status"></div>
+          <p class="muted small">Export plays your video once in real time while it records. Keep this tab open until it finishes.</p>
+        </div>
       </div>
     </section>
 
-    <!-- 6 -->
-    <section class="card locked" id="step-export" data-step="6">
-      <h2><b>6</b> Export</h2>
-      <div class="grid2">
-        <label class="field">Format
-          <select id="ex-aspect">
-            <option value="vertical">Vertical 9:16 · TikTok, Reels, Shorts</option>
-            <option value="horizontal">Horizontal 16:9 · YouTube</option>
-          </select>
-        </label>
-        <label class="field">Face framing (left ↔ right)
-          <input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5">
-        </label>
-        <label class="check"><input type="checkbox" id="opt-captions" checked> Captions</label>
-        <label class="check"><input type="checkbox" id="opt-upper" checked> UPPERCASE captions</label>
-        <label class="check"><input type="checkbox" id="opt-punch" checked> Punch-in zoom on face cuts</label>
-        <label class="check"><input type="checkbox" id="opt-bubble-left"> Face bubble on the left</label>
-        <label class="check"><input type="checkbox" id="opt-watermark"> "made with StoryCuts" tag</label>
-      </div>
-      <div class="row">
-        <button class="primary" id="btn-export">Export video</button>
-        <button id="btn-srt">Download captions (.srt)</button>
-        <button id="btn-save">Save project</button>
-        <label class="btn">Open project<input type="file" id="load-project" accept=".json,application/json" hidden></label>
-      </div>
-      <p class="muted small">Export renders in real time while your video plays once. Keep this tab in front until it finishes.</p>
-      <div class="progress hidden" id="ex-progress"><div></div></div>
-      <div class="status" id="ex-status"></div>
+    <!-- FAQ -->
+    <section class="faq" id="faq">
+      <h2 class="section-title">Questions</h2>
+      <details><summary>Is my video uploaded anywhere?</summary><p>No. Your video is played and edited inside your browser. Only the words you say are sent to the AI editor, and only the scene descriptions (plus your character designs) are sent to the image model.</p></details>
+      <details><summary>What does it cost?</summary><p>StoryCuts uses your own AI accounts, so you pay the providers directly: about a few cents per drawn image and a few cents to plan the edit. A 1-minute story typically costs well under a dollar. You see an estimate before anything is generated.</p></details>
+      <details><summary>Will my characters look the same in every scene?</summary><p>Yes, that's the point. Each character is designed once, you approve the look, and every scene is drawn with those designs as reference. Every image is also checked automatically and redrawn if a character doesn't match.</p></details>
+      <details><summary>Which apps can I post to?</summary><p>Export vertical 9:16 for TikTok, Instagram Reels and YouTube Shorts, or horizontal 16:9 for YouTube, with captions burned in.</p></details>
     </section>
   </main>
 
+  <footer class="foot">
+    <div class="brand small"><span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>StoryCuts</div>
+    <p>Tell your story, and we'll bring it to life around you.</p>
+  </footer>
+
+  <!-- API keys -->
   <dialog id="settings">
-    <form method="dialog">
-      <h3>Settings</h3>
-      <label class="field">Anthropic API key
+    <form method="dialog" class="modal">
+      <div class="modal-head">
+        <h3>Connect your AI accounts</h3>
+        <p>StoryCuts runs on your own AI accounts. Keys are saved only in this browser and sent straight to each provider.</p>
+      </div>
+      <label class="field">Claude API key <span class="hint">plans the edit and checks every image</span>
         <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-…">
       </label>
-      <small class="muted">Used only for "Plan with Claude" and "Redo with AI". Stored in this browser only and sent directly to api.anthropic.com. Get one at console.anthropic.com.</small>
-      <label class="field">Claude model
-        <select id="model">
-          <option value="claude-opus-5-5">Claude Opus 5.5 (best edits)</option>
-          <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
-        </select>
-      </label>
-      <hr>
-      <label class="field">OpenAI API key (draws the pictures)
+      <a class="help" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a Claude key →</a>
+      <label class="field">OpenAI API key <span class="hint">draws your characters and scenes</span>
         <input id="openai-key" type="password" autocomplete="off" placeholder="sk-…">
       </label>
-      <small class="muted">Get one at platform.openai.com → API keys. Stored in this browser only and sent directly to OpenAI.</small>
-      <label class="field">Google Gemini API key (optional, only if you pick a Google image model below)
-        <input id="gemini-key" type="password" autocomplete="off" placeholder="AIza…">
-      </label>
-      <label class="field">Image model
-        <select id="image-model"></select>
-      </label>
-      <label class="field">Art style
-        <select id="art-style"></select>
-      </label>
-      <label class="check"><input type="checkbox" id="opt-qc" checked> Have Claude check every image and redraw bad ones</label>
-      <div class="row end">
-        <button value="cancel" class="ghost">Close</button>
-        <button value="save" class="primary" id="btn-save-settings">Save</button>
+      <a class="help" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Get an OpenAI key →</a>
+      <details class="advanced">
+        <summary>More options</summary>
+        <label class="field">Image model
+          <select id="image-model"></select>
+        </label>
+        <label class="field">Google Gemini API key <span class="hint">only if you pick a Google image model</span>
+          <input id="gemini-key" type="password" autocomplete="off" placeholder="AIza…">
+        </label>
+        <label class="field">Claude model
+          <select id="model">
+            <option value="claude-opus-5-5">Claude Opus 5.5 (best edits)</option>
+            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="opt-qc" checked><span class="box"><svg><use href="#i-check"/></svg></span>Check every image with Claude and redraw bad ones</label>
+      </details>
+      <div class="modal-foot">
+        <button value="cancel" class="btn ghost">Cancel</button>
+        <button value="save" class="btn primary">Save keys</button>
       </div>
     </form>
   </dialog>
 
   <video id="video" playsinline preload="auto" hidden></video>
-  <div class="toast" id="toast"></div>
-  <footer>StoryCuts prototype · illustrations by OpenAI GPT Image, editing and quality checks by Claude.</footer>
+  <div class="toast" id="toast" role="status"></div>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

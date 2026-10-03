@@ -6,6 +6,11 @@ same characters throughout.
 
 Live at **https://saadtareen9-source.github.io/storycuts/** (static site, no backend, no build step).
 
+## The flow
+Upload → choose a style (slider of style cards) → **Create my video** (transcribe, plan, design the cast; you approve it) → scenes are drawn → edit & export.
+Scenes are full-frame cuts by default; a "face bubble" mode keeps your face in a corner during scenes.
+Style card thumbnails: drop an image in `assets/styles/` and set `thumb` on the style in `js/images.js`.
+
 ## The six MVP steps
 1. **Upload** a video (stays in the browser; rights confirmation required).
 2. **Transcript with word timestamps**: Whisper runs locally via transformers.js (free), or paste text and it's aligned to the speech in the audio.

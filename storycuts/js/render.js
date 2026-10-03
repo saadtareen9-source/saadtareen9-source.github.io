@@ -1,7 +1,7 @@
 // Compositor: turns (video, plan, time) into a frame. The same function drives
 // the live preview and the export, so what you review is what you get.
 
-import { drawScene, drawSoundEffect } from './draw.js';
+import { drawSoundEffect } from './draw.js';
 import { bitmapFor, preloadBitmap } from './images.js';
 
 export const ASPECTS = {
@@ -86,6 +86,51 @@ function drawCaptions(ctx, W, H, pages, t, style) {
 
 // ---------- frame ----------
 
+/** With full-frame cuts (the default) a "scene + face" shot is shown as a plain scene. */
+export function shotType(seg, settings) {
+  return seg.type === 'scene_bubble' && settings.faceMode !== 'bubble' ? 'scene' : seg.type;
+}
+
+function wrap(ctx, text, maxW) {
+  const out = [];
+  let line = '';
+  for (const w of text.split(/\s+/)) {
+    const t = line ? `${line} ${w}` : w;
+    if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+/** A clean card for scenes that haven't been drawn yet. */
+function drawPlaceholder(ctx, W, H, seg, local, pending) {
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#1d1533'); g.addColorStop(0.55, '#2a1530'); g.addColorStop(1, '#2d1f12');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const u = Math.min(W, H) / 1000;
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  for (const [x, y, r, c] of [[0.2, 0.25, 0.5, '#8b5cf6'], [0.85, 0.7, 0.45, '#ec4899'], [0.4, 0.95, 0.35, '#f59e0b']]) {
+    const rg = ctx.createRadialGradient(x * W, y * H, 0, x * W, y * H, r * Math.max(W, H));
+    rg.addColorStop(0, c); rg.addColorStop(1, 'transparent');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pulse = pending ? 0.6 + 0.4 * Math.sin(local * 5) : 1;
+  ctx.fillStyle = `rgba(255,255,255,${0.9 * pulse})`;
+  ctx.font = `700 ${46 * u}px Sora, Inter, system-ui, sans-serif`;
+  ctx.fillText(pending ? 'Drawing this scene…' : 'Scene not drawn yet', W / 2, H * 0.4);
+  const desc = seg.scene?.image_prompt || '';
+  if (desc) {
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = `400 ${32 * u}px Inter, system-ui, sans-serif`;
+    wrap(ctx, desc, W * 0.78).slice(0, 5).forEach((l, i) => ctx.fillText(l, W / 2, H * 0.4 + 80 * u + i * 44 * u));
+  }
+  ctx.restore();
+}
+
 /** AI illustration with a slow push-in and drift, plus a little pop on the cut. */
 function drawKenBurns(ctx, img, W, H, local, dur, idx) {
   const prog = Math.min(1, local / Math.max(0.5, dur));
@@ -104,39 +149,27 @@ function drawKenBurns(ctx, img, W, H, local, dur, idx) {
 export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
   const { segments, characters, settings } = project;
   const seg = segmentAt(segments, t);
+  const type = shotType(seg, settings);
   const idx = segments.indexOf(seg);
   const local = t - seg.start;
   const dur = seg.end - seg.start;
   const fx = settings.faceX ?? 0.5, fy = settings.faceY ?? 0.4;
 
-  if (seg.type === 'face' || !seg.scene) {
+  if (type === 'face' || !seg.scene) {
     // alternate punch-in on consecutive face shots, like a jump-cut zoom
     const faceShots = segments.slice(0, idx).filter((s) => s.type === 'face').length;
     const zoom = settings.punchIn && faceShots % 2 === 1 ? 1.15 : 1;
     drawVideoCover(ctx, video, 0, 0, W, H, fx, fy, zoom);
   } else {
-    const sfxSide = seg.type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
+    const sfxSide = type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
     const bmp = seg.image?.key ? bitmapFor(seg.image.key, cache.onImage) : null;
     if (bmp) {
       drawKenBurns(ctx, bmp, W, H, local, dur, idx);
       drawSoundEffect(ctx, seg.scene.sound_effect, W, H, local, Math.min(W, H) / 1000, sfxSide);
     } else {
-      // no AI image yet: a quick drawn draft stands in
-      drawScene(ctx, W, H, seg.scene, characters, local, dur, { sfxSide });
-      if (cache.preview) {
-        const fs = Math.min(W, H) * 0.035;
-        ctx.save();
-        ctx.font = `700 ${fs}px system-ui, sans-serif`;
-        const label = cache.pending?.has(seg.id) ? 'Drawing…' : 'Draft · no AI image yet';
-        const tw = ctx.measureText(label).width;
-        ctx.fillStyle = 'rgba(20,20,20,0.75)';
-        ctx.fillRect(fs * 0.6, H - fs * 2.6, tw + fs * 1.2, fs * 1.7);
-        ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
-        ctx.fillText(label, fs * 1.2, H - fs * 1.75);
-        ctx.restore();
-      }
+      drawPlaceholder(ctx, W, H, seg, local, cache.pending?.has(seg.id));
     }
-    if (seg.type === 'scene_bubble') {
+    if (type === 'scene_bubble') {
       const R = Math.min(W, H) * (H > W ? 0.2 : 0.17);
       const pad = Math.min(W, H) * 0.045;
       const cx = settings.bubbleSide === 'left' ? pad + R : W - pad - R;

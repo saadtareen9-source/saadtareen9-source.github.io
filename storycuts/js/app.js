@@ -1,26 +1,25 @@
-import {
-  SETTINGS, POSES, EXPRESSIONS, HAIR, ACCESSORIES, PROPS, EFFECTS, COLORS,
-} from './constants.js';
-import { drawCharacterCard } from './draw.js';
-import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, ASPECTS } from './render.js';
+import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, ASPECTS, shotType } from './render.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
-import {
-  planWithClaude, heuristicPlan, redoSceneWithClaude, remixScene, estimateCost, DEFAULT_MODEL,
-} from './planner.js';
+import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, decodeAudio, speechSpans } from './transcribe.js';
 import {
   IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, pool,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-const label = (s) => s.replace(/_/g, ' ');
+const fmtUSD = (x) => `$${x < 0.01 ? '0.01' : x.toFixed(2)}`;
+const errText = (e) => `${e?.name && !['Error', 'TypeError'].includes(e.name) ? `${e.name}: ` : ''}${e?.message || e}`;
+const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
 
 const store = {
   get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
 };
+
+const STORAGE_WARN = 'Your browser wouldn\'t let StoryCuts save the pictures, so they\'ll be lost if you close this tab. Use a normal (not private) Chrome window to keep them.';
 
 const state = {
   file: null,
@@ -30,9 +29,10 @@ const state = {
   aspect: 'vertical',
   history: [],
   cache: {},
+  busy: false,
 };
 
-function toast(msg, ms = 3200) {
+function toast(msg, ms = 3400) {
   const t = $('#toast');
   t.textContent = msg; t.classList.add('show');
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), ms);
@@ -40,14 +40,13 @@ function toast(msg, ms = 3200) {
 
 function setStatus(sel, msg, kind = '') {
   const el = $(sel);
+  if (!el) return;
   el.textContent = msg || '';
   el.className = `status ${kind}`;
 }
 
-function unlock(n) {
-  document.querySelectorAll('[data-step]').forEach((el) => {
-    if (+el.dataset.step <= n) el.classList.remove('locked');
-  });
+function scrollTo(sel) {
+  setTimeout(() => $(sel)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
 }
 
 // ---------- media wrappers ----------
@@ -72,8 +71,8 @@ class VideoMedia {
   onEnded(cb) { this.video.addEventListener('ended', cb); return () => this.video.removeEventListener('ended', cb); }
 }
 
-// A stand-in "creator" for the demo: an animated presenter head that talks
-// in sync with the demo transcript. It behaves like a <video> for the app.
+// Stand-in "creator" for the demo story: an animated presenter that talks
+// in sync with the demo transcript. Behaves like a <video> for the app.
 class DemoMedia {
   constructor(duration, words) {
     this.duration = duration; this.words = words;
@@ -118,12 +117,67 @@ class DemoMedia {
     c.fillStyle = '#7a1f1f'; c.beginPath(); c.ellipse(0, 700, 55, open, 0, 0, Math.PI * 2); c.fill();
     c.restore();
     c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 60, W, 70);
-    c.fillStyle = '#fff'; c.font = '700 34px system-ui, sans-serif'; c.textAlign = 'center';
+    c.fillStyle = '#fff'; c.font = '700 34px Inter, system-ui, sans-serif'; c.textAlign = 'center';
     c.fillText('DEMO · your face goes here', W / 2, 108);
   }
 }
 
 const DEMO_TEXT = `Okay, this is the worst thing I've ever done to my dad. Last Sunday I decided to surprise him with breakfast. I put the pan on the stove, and then my friend Jake texts me, so I'm on my phone for like ten minutes. Then I smell smoke. I run into the kitchen and the whole pan is on fire. And right then my dad walks into the kitchen, sees the smoke, and just freezes. He looks at me and goes, are you trying to burn the house down? And I said, no, I made you breakfast! He laughed so hard he cried. Anyway, we got pizza.`;
+
+// ---------- settings (keys live in this browser only) ----------
+
+function settingsGet() {
+  return {
+    key: store.get('storycuts:key', ''),
+    model: store.get('storycuts:model', DEFAULT_MODEL),
+    gemini: store.get('storycuts:gkey', ''),
+    openai: store.get('storycuts:okey', ''),
+    imageModel: store.get('storycuts:imodel', IMAGE_MODELS[0].id),
+    qc: store.get('storycuts:qc', true),
+  };
+}
+
+const hasImageKey = (s = settingsGet()) => (modelInfo(s.imageModel).provider === 'gemini' ? !!s.gemini : !!s.openai);
+const keysReady = (s = settingsGet()) => !!s.key && hasImageKey(s);
+
+function updateKeysDot() {
+  $('#keys-dot').classList.toggle('ok', keysReady());
+}
+
+function openSettings() {
+  const s = settingsGet();
+  $('#api-key').value = s.key;
+  $('#model').value = s.model;
+  $('#gemini-key').value = s.gemini;
+  $('#openai-key').value = s.openai;
+  $('#image-model').innerHTML = IMAGE_MODELS.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
+  $('#image-model').value = s.imageModel;
+  $('#opt-qc').checked = s.qc;
+  $('#settings').showModal();
+  setTimeout(() => (s.key ? (s.openai ? null : $('#openai-key')) : $('#api-key'))?.focus(), 50);
+}
+
+$('#settings').addEventListener('close', () => {
+  if ($('#settings').returnValue !== 'save') return;
+  store.set('storycuts:key', $('#api-key').value.trim());
+  store.set('storycuts:model', $('#model').value);
+  store.set('storycuts:gkey', $('#gemini-key').value.trim());
+  store.set('storycuts:okey', $('#openai-key').value.trim());
+  store.set('storycuts:imodel', $('#image-model').value);
+  store.set('storycuts:qc', $('#opt-qc').checked);
+  updateKeysDot();
+  if (state.project) { updateCosts(); renderChars(); }
+  toast(keysReady() ? 'Keys saved. You\'re ready to create.' : 'Saved. You still need both a Claude and an OpenAI key.');
+});
+
+function imageJobOpts() {
+  const s = settingsGet();
+  return {
+    keys: { gemini: s.gemini, openai: s.openai, claude: s.qc ? s.key : '' },
+    opts: { imageModel: s.imageModel, style: state.project.settings.style, claudeModel: s.model, qc: s.qc },
+    projectKey: storageKey(),
+  };
+}
 
 // ---------- project ----------
 
@@ -135,7 +189,7 @@ function save() {
   const p = state.project;
   if (!p) return;
   store.set(storageKey(), {
-    v: 1, title: p.title, duration: p.duration, words: p.words, characters: p.characters,
+    v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters,
     segments: p.segments, settings: p.settings, approved: p.approved,
   });
 }
@@ -152,58 +206,104 @@ function undo() {
   if (!snap) return;
   Object.assign(state.project, JSON.parse(snap));
   $('#btn-undo').disabled = !state.history.length;
-  afterChange(false);
+  refresh();
   toast('Undone');
-}
-
-function afterChange(record = true) {
-  save();
-  if (state.project.characters?.length) renderChars();
-  if (state.project.approved) { renderTimeline(); renderInspector(); }
-  drawPreview();
-  if (record) $('#btn-undo').disabled = !state.history.length;
 }
 
 function edit(fn) {
   snapshot();
   fn();
-  afterChange();
+  save();
+  refresh();
 }
 
-function newProject(duration) {
+function defaultSettings() {
   return {
-    title: 'My story',
-    duration,
-    words: [],
-    characters: [],
-    segments: [],
-    approved: false,
-    settings: {
-      captions: true, captionStyle: { upper: true }, punchIn: true, faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
-    },
+    style: store.get('storycuts:style', 'stick'),
+    aspect: 'vertical',
+    faceMode: 'full',
+    captions: true, captionStyle: { upper: true }, punchIn: true, faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
 }
 
-function restoreOrInit(duration) {
+function loadProject(duration) {
   const saved = store.get(storageKey());
-  state.project = newProject(duration);
+  state.project = { title: 'My story', duration, words: [], characters: [], segments: [], approved: false, settings: defaultSettings() };
   state.history = [];
+  state.selected = null;
+  state.cache = {};
   if (saved && Math.abs((saved.duration || 0) - duration) < 0.5) {
-    Object.assign(state.project, saved, { duration, settings: { ...state.project.settings, ...saved.settings } });
-    toast('Picked up where you left off with this video.');
+    Object.assign(state.project, saved, { duration, settings: { ...defaultSettings(), ...saved.settings } });
+    if (saved.segments?.length) toast('Picked up where you left off with this video.');
   }
-  syncSettingsUI();
-  renderAll();
+  state.aspect = state.project.settings.aspect || 'vertical';
+  syncOptionsUI();
+  refresh();
 }
 
-function renderAll() {
+/** Re-render everything that depends on the project. */
+function refresh() {
   const p = state.project;
-  unlock(2);
-  if (p.words.length) { renderTranscript(); updateCost(); unlock(3); }
-  if (p.characters.length) { renderChars(); unlock(4); }
-  if (p.approved) { unlock(6); renderTimeline(); renderInspector(); }
+  if (!p) return;
+  document.body.classList.toggle('bubble-mode', p.settings.faceMode === 'bubble');
+  ['#panel-style', '#panel-create'].forEach((s) => $(s).classList.remove('locked'));
+  $('#panel-editor').classList.toggle('locked', !p.approved);
+  $('#cast').classList.toggle('hidden', !p.characters.length);
+  $('#btn-reset').hidden = !p.segments.length;
+  renderPipeline();
+  renderStepper();
+  if (p.characters.length) renderChars();
+  if (p.approved) { renderTimeline(); renderInspector(); }
+  renderTranscript();
+  updateCosts();
   sizePreview();
   drawPreview();
+}
+
+function renderStepper() {
+  const p = state.project;
+  const cur = !p ? 1 : p.approved ? 4 : (p.segments.length || state.busy) ? 3 : 2;
+  $$('#stepper li').forEach((li) => {
+    const n = +li.dataset.s;
+    li.classList.toggle('active', n === cur);
+    li.classList.toggle('done', n < cur);
+  });
+}
+
+// pipeline stages: transcribe → plan → cast → scenes
+function stageState(stage) {
+  const p = state.project;
+  if (state.stages?.[stage]) return state.stages[stage];
+  if (!p) return '';
+  const scenes = p.segments.filter((sg) => sg.type !== 'face' && sg.scene);
+  switch (stage) {
+    case 'transcribe': return p.words.length ? 'done' : '';
+    case 'plan': return p.segments.length ? 'done' : '';
+    case 'cast': return p.approved ? 'done' : p.characters.some((c) => c.image?.key) ? 'wait' : '';
+    case 'scenes': return p.approved && scenes.length && scenes.every((sg) => sg.image?.key) ? 'done' : '';
+    default: return '';
+  }
+}
+
+function setStage(stage, value) {
+  state.stages = { ...(state.stages || {}), [stage]: value };
+  renderPipeline();
+}
+
+function renderPipeline() {
+  $$('#pipeline li').forEach((li) => {
+    li.className = stageState(li.dataset.stage);
+  });
+  const btn = $('#btn-create');
+  const p = state.project;
+  const label = btn.querySelector('span');
+  btn.classList.toggle('busy', state.busy);
+  btn.disabled = state.busy;
+  if (state.busy) label.textContent = 'Working…';
+  else if (!p?.segments.length) label.textContent = 'Create my video';
+  else if (!p.approved) label.textContent = 'Continue';
+  else label.textContent = 'Open the editor';
+  $('#btn-approve').disabled = !!state.charBusy?.size || state.busy;
 }
 
 // ---------- step 1: upload ----------
@@ -211,24 +311,36 @@ function renderAll() {
 async function loadFile(file) {
   if (!file) return;
   if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v|mkv)$/i.test(file.name)) { toast('That doesn\'t look like a video file.'); return; }
-  if (!$('#rights').checked) { toast('Please confirm you have the rights to this video first.'); $('#rights').focus(); return; }
+  if (!$('#rights').checked) {
+    toast('Please tick the box confirming you have the rights to this video.');
+    $('#rights').closest('.check').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 300 });
+    $('#file').value = '';
+    return;
+  }
   const video = $('#video');
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
   state.objectUrl = URL.createObjectURL(file);
   video.src = state.objectUrl;
-  await new Promise((resolve, reject) => {
-    video.onloadedmetadata = resolve;
-    video.onerror = () => reject(new Error('This browser can\'t play that video format. Try MP4 (H.264).'));
-  }).catch((e) => { toast(e.message, 6000); throw e; });
+  try {
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve;
+      video.onerror = () => reject(new Error('This browser can\'t play that video format. Try an MP4 from your phone.'));
+    });
+  } catch (e) { toast(e.message, 6000); return; }
   if (!Number.isFinite(video.duration)) { toast('Could not read the video length.'); return; }
   state.file = file;
   state.media = new VideoMedia(video);
-  $('#video-info').classList.remove('hidden');
-  $('#video-info').innerHTML = `<span class="pill">🎬 ${esc(file.name)}</span><span class="pill">${fmtTime(video.duration)}</span><span class="pill">${video.videoWidth}×${video.videoHeight}</span>`;
-  $('#btn-transcribe').disabled = false;
-  restoreOrInit(video.duration);
+  state.stages = {};
+  showFileChip(`${icon('film')} ${esc(file.name)}`, fmtTime(video.duration), `${video.videoWidth}×${video.videoHeight}`);
+  loadProject(video.duration);
   if (video.duration > 600) toast('Long video: StoryCuts works best on stories under 5 minutes.', 6000);
-  $('#step-transcript').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  scrollTo('#panel-style');
+}
+
+function showFileChip(...parts) {
+  const el = $('#video-info');
+  el.classList.remove('hidden');
+  el.innerHTML = `<span class="pill ok">${icon('check')} Ready</span>${parts.map((x) => `<span class="pill">${x}</span>`).join('')}`;
 }
 
 function loadDemo() {
@@ -236,173 +348,209 @@ function loadDemo() {
   const duration = 44;
   const words = wordsFromText(DEMO_TEXT, duration, [[0.6, 43.4]]);
   state.media = new DemoMedia(duration, words);
-  $('#video-info').classList.remove('hidden');
-  $('#video-info').innerHTML = '<span class="pill">🎭 Demo story</span><span class="pill">0:44</span><span class="pill">transcript included</span>';
-  $('#btn-transcribe').disabled = true;
-  restoreOrInit(duration);
-  if (!state.project.words.length) { state.project.words = words; save(); renderAll(); }
-  toast('Demo loaded. Next: plan the edit.');
-  $('#step-plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  state.stages = {};
+  showFileChip('Demo story', '0:44', 'transcript included');
+  loadProject(duration);
+  if (!state.project.words.length) { state.project.words = words; save(); refresh(); }
+  scrollTo('#panel-style');
 }
 
-// ---------- step 2: transcript ----------
+// ---------- step 2: style & options ----------
 
-function setWords(words) {
-  if (!words.length) { toast('No words found.'); return; }
-  snapshot();
-  state.project.words = words;
-  state.cache = {};
+function renderStyles() {
+  const cur = state.project?.settings.style || store.get('storycuts:style', 'stick');
+  $('#style-track').innerHTML = Object.entries(STYLES).map(([id, s]) => `
+    <button class="style-card ${id === cur ? 'on' : ''}" data-style="${id}" role="radio" aria-checked="${id === cur}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
+      <span class="thumb">
+        <span class="ph"><b>${esc(s.label.split(' ')[0])}</b></span>
+        ${s.thumb ? `<img src="${esc(s.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      </span>
+      <span class="tick">${icon('check')}</span>
+      <span class="meta"><b>${esc(s.label)}</b><small>${esc(s.blurb)}</small></span>
+    </button>`).join('');
+  updateSlideButtons();
+}
+
+function updateSlideButtons() {
+  const t = $('#style-track');
+  $('#style-prev').disabled = t.scrollLeft < 8;
+  $('#style-next').disabled = t.scrollLeft + t.clientWidth > t.scrollWidth - 8;
+}
+
+$('#style-track').addEventListener('scroll', updateSlideButtons, { passive: true });
+$('#style-prev').addEventListener('click', () => $('#style-track').scrollBy({ left: -$('#style-track').clientWidth * 0.8, behavior: 'smooth' }));
+$('#style-next').addEventListener('click', () => $('#style-track').scrollBy({ left: $('#style-track').clientWidth * 0.8, behavior: 'smooth' }));
+$('#style-track').addEventListener('click', (e) => {
+  const card = e.target.closest('.style-card');
+  if (!card || !state.project) return;
+  const id = card.dataset.style;
+  if (id === state.project.settings.style) return;
+  const hadArt = state.project.characters.some((c) => c.image?.key);
+  state.project.settings.style = id;
+  store.set('storycuts:style', id);
   save();
-  renderTranscript();
-  updateCost();
-  unlock(3);
-  $('#step-plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $$('.style-card').forEach((c) => { c.classList.toggle('on', c === card); c.setAttribute('aria-checked', c === card); });
+  if (hadArt) toast(`Style set to ${STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500);
+});
+
+function syncOptionsUI() {
+  const s = state.project.settings;
+  $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === state.aspect));
+  $$('#seg-face button').forEach((b) => b.classList.toggle('on', b.dataset.face === (s.faceMode || 'full')));
+  $('#opt-captions').checked = !!s.captions;
+  $('#opt-upper').checked = !!s.captionStyle?.upper;
+  $('#opt-punch').checked = !!s.punchIn;
+  $('#opt-watermark').checked = !!s.watermark;
+  $('#face-x').value = s.faceX ?? 0.5;
+  renderStyles();
 }
 
-async function doTranscribe() {
-  if (!state.file) return;
-  const btn = $('#btn-transcribe');
-  btn.disabled = true;
+function setAspect(a) {
+  state.aspect = a;
+  if (state.project) { state.project.settings.aspect = a; save(); }
+  $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === a));
+  const drawn = state.project?.segments.some((sg) => sg.image?.key && sg.image.aspect !== (a === 'vertical' ? '9:16' : '16:9'));
+  if (drawn) toast('Scenes drawn in the other format are cropped to fit. Redraw them for the best framing.', 4500);
+  sizePreview(); drawPreview();
+}
+
+$$('#seg-format button, #seg-aspect button').forEach((b) => b.addEventListener('click', () => setAspect(b.dataset.aspect)));
+$$('#seg-face button').forEach((b) => b.addEventListener('click', () => {
+  if (!state.project) return;
+  state.project.settings.faceMode = b.dataset.face;
+  save();
+  $$('#seg-face button').forEach((x) => x.classList.toggle('on', x === b));
+  refresh();
+}));
+
+// ---------- step 3: create ----------
+
+function updateCosts() {
+  const p = state.project;
+  if (!p) return;
+  const s = settingsGet();
+  const plan = p.words.length ? estimateCost(p.words, s.model).usd : 0.08;
+  const shots = p.segments.length ? p.segments.filter((sg) => sg.type !== 'face').length : Math.max(4, Math.round(p.duration / 5));
+  const chars = p.characters.length || 3;
+  const imgs = estimateImageCost(shots + chars, s, s.qc && !!s.key);
+  $('#create-cost').textContent = `Estimated cost ≈ ${fmtUSD(plan + imgs)} · paid to your AI accounts`;
+  if (p.approved) {
+    const todo = sceneSegs().filter(needsImage).length;
+    $('#scenes-cost').textContent = todo ? `${todo} to draw · ≈ ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key))}` : `${sceneSegs().length} scenes drawn`;
+    const btn = $('#btn-gen-scenes');
+    btn.querySelector('span').textContent = state.genAbort ? 'Stop' : todo ? `Draw ${todo} scene${todo === 1 ? '' : 's'}` : 'Redraw all';
+  }
+}
+
+async function createVideo() {
+  const p = state.project;
+  if (!p) { toast('Upload a video first (or try the demo).'); scrollTo('#panel-upload'); return; }
+  if (p.approved) { scrollTo('#panel-editor'); return; }
+  if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
+  state.busy = true;
+  state.stages = {};
+  setStatus('#create-status', '');
+  renderPipeline(); renderStepper();
   try {
-    const words = await transcribeInBrowser(state.file, {
-      quality: $('#asr-quality').value,
-      onStatus: (m) => setStatus('#asr-status', m, 'busy'),
-    });
-    setStatus('#asr-status', `Transcribed ${words.length} words.`, 'ok');
-    setWords(words);
-  } catch (e) {
-    console.error(e);
-    setStatus('#asr-status', `Automatic transcription failed (${e.message}). You can paste the transcript instead.`, 'err');
-    $('#paste-box').open = true;
+    // 1. transcript
+    if (!p.words.length) {
+      setStage('transcribe', 'active');
+      try {
+        const words = await transcribeInBrowser(state.file, {
+          quality: $('#asr-quality').value,
+          onStatus: (m) => setStatus('#create-status', m, 'busy'),
+        });
+        if (!words.length) throw new Error('no speech found');
+        p.words = words; save(); renderTranscript();
+      } catch (e) {
+        console.error(e);
+        setStage('transcribe', 'error');
+        setStatus('#create-status', `Couldn't transcribe automatically (${errText(e)}).`, 'err');
+        $('#paste-box').classList.remove('hidden');
+        return;
+      }
+    }
+    setStage('transcribe', 'done');
+
+    // 2. plan
+    if (!p.segments.length) {
+      setStage('plan', 'active');
+      setStatus('#create-status', 'The AI editor is reading your story and planning every cut… (20–60 seconds)', 'busy');
+      const s = settingsGet();
+      const notes = [
+        $('#plan-notes').value.trim(),
+        p.settings.faceMode === 'bubble' ? '' : 'Use only "face" and "scene" shots (no scene_bubble): the creator wants full-frame cuts.',
+      ].filter(Boolean).join(' ');
+      try {
+        const raw = await planWithClaude(s.key, p.words, p.duration, { model: s.model, notes });
+        snapshot();
+        p.title = raw.title || p.title;
+        p.characters = raw.characters;
+        p.segments = raw.segments;
+        p.approved = false;
+        runQC(p);
+        save();
+      } catch (e) {
+        console.error(e);
+        setStage('plan', 'error');
+        setStatus('#create-status', `Planning failed: ${e?.status === 401 ? 'your Claude key was rejected. Check it under API keys.' : errText(e)}`, 'err');
+        return;
+      }
+    }
+    setStage('plan', 'done');
+    $('#cast').classList.remove('hidden');
+    renderChars();
+
+    // 3. cast
+    const missing = p.characters.filter((c) => !c.image?.key);
+    setStage('cast', 'active');
+    if (missing.length) {
+      setStatus('#create-status', '');
+      scrollTo('#cast');
+      const ok = await drawCharacters(missing);
+      if (!ok) { setStage('cast', 'error'); return; }
+    }
+    setStage('cast', 'wait');
+    setStatus('#create-status', 'Your cast is ready. Take a look, then draw the scenes.', 'ok');
+    scrollTo('#cast');
   } finally {
-    btn.disabled = false;
+    state.busy = false;
+    renderPipeline(); renderStepper();
   }
 }
 
 async function usePaste() {
   const text = $('#paste-text').value.trim();
-  if (!text) { toast('Paste the transcript first.'); return; }
-  if (!state.project) { toast('Upload a video first.'); return; }
-  setStatus('#asr-status', 'Lining the words up with your audio…', 'busy');
+  if (!text) { toast('Paste what you say in the video first.'); return; }
+  setStatus('#create-status', 'Lining the words up with your audio…', 'busy');
   let spans = null;
   try { if (state.file) spans = speechSpans(await decodeAudio(state.file)); } catch { /* no audio track */ }
-  const words = wordsFromText(text, state.project.duration, spans);
-  setStatus('#asr-status', `Timed ${words.length} words. Timing is approximate; automatic transcription is more precise.`, 'ok');
-  setWords(words);
-}
-
-function renderTranscript() {
-  const el = $('#transcript');
-  el.classList.remove('hidden');
-  const segs = state.project.approved ? state.project.segments : [];
-  el.innerHTML = state.project.words.map((w, i) => {
-    const seg = segs.length ? segmentAt(segs, w.s) : null;
-    return `<span data-i="${i}" class="${seg ? `w-${seg.type}` : ''}" title="${w.s.toFixed(2)}s">${esc(w.w)}</span>`;
-  }).join(' ');
-}
-
-// ---------- step 3: plan ----------
-
-function settingsGet() {
-  return {
-    key: store.get('storycuts:key', ''),
-    model: store.get('storycuts:model', DEFAULT_MODEL),
-    gemini: store.get('storycuts:gkey', ''),
-    openai: store.get('storycuts:okey', ''),
-    imageModel: store.get('storycuts:imodel', IMAGE_MODELS[0].id),
-    style: store.get('storycuts:style', 'stick'),
-    qc: store.get('storycuts:qc', true),
-  };
-}
-
-function imageJobOpts() {
-  const s = settingsGet();
-  return {
-    keys: { gemini: s.gemini, openai: s.openai, claude: s.qc ? s.key : '' },
-    opts: { imageModel: s.imageModel, style: s.style, claudeModel: s.model, qc: s.qc },
-    projectKey: storageKey(),
-  };
-}
-
-function hasImageKey(s = settingsGet()) {
-  return modelInfo(s.imageModel).provider === 'gemini' ? !!s.gemini : !!s.openai;
-}
-
-function needImageKey() {
-  if (hasImageKey()) return false;
-  const gem = modelInfo(settingsGet().imageModel).provider === 'gemini';
-  toast(`Add your ${gem ? 'Google Gemini' : 'OpenAI'} API key in Settings to draw images with AI.`, 5000);
-  openSettings();
-  return true;
-}
-
-const STORAGE_WARN = ' Note: your browser wouldn\'t let StoryCuts save the pictures, so they\'ll be lost if you close this tab. Use a normal (not private/incognito) Chrome window to keep them.';
-
-const errText = (e) => `${e?.name && !['Error', 'TypeError'].includes(e.name) ? `${e.name}: ` : ''}${e?.message || e}`;
-
-const fmtUSD = (x) => `$${x < 0.01 ? '0.01' : x.toFixed(2)}`;
-
-function updateCost() {
-  const { model } = settingsGet();
-  const c = estimateCost(state.project.words, model);
-  $('#cost').textContent = `≈ $${c.usd < 0.01 ? '0.01' : c.usd.toFixed(2)} in Claude usage · scenes are drawn, so no image costs`;
-}
-
-function applyPlan(raw, source) {
-  snapshot();
-  const p = state.project;
-  p.title = raw.title || p.title;
-  p.characters = raw.characters;
-  p.segments = raw.segments;
-  p.approved = false;
-  const { report, checks, scenes } = runQC(p);
+  state.project.words = wordsFromText(text, state.project.duration, spans);
   save();
-  const fixes = report.filter((r) => r.fix);
-  const qc = $('#qc');
-  qc.classList.remove('hidden');
-  qc.innerHTML = `<div class="qc-head">✓ ${p.segments.length} shots planned by ${esc(source)} · ${scenes} illustrated · ${checks} quality checks run · ${fixes.length} auto-fixed</div>`
-    + (fixes.length ? `<details><summary>What got fixed</summary><ul>${[...new Set(fixes.map((f) => f.fix))].map((f) => `<li>${esc(f)}</li>`).join('')}</ul></details>` : '');
-  renderChars();
-  unlock(4);
-  $('#step-chars').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('#paste-box').classList.add('hidden');
+  renderTranscript();
+  createVideo();
 }
 
-async function planAI() {
-  const { key, model } = settingsGet();
-  if (!key) { toast('Add your Anthropic API key in Settings, or use the offline planner.'); openSettings(); return; }
-  const btn = $('#btn-plan-ai');
-  btn.disabled = true;
-  setStatus('#plan-status', 'Claude is watching your story and planning the cuts… (usually 20–60s)', 'busy');
-  try {
-    const raw = await planWithClaude(key, state.project.words, state.project.duration, { model, notes: $('#plan-notes').value.trim() });
-    const u = raw.usage || {};
-    setStatus('#plan-status', `Planned by ${raw.served || model}${u.output_tokens ? ` · ${u.input_tokens} in / ${u.output_tokens} out tokens` : ''}.`, 'ok');
-    applyPlan(raw, 'Claude');
-  } catch (e) {
-    console.error(e);
-    const msg = e?.status === 401 ? 'That API key was rejected. Check it in Settings.' : e.message;
-    setStatus('#plan-status', `Planning failed: ${msg}`, 'err');
-  } finally {
-    btn.disabled = false;
-  }
+function resetPlan() {
+  if (!confirm('Start over? This clears the plan, cast and scenes for this video (your transcript is kept).')) return;
+  snapshot();
+  Object.assign(state.project, { characters: [], segments: [], approved: false });
+  state.stages = {};
+  state.selected = null;
+  save();
+  refresh();
+  setStatus('#create-status', '');
 }
 
-function planQuick() {
-  const raw = heuristicPlan(state.project.words, state.project.duration);
-  setStatus('#plan-status', 'Planned offline with keyword rules. Claude makes much better editorial choices.', 'ok');
-  applyPlan(raw, 'the offline planner');
-}
-
-// ---------- step 4: characters ----------
-
-const opt = (list, v, fmt = label) => list.map((x) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(fmt(x))}</option>`).join('');
+// ---------- cast ----------
 
 function qcBadge(img) {
   if (!img?.qc) return '';
   const q = img.qc;
   return q.pass
-    ? `<span class="qc-badge ok" title="${esc(q.issues.join('; '))}">✓ checked ${q.score ? `${q.score}/10` : ''}</span>`
-    : `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">⚠ ${esc(q.issues[0] || 'needs a look')}</span>`;
+    ? `<span class="qc-badge ok" title="${esc(q.issues.join('; '))}">✓ Checked${q.score ? ` ${q.score}/10` : ''}</span>`
+    : `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">⚠ ${esc(q.issues[0] || 'Needs a look')}</span>`;
 }
 
 async function fillImg(el, key) {
@@ -420,24 +568,17 @@ function renderChars() {
   el.innerHTML = p.characters.map((c, i) => `
     <div class="char" data-i="${i}">
       <div class="char-art">
-        ${c.image?.key ? '<img alt="">' : '<canvas width="360" height="240"></canvas>'}
+        ${c.image?.key ? '<img alt="">' : `<div class="empty"><div><b>${esc((c.name || '?')[0])}</b>Not drawn yet</div></div>`}
         ${busy.has(c.id) ? '<div class="art-busy">Drawing…</div>' : ''}
-        ${c.image?.key ? qcBadge(c.image) : '<span class="qc-badge">draft</span>'}
+        ${c.image?.key ? qcBadge(c.image) : ''}
       </div>
       <div class="char-fields">
         <input data-k="name" value="${esc(c.name)}" aria-label="Name">
-        <textarea data-k="description" rows="2" placeholder="What they look like (age, hair, clothes, signature detail)">${esc(c.description)}</textarea>
-        ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''}> Base my character on how I look in my video</label>` : ''}
-        <details><summary>Colours &amp; details</summary>
-          <div class="swatches">${COLORS.map((col) => `<button data-color="${col}" style="background:${col}" class="${col === c.color ? 'on' : ''}" aria-label="Shirt colour ${col}"></button>`).join('')}</div>
-          <label>Hair <select data-k="hair">${opt(HAIR, c.hair)}</select></label>
-          <label>Hair colour <select data-k="hairColor">${opt(['#2b2b2b', '#6b4423', '#c8a165', '#d35400', '#9e9e9e', '#e84393'], c.hairColor, (x) => ({ '#2b2b2b': 'black', '#6b4423': 'brown', '#c8a165': 'blond', '#d35400': 'ginger', '#9e9e9e': 'grey', '#e84393': 'pink' }[x]))}</select></label>
-          <label>Extra <select data-k="accessory">${opt(ACCESSORIES, c.accessory)}</select></label>
-          <label>Height <input type="range" data-k="height" min="0.75" max="1.25" step="0.05" value="${c.height}"></label>
-        </details>
-        <div class="row tight">
-          <button data-redraw="${i}" ${busy.has(c.id) ? 'disabled' : ''}>${c.image?.key ? 'Redraw' : 'Draw'}</button>
-          ${c.id === 'me' ? '<small class="muted">This is you</small>' : `<button class="link danger" data-del="${i}">Remove</button>`}
+        <textarea data-k="description" rows="3" placeholder="What they look like: age, hair, clothes, a signature detail">${esc(c.description)}</textarea>
+        ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
+        <div class="char-row">
+          <button class="btn glass sm" data-redraw="${i}" ${busy.has(c.id) ? 'disabled' : ''}>${icon('redo')}${c.image?.key ? 'Redraw' : 'Draw'}</button>
+          ${c.id === 'me' ? '<small>This is you</small>' : `<button class="btn link sm danger" data-del="${i}">Remove</button>`}
         </div>
       </div>
     </div>`).join('');
@@ -445,13 +586,10 @@ function renderChars() {
     const ch = p.characters[+card.dataset.i];
     const img = card.querySelector('img');
     if (img) fillImg(img, ch.image.key);
-    else drawCharacterCard(card.querySelector('canvas').getContext('2d'), 360, 240, ch, 0.4);
   });
   const missing = p.characters.filter((c) => !c.image?.key).length;
-  const s = settingsGet();
-  $('#btn-gen-chars').textContent = missing ? `Draw ${missing === p.characters.length ? 'the characters' : `${missing} missing`} with AI` : 'Redraw all characters';
-  $('#chars-cost').textContent = `≈ ${fmtUSD(estimateImageCost(missing || p.characters.length, s, s.qc && !!s.key))} with ${modelInfo(s.imageModel).label.split(':')[0]}`;
-  $('#btn-approve').textContent = p.approved ? 'Cast approved ✓' : 'Approve cast';
+  $('#btn-gen-chars').lastChild.textContent = missing ? `Draw ${missing} missing` : 'Redraw all';
+  $('#btn-approve').disabled = !!state.charBusy?.size || state.busy;
 }
 
 async function grabSelfFrame() {
@@ -469,34 +607,41 @@ async function grabSelfFrame() {
   return c;
 }
 
+/** Draws the given characters. Resolves true if all succeeded. */
 async function drawCharacters(list) {
-  if (needImageKey() || !list.length) return;
+  if (!hasImageKey()) { openSettings(); return false; }
+  if (!list.length) return true;
   const job = imageJobOpts();
   state.charBusy = new Set(list.map((c) => c.id));
   renderChars();
   $('#btn-gen-chars').disabled = true;
-  setStatus('#chars-status', `Drawing ${list.length} character${list.length > 1 ? 's' : ''}…`, 'busy');
+  setStatus('#chars-status', `Designing ${list.length} character${list.length > 1 ? 's' : ''} in ${STYLES[state.project.settings.style]?.label || 'your'} style…`, 'busy');
   const me = list.find((c) => c.id === 'me' && c.useVideoLook !== false);
   const selfFrame = me ? await grabSelfFrame().catch(() => null) : null;
   const results = await pool(list, 2, async (ch) => {
-    const img = await generateCharacterImage(state.project, ch, {
-      ...job, selfFrame, onStatus: (m) => setStatus('#chars-status', `${ch.name}: ${m}`, 'busy'),
-    });
-    snapshot();
-    ch.image = img;
-    state.charBusy.delete(ch.id);
-    save(); renderChars();
+    try {
+      const img = await generateCharacterImage(state.project, ch, {
+        ...job, selfFrame, onStatus: (m) => setStatus('#chars-status', `${ch.name}: ${m}`, 'busy'),
+      });
+      ch.image = img;
+      save();
+    } finally {
+      state.charBusy.delete(ch.id);
+      renderChars();
+    }
   });
   state.charBusy = new Set();
   $('#btn-gen-chars').disabled = false;
-  const failed = results.filter((r) => !r.ok);
   renderChars();
+  const failed = results.filter((r) => !r.ok);
   failed.forEach((f) => console.error('StoryCuts character drawing failed', f.error));
-  if (failed.length) setStatus('#chars-status', `Couldn't draw ${failed.length}: ${errText(failed[0].error)}`, 'err');
-  else {
-    const scenesDrawn = state.project.segments.some((sg) => sg.image?.key);
-    setStatus('#chars-status', `Done.${scenesDrawn ? ' Redraw your scenes to use the new looks.' : ' Happy with them? Approve the cast.'}${storageProblem ? STORAGE_WARN : ''}`, 'ok');
+  if (failed.length) {
+    setStatus('#chars-status', `Couldn't draw ${failed.length}: ${errText(failed[0].error)}`, 'err');
+    return false;
   }
+  const scenesDrawn = state.project.segments.some((sg) => sg.image?.key);
+  setStatus('#chars-status', `${storageProblem ? `${STORAGE_WARN} ` : ''}${scenesDrawn ? 'Done. Redraw your scenes to use the new looks.' : 'Done.'}`, storageProblem ? '' : 'ok');
+  return true;
 }
 
 $('#btn-gen-chars').addEventListener('click', () => {
@@ -511,22 +656,18 @@ $('#chars').addEventListener('input', (e) => {
   if (!card || !k) return;
   const ch = state.project.characters[+card.dataset.i];
   if (!state._charEditing) { snapshot(); state._charEditing = true; setTimeout(() => { state._charEditing = false; }, 800); }
-  ch[k] = k === 'height' ? +e.target.value : k === 'useVideoLook' ? e.target.checked : e.target.value;
-  const cv = card.querySelector('canvas');
-  if (cv) drawCharacterCard(cv.getContext('2d'), 360, 240, ch, 0.4);
+  ch[k] = k === 'useVideoLook' ? e.target.checked : e.target.value;
   save();
-  drawPreview();
 });
 
 $('#chars').addEventListener('click', (e) => {
+  const t = e.target.closest('button');
   const card = e.target.closest('.char');
-  if (!card) return;
+  if (!t || !card) return;
   const i = +card.dataset.i;
-  if (e.target.dataset.color) {
-    edit(() => { state.project.characters[i].color = e.target.dataset.color; });
-  } else if (e.target.dataset.redraw) {
+  if (t.dataset.redraw) {
     drawCharacters([state.project.characters[i]]);
-  } else if (e.target.dataset.del) {
+  } else if (t.dataset.del) {
     const ch = state.project.characters[i];
     edit(() => {
       state.project.characters.splice(i, 1);
@@ -539,70 +680,62 @@ $('#chars').addEventListener('click', (e) => {
 });
 
 $('#btn-add-char').addEventListener('click', () => {
-  const name = prompt('Character name (e.g. "Grandma", "Jake")');
+  const name = prompt('Who should we add? (e.g. "Grandma", "Jake", "Biscuit the dog")');
   if (!name) return;
   edit(() => {
     const p = state.project;
     let id = slug(name);
     while (p.characters.some((c) => c.id === id)) id += '_2';
-    p.characters.push({
-      id, name, description: '', color: COLORS[p.characters.length % COLORS.length], hair: HAIR[(p.characters.length * 2) % HAIR.length],
-      hairColor: '#2b2b2b', accessory: 'none', height: 1,
-    });
+    p.characters.push({ id, name, description: '', color: '#8854d0', hair: 'short', hairColor: '#2b2b2b', accessory: 'none', height: 1 });
   });
 });
 
-$('#btn-approve').addEventListener('click', () => {
-  edit(() => {
-    const p = state.project;
-    p.characters = normalizeCharacters(p.characters);
-    p.segments = normalizeSegments(p.segments, p.characters, p.duration);
-    p.approved = true;
-  });
-  renderTranscript();
-  unlock(6);
-  if (!state.selected) state.selected = state.project.segments.find((s) => s.type !== 'face')?.id;
-  renderTimeline(); renderInspector();
-  sizePreview(); drawPreview();
-  $('#step-review').scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
+async function approveAndDraw() {
+  const p = state.project;
+  if (p.characters.some((c) => !c.image?.key) && !confirm('Some characters haven\'t been drawn yet, so their scenes may not match. Continue anyway?')) return;
+  snapshot();
+  p.characters = normalizeCharacters(p.characters);
+  p.segments = normalizeSegments(p.segments, p.characters, p.duration);
+  p.approved = true;
+  save();
+  state.stages = { ...(state.stages || {}), cast: 'done' };
+  if (!state.selected) state.selected = p.segments.find((s) => s.type !== 'face')?.id;
+  refresh();
+  scrollTo('#panel-editor');
+  const todo = sceneSegs().filter(needsImage);
+  if (todo.length && hasImageKey()) {
+    setStage('scenes', 'active');
+    await generateScenes(todo);
+    setStage('scenes', sceneSegs().every((sg) => sg.image?.key) ? 'done' : 'error');
+  }
+}
 
-// ---------- step 5: scene images ----------
+// ---------- scene images ----------
 
 const sceneSegs = () => state.project.segments.filter((sg) => sg.type !== 'face' && sg.scene);
 const needsImage = (sg) => !sg.image?.key || sg.image.stale;
 
-function updateSceneBar() {
-  if (!state.project?.approved) return;
-  const s = settingsGet();
-  const todo = sceneSegs().filter(needsImage).length;
-  const all = sceneSegs().length;
-  const btn = $('#btn-gen-scenes');
-  if (state.genAbort) btn.textContent = 'Stop generating';
-  else btn.textContent = todo ? `Generate ${todo === all ? 'all' : todo} scene image${todo === 1 ? '' : 's'}` : 'All scenes drawn ✓ (redraw all)';
-  $('#scenes-cost').textContent = `${all} illustrated shots · ≈ ${fmtUSD(estimateImageCost(todo || all, s, s.qc && !!s.key))}${s.qc && s.key ? ' incl. Claude quality checks' : s.qc ? ' · add a Claude key to auto-check images' : ''}`;
-}
-
 async function generateScenes(list, note = '') {
-  if (needImageKey() || !list.length) return;
+  if (!hasImageKey()) { openSettings(); return; }
+  if (!list.length) return;
   const job = imageJobOpts();
   const ac = { stop: false };
   state.genAbort = ac;
   state.cache.pending = new Set(list.map((sg) => sg.id));
-  updateSceneBar(); renderTimeline();
+  updateCosts(); renderTimeline();
   const bar = $('#gen-progress');
   bar.classList.remove('hidden');
+  bar.firstElementChild.style.width = '3%';
   let done = 0;
   const aspect = state.aspect === 'vertical' ? '9:16' : '16:9';
-  setStatus('#scenes-status', `Drawing ${list.length} scene${list.length > 1 ? 's' : ''} (${aspect})…`, 'busy');
+  setStatus('#scenes-status', `Drawing ${list.length} scene${list.length > 1 ? 's' : ''}… you can keep editing while this runs.`, 'busy');
   const results = await pool(list, 3, async (sg) => {
     if (ac.stop) throw new Error('stopped');
     try {
-      const img = await generateSceneImage(state.project, sg, {
+      sg.image = await generateSceneImage(state.project, sg, {
         ...job, aspect, note,
         onStatus: (m) => { if (sg.id === state.selected) setStatus('#redo-status', m, 'busy'); },
       });
-      sg.image = img;
       save();
     } finally {
       state.cache.pending.delete(sg.id);
@@ -615,16 +748,19 @@ async function generateScenes(list, note = '') {
     }
   });
   state.genAbort = null;
-  bar.classList.add('hidden');
+  setTimeout(() => bar.classList.add('hidden'), 600);
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
   const flagged = list.filter((sg) => sg.image?.qc && !sg.image.qc.pass).length;
   const redrawn = list.filter((sg) => sg.image?.attempts > 1).length;
   failed.forEach((f) => console.error('StoryCuts scene drawing failed', f.error));
   if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} drawn, ${failed.length} failed: ${errText(failed[0].error)}`, 'err');
-  else if (ac.stop) setStatus('#scenes-status', 'Stopped.', '');
-  else setStatus('#scenes-status', `${storageProblem ? STORAGE_WARN.trim() + ' ' : ''}All ${list.length} drawn.${redrawn ? ` ${redrawn} auto-redrawn after failing the quality check.` : ''}${flagged ? ` ${flagged} still flagged (⚠ on the timeline): take a look.` : ''}`, flagged ? '' : 'ok');
-  updateSceneBar();
+  else if (ac.stop) setStatus('#scenes-status', 'Stopped.');
+  else {
+    setStatus('#scenes-status', `${storageProblem ? `${STORAGE_WARN} ` : ''}All ${list.length} scene${list.length > 1 ? 's' : ''} drawn.${redrawn ? ` ${redrawn} redrawn automatically after a quality check.` : ''}${flagged ? ` ${flagged} flagged with ⚠: take a look.` : ' Press play to watch.'}`, flagged || storageProblem ? '' : 'ok');
+  }
+  updateCosts();
   renderInspector();
+  renderPipeline();
 }
 
 $('#btn-gen-scenes').addEventListener('click', () => {
@@ -632,18 +768,17 @@ $('#btn-gen-scenes').addEventListener('click', () => {
   const todo = sceneSegs().filter(needsImage);
   const list = todo.length ? todo : sceneSegs();
   const s = settingsGet();
-  if (!hasImageKey(s)) { needImageKey(); return; }
+  if (!hasImageKey(s)) { openSettings(); return; }
   if (!todo.length && !confirm(`Redraw all ${list.length} scenes? ≈ ${fmtUSD(estimateImageCost(list.length, s, s.qc && !!s.key))}`)) return;
   generateScenes(list);
 });
 
-// ---------- step 5: preview + timeline ----------
+// ---------- step 4: preview + timeline ----------
 
 function sizePreview() {
   const { w, h } = ASPECTS[state.aspect];
   const c = $('#preview');
-  const scale = state.aspect === 'vertical' ? 0.5 : 0.5;
-  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+  c.width = Math.round(w * 0.5); c.height = Math.round(h * 0.5);
   $('#stage').dataset.aspect = state.aspect;
 }
 
@@ -658,61 +793,58 @@ function drawPreview() {
   $('#time').textContent = `${fmtTime(t)} / ${fmtTime(p.duration)}`;
   if (!state.scrubbing) $('#scrub').value = Math.round((t / p.duration) * 1000);
   $('#playhead').style.left = `${(t / p.duration) * 100}%`;
-  document.querySelectorAll('.block').forEach((b) => b.classList.toggle('live', b.dataset.id === seg.id));
+  $$('.block').forEach((b) => b.classList.toggle('live', b.dataset.id === seg.id));
 }
 
 function loop() {
   drawPreview();
   if (state.media && !state.media.paused) requestAnimationFrame(loop);
-  else $('#btn-play').textContent = '▶';
+  else $('#btn-play').innerHTML = icon('play');
 }
 
 async function togglePlay() {
   const m = state.media;
-  if (!m) return;
+  if (!m || !state.project?.approved) return;
   if (m.paused) {
     if (m.time >= state.project.duration - 0.05) await m.seek(0);
     await m.play();
-    $('#btn-play').textContent = '❚❚';
+    $('#btn-play').innerHTML = icon('pause');
     loop();
   } else {
     m.pause();
   }
 }
 
-function shotText(seg) {
-  return wordsIn(state.project.words, seg.start, seg.end).map((w) => w.w).join(' ');
-}
+const shotText = (seg) => wordsIn(state.project.words, seg.start, seg.end).map((w) => w.w).join(' ');
 
 function renderTimeline() {
   const p = state.project;
   const el = $('#timeline');
   el.querySelectorAll('.block').forEach((b) => b.remove());
   p.segments.forEach((s) => {
+    const type = shotType(s, p.settings);
     const b = document.createElement('button');
-    const st = s.type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
-    b.className = `block ${s.type} ${st} ${s.id === state.selected ? 'sel' : ''}`;
+    const st = type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
+    b.className = `block ${type} ${st} ${s.id === state.selected ? 'sel' : ''}`;
     b.dataset.id = s.id;
     b.style.left = `${(s.start / p.duration) * 100}%`;
-    b.style.width = `${((s.end - s.start) / p.duration) * 100}%`;
-    b.title = `${fmtTime(s.start)} ${label(s.type)}: ${shotText(s)}`;
+    b.style.width = `calc(${((s.end - s.start) / p.duration) * 100}% - 2px)`;
+    b.title = `${fmtTime(s.start)} · ${type === 'face' ? 'Your face' : 'Scene'}: ${shotText(s)}`;
     b.textContent = shotText(s).split(' ').slice(0, 3).join(' ');
     el.appendChild(b);
   });
   renderTranscript();
-  updateSceneBar();
 }
 
-$('#timeline').addEventListener('click', async (e) => {
+$('#timeline').addEventListener('click', (e) => {
   const b = e.target.closest('.block');
-  if (!b) return;
-  select(b.dataset.id, true);
+  if (b) select(b.dataset.id, true);
 });
 
 async function select(id, seek) {
   state.selected = id;
   const seg = state.project.segments.find((s) => s.id === id);
-  document.querySelectorAll('.block').forEach((b) => b.classList.toggle('sel', b.dataset.id === id));
+  $$('.block').forEach((b) => b.classList.toggle('sel', b.dataset.id === id));
   renderInspector();
   if (seek && seg && state.media) {
     await state.media.seek(Math.min(seg.start + 0.25 * Math.min(1, seg.end - seg.start), state.project.duration));
@@ -720,98 +852,76 @@ async function select(id, seek) {
   }
 }
 
+function renderTranscript() {
+  const p = state.project;
+  const el = $('#transcript');
+  const segs = p.approved ? p.segments : [];
+  el.innerHTML = p.words.map((w, i) => {
+    const seg = segs.length ? segmentAt(segs, w.s) : null;
+    return `<span data-i="${i}" class="${seg ? `w-${shotType(seg, p.settings)}` : ''}">${esc(w.w)}</span>`;
+  }).join(' ');
+}
+
+const currentSeg = () => state.project.segments.find((s) => s.id === state.selected);
+
 function renderInspector() {
   const p = state.project;
   const el = $('#inspector');
   const i = p.segments.findIndex((s) => s.id === state.selected);
   const seg = p.segments[i];
-  if (!seg) { el.innerHTML = '<p class="muted">Select a shot on the timeline.</p>'; return; }
+  if (!seg) { el.innerHTML = '<p class="muted">Click a shot on the timeline below to edit it.</p>'; return; }
+  const type = shotType(seg, p.settings);
   const sc = seg.scene;
-  const charOpts = (v) => p.characters.map((c) => `<option value="${esc(c.id)}" ${c.id === v ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const types = p.settings.faceMode === 'bubble' ? ['face', 'scene', 'scene_bubble'] : ['face', 'scene'];
+  const pending = state.cache.pending?.has(seg.id);
   el.innerHTML = `
-    <div class="insp-head">
-      <strong>Shot ${i + 1} of ${p.segments.length}</strong>
-      <span class="muted">${fmtTime(seg.start)}–${fmtTime(seg.end)} · ${(seg.end - seg.start).toFixed(1)}s</span>
-    </div>
-    <blockquote>“${esc(shotText(seg))}”</blockquote>
-    ${seg.reason ? `<p class="muted small">Editor's note: ${esc(seg.reason)}</p>` : ''}
-    <div class="seg-types" role="radiogroup">
-      ${['face', 'scene', 'scene_bubble'].map((t) => `<button data-type="${t}" class="tag ${t} ${seg.type === t ? 'on' : ''}">${{ face: 'Your face', scene: 'Scene', scene_bubble: 'Scene + face' }[t]}</button>`).join('')}
-    </div>
-    <div class="grid2 tight">
-      <label class="field">Starts at (s)<input type="number" step="0.1" data-f="start" value="${seg.start.toFixed(2)}" ${i === 0 ? 'disabled' : ''}></label>
-      <label class="field">Ends at (s)<input type="number" step="0.1" data-f="end" value="${seg.end.toFixed(2)}" ${i === p.segments.length - 1 ? 'disabled' : ''}></label>
-    </div>
-    <div class="row">
-      <button data-act="split">Split at playhead</button>
-      <button data-act="merge" ${i === p.segments.length - 1 ? 'disabled' : ''}>Merge with next</button>
-    </div>
-    ${seg.type === 'face' || !sc ? '' : `
-    <hr>
-    <div class="shot-img">
-      ${seg.image?.key ? '<img alt="Scene illustration">' : `<div class="noimg">${state.cache.pending?.has(seg.id) ? 'Drawing…' : 'No AI image yet: the preview shows a quick draft.'}</div>`}
-      ${seg.image?.key ? qcBadge(seg.image) : ''}
-    </div>
-    ${seg.image?.qc && !seg.image.qc.pass ? `<p class="small warn-text">Quality check: ${esc(seg.image.qc.issues.join('; '))}</p>` : ''}
-    ${seg.image?.attempts > 1 ? `<p class="small muted">Auto-redrawn ${seg.image.attempts - 1}× after failing the quality check.</p>` : ''}
-    ${seg.image?.stale ? '<p class="small muted">You changed this scene since it was drawn. Redraw to update it.</p>' : ''}
-    <label class="field">What the image shows
-      <textarea data-s="image_prompt" rows="3" placeholder="Who is where, doing what, with which expressions">${esc(sc.image_prompt || '')}</textarea>
-    </label>
-    <div class="field">Characters in this shot
-      <div class="chips">${sc.actors.map((a, k) => `<span class="chip">${esc(p.characters.find((c) => c.id === a.character_id)?.name || a.character_id)}<button data-a="remove" data-k="${k}" aria-label="remove">✕</button></span>`).join('')}
-        ${sc.actors.length < 4 ? `<select data-act="add-cast"><option value="">+ add</option>${p.characters.filter((c) => !sc.actors.some((a) => a.character_id === c.id)).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
+    <div class="insp-head"><strong>Shot ${i + 1} of ${p.segments.length}</strong><span class="muted small">${fmtTime(seg.start)}–${fmtTime(seg.end)} · ${(seg.end - seg.start).toFixed(1)}s</span></div>
+    <p class="quote">“${esc(shotText(seg))}”</p>
+    <div class="type-switch">${types.map((t) => `<button data-type="${t}" class="${type === t ? 'on' : ''}"><i></i>${{ face: 'Your face', scene: 'Scene', scene_bubble: 'Scene + face' }[t]}</button>`).join('')}</div>
+    ${type === 'face' || !sc ? '' : `
+      <div class="shot-img">
+        ${seg.image?.key ? '<img alt="Scene illustration">' : `<div class="noimg">${pending ? 'Drawing…' : 'Not drawn yet'}</div>`}
+        ${seg.image?.key ? qcBadge(seg.image) : ''}
       </div>
-    </div>
-    <label class="field">Sound effect overlay <input data-s="sound_effect" value="${esc(sc.sound_effect)}" maxlength="12" placeholder="e.g. CRASH!"></label>
-    <div class="row">
-      <input id="redo-note" placeholder="What should change? e.g. make dad look more shocked" class="grow">
-    </div>
-    <div class="row">
-      <button class="primary" data-act="redraw" ${state.cache.pending?.has(seg.id) ? 'disabled' : ''}>${seg.image?.key ? 'Redraw image' : 'Draw this scene'}</button>
-      <button data-act="redo-ai">Rewrite scene with Claude</button>
-    </div>
-    <div class="status" id="redo-status"></div>
-    <details class="draft">
-      <summary>Draft drawing details</summary>
-      <label class="field">Setting <select data-s="setting">${opt(SETTINGS, sc.setting)}</select></label>
-      <div class="actors">
-        ${sc.actors.map((a, k) => `
-          <div class="actor" data-k="${k}">
-            <select data-a="character_id" aria-label="Character">${charOpts(a.character_id)}</select>
-            <select data-a="pose" aria-label="Pose">${opt(POSES, a.pose)}</select>
-            <select data-a="expression" aria-label="Expression">${opt(EXPRESSIONS, a.expression)}</select>
-            <button data-a="facing" title="Flip direction">${a.facing === 'left' ? '←' : '→'}</button>
-            <input type="range" data-a="x" min="0.1" max="0.9" step="0.01" value="${a.x}" aria-label="Position">
-            <input data-a="speech" placeholder="speech bubble" value="${esc(a.speech)}" maxlength="60">
-          </div>`).join('')}
-      </div>
-      <label class="field">Props
-        <div class="chips">${sc.props.map((pr, k) => `<span class="chip">${esc(label(pr.kind))}<button data-rmprop="${k}" aria-label="remove">✕</button></span>`).join('')}
-          ${sc.props.length < 3 ? `<select data-act="add-prop"><option value="">+ prop</option>${opt(PROPS, '')}</select>` : ''}</div>
+      ${seg.image?.qc && !seg.image.qc.pass ? `<p class="warn-text">Quality check: ${esc(seg.image.qc.issues.join('; '))}</p>` : ''}
+      ${seg.image?.stale ? '<p class="warn-text">You changed this scene since it was drawn. Redraw to update it.</p>' : ''}
+      <label class="field">What the scene shows
+        <textarea data-s="image_prompt" rows="3" placeholder="Who is where, doing what, with which expressions">${esc(sc.image_prompt || '')}</textarea>
       </label>
-      <div class="field">Effects
-        <div class="chips">${EFFECTS.map((ef) => `<label class="chip toggle ${sc.effects.includes(ef) ? 'on' : ''}"><input type="checkbox" data-effect="${ef}" ${sc.effects.includes(ef) ? 'checked' : ''}>${esc(label(ef))}</label>`).join('')}</div>
+      <div class="field">Characters in this shot
+        <div class="chips">${sc.actors.map((a, k) => `<span class="chip">${esc(p.characters.find((c) => c.id === a.character_id)?.name || a.character_id)}<button data-a="remove" data-k="${k}" aria-label="Remove">✕</button></span>`).join('')}
+          ${sc.actors.length < 4 && p.characters.some((c) => !sc.actors.some((a) => a.character_id === c.id)) ? `<select data-act="add-cast"><option value="">+ Add</option>${p.characters.filter((c) => !sc.actors.some((a) => a.character_id === c.id)).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
+        </div>
       </div>
-      <div class="row"><button data-act="remix">Surprise me (draft)</button></div>
-    </details>`}
-  `;
+      <label class="field">Change request <span class="hint">optional</span>
+        <input id="redo-note" placeholder="e.g. make Dad look more shocked">
+      </label>
+      <div class="tool-row">
+        <button class="btn primary sm" data-act="redraw" ${pending ? 'disabled' : ''}>${icon('redo')}${seg.image?.key ? 'Redraw image' : 'Draw this scene'}</button>
+        <button class="btn glass sm" data-act="redo-ai" data-tip="Let the AI rethink this scene, then redraw">${icon('wand')}Rethink scene</button>
+      </div>
+      <div class="status" id="redo-status"></div>`}
+    <details>
+      <summary>Timing</summary>
+      <div class="time-row" style="margin-top:12px">
+        <label class="field">Starts (s)<input type="number" step="0.1" data-f="start" value="${seg.start.toFixed(2)}" ${i === 0 ? 'disabled' : ''}></label>
+        <label class="field">Ends (s)<input type="number" step="0.1" data-f="end" value="${seg.end.toFixed(2)}" ${i === p.segments.length - 1 ? 'disabled' : ''}></label>
+      </div>
+      <div class="tool-row" style="margin-top:10px">
+        <button class="btn glass sm" data-act="split" data-tip="Split this shot where the playhead is">${icon('scissors')}Split</button>
+        <button class="btn glass sm" data-act="merge" ${i === p.segments.length - 1 ? 'disabled' : ''} data-tip="Join with the next shot">${icon('merge')}Merge</button>
+      </div>
+    </details>`;
   const img = el.querySelector('.shot-img img');
   if (img) fillImg(img, seg.image.key);
-  const det = el.querySelector('details.draft');
-  if (det) { det.open = !!state.draftOpen; det.addEventListener('toggle', () => { state.draftOpen = det.open; }); }
-}
-
-function currentSeg() {
-  return state.project.segments.find((s) => s.id === state.selected);
 }
 
 function defaultSceneFor(seg) {
   const p = state.project;
   const i = p.segments.indexOf(seg);
   const near = [...p.segments.slice(0, i).reverse(), ...p.segments.slice(i + 1)].find((s) => s.scene);
-  if (near) return { ...JSON.parse(JSON.stringify(near.scene)), sound_effect: '' };
-  return { setting: 'blank', actors: [{ character_id: 'me', x: 0.5, pose: 'stand', expression: 'neutral', facing: 'right', speech: '' }], props: [], effects: [], sound_effect: '' };
+  const scene = near ? JSON.parse(JSON.stringify(near.scene)) : { setting: 'blank', actors: [{ character_id: 'me', x: 0.5, pose: 'stand', expression: 'neutral', facing: 'right', speech: '' }], props: [], effects: [] };
+  return { ...scene, image_prompt: shotText(seg), sound_effect: '' };
 }
 
 function setBoundary(i, t) {
@@ -823,42 +933,26 @@ function setBoundary(i, t) {
   segs[i].start = v; segs[i - 1].end = v;
 }
 
-const inspector = $('#inspector');
+const markStale = (seg) => { if (seg.image?.key) seg.image.stale = true; };
 
-inspector.addEventListener('click', async (e) => {
+$('#inspector').addEventListener('click', async (e) => {
   const seg = currentSeg();
-  if (!seg) return;
+  const t = e.target.closest('button');
+  if (!seg || !t) return;
   const p = state.project;
   const i = p.segments.indexOf(seg);
-  const t = e.target;
+  const act = t.dataset.act;
   if (t.dataset.type) {
     edit(() => {
       seg.type = t.dataset.type;
       if (seg.type !== 'face' && !seg.scene) seg.scene = defaultSceneFor(seg);
     });
-    return;
-  }
-  const act = t.dataset.act;
-  if (t.dataset.a === 'facing') {
-    const k = +t.closest('.actor').dataset.k;
-    edit(() => { const a = seg.scene.actors[k]; a.facing = a.facing === 'left' ? 'right' : 'left'; seg.scene.keepFacing = true; });
   } else if (t.dataset.a === 'remove') {
-    const k = +t.dataset.k;
     if (seg.scene.actors.length <= 1) { toast('A scene needs at least one character.'); return; }
-    edit(() => { seg.scene.actors.splice(k, 1); seg.scene = normalizeScene(seg.scene, p.characters); markStale(seg); });
-  } else if (t.dataset.rmprop) {
-    edit(() => { seg.scene.props.splice(+t.dataset.rmprop, 1); });
-  } else if (act === 'add-actor') {
-    const used = new Set(seg.scene.actors.map((a) => a.character_id));
-    const ch = p.characters.find((c) => !used.has(c.id));
-    if (!ch) { toast('Everyone is already in this scene.'); return; }
-    edit(() => {
-      seg.scene.actors.push({ character_id: ch.id, x: 0.8, pose: 'stand', expression: 'neutral', facing: 'left', speech: '' });
-      seg.scene = normalizeScene(seg.scene, p.characters);
-    });
+    edit(() => { seg.scene.actors.splice(+t.dataset.k, 1); seg.scene = normalizeScene(seg.scene, p.characters); markStale(seg); });
   } else if (act === 'split') {
     const now = state.media.time;
-    if (now < seg.start + 0.5 || now > seg.end - 0.5) { toast('Move the playhead inside this shot (at least 0.5s from either end) to split.'); return; }
+    if (now < seg.start + 0.5 || now > seg.end - 0.5) { toast('Move the playhead inside this shot (at least 0.5s from either end) to split it.'); return; }
     edit(() => {
       const copy = JSON.parse(JSON.stringify(seg));
       copy.id = newId(); copy.start = now; copy.reason = 'Split from the previous shot.';
@@ -867,33 +961,26 @@ inspector.addEventListener('click', async (e) => {
     });
   } else if (act === 'merge') {
     edit(() => { const next = p.segments[i + 1]; seg.end = next.end; p.segments.splice(i + 1, 1); });
-  } else if (act === 'remix') {
-    edit(() => { seg.scene = normalizeScene(remixScene(seg.scene), p.characters); });
   } else if (act === 'redraw') {
     generateScenes([seg], $('#redo-note')?.value.trim());
   } else if (act === 'redo-ai') {
     const { key, model } = settingsGet();
-    if (!key) { toast('Add your Anthropic API key in Settings to rewrite scenes with Claude.'); openSettings(); return; }
+    if (!key) { openSettings(); return; }
     t.disabled = true;
-    setStatus('#redo-status', 'Claude is rewriting this scene…', 'busy');
+    setStatus('#redo-status', 'Rethinking this scene…', 'busy');
     try {
       const scene = await redoSceneWithClaude(key, p, seg, $('#redo-note')?.value.trim(), { model });
       edit(() => { seg.scene = normalizeScene(scene, p.characters); markStale(seg); });
       if (hasImageKey()) generateScenes([seg]);
-      else toast('New scene written. Add an image key in Settings to draw it.');
     } catch (err) {
       console.error(err);
-      setStatus('#redo-status', `Couldn't rewrite: ${err.message}`, 'err');
+      setStatus('#redo-status', `Couldn't rethink it: ${errText(err)}`, 'err');
       t.disabled = false;
     }
   }
 });
 
-function markStale(seg) {
-  if (seg.image?.key) seg.image.stale = true;
-}
-
-inspector.addEventListener('change', (e) => {
+$('#inspector').addEventListener('change', (e) => {
   const seg = currentSeg();
   if (!seg) return;
   const p = state.project;
@@ -901,7 +988,7 @@ inspector.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.f === 'start') edit(() => setBoundary(i, +t.value));
   else if (t.dataset.f === 'end') edit(() => setBoundary(i + 1, +t.value));
-  else if (t.dataset.s) edit(() => { seg.scene[t.dataset.s] = t.value; seg.scene = normalizeScene(seg.scene, p.characters); if (t.dataset.s === 'image_prompt') markStale(seg); });
+  else if (t.dataset.s) edit(() => { seg.scene[t.dataset.s] = t.value; seg.scene = normalizeScene(seg.scene, p.characters); markStale(seg); });
   else if (t.dataset.act === 'add-cast' && t.value) {
     edit(() => {
       seg.scene.actors.push({ character_id: t.value, x: 0.8, pose: 'stand', expression: 'neutral', facing: 'left', speech: '' });
@@ -909,53 +996,20 @@ inspector.addEventListener('change', (e) => {
       markStale(seg);
     });
   }
-  else if (t.dataset.act === 'add-prop' && t.value) edit(() => { seg.scene.props.push({ kind: t.value, x: seg.scene.props.length ? 0.12 : 0.86 }); });
-  else if (t.dataset.effect) {
-    edit(() => {
-      const ef = t.dataset.effect;
-      seg.scene.effects = t.checked ? [...seg.scene.effects, ef].slice(-3) : seg.scene.effects.filter((x) => x !== ef);
-    });
-  } else if (t.dataset.a && t.dataset.a !== 'x') {
-    const k = +t.closest('.actor').dataset.k;
-    edit(() => { seg.scene.actors[k][t.dataset.a] = t.value; if (t.dataset.a === 'character_id') seg.scene = normalizeScene(seg.scene, p.characters); });
-  } else if (t.dataset.a === 'x') {
-    save(); renderInspector();
-  }
 });
 
-inspector.addEventListener('input', (e) => {
-  const t = e.target;
-  if (t.dataset.a !== 'x') return;
-  const seg = currentSeg();
-  const k = +t.closest('.actor').dataset.k;
-  if (!state._dragging) { snapshot(); state._dragging = true; t.addEventListener('change', () => { state._dragging = false; }, { once: true }); }
-  seg.scene.actors[k].x = +t.value;
-  drawPreview();
-});
+// ---------- export ----------
 
-// ---------- step 6: export ----------
-
-function syncSettingsUI() {
-  const s = state.project.settings;
-  $('#opt-captions').checked = !!s.captions;
-  $('#opt-upper').checked = !!s.captionStyle?.upper;
-  $('#opt-punch').checked = !!s.punchIn;
-  $('#opt-bubble-left').checked = s.bubbleSide === 'left';
-  $('#opt-watermark').checked = !!s.watermark;
-  $('#face-x').value = s.faceX ?? 0.5;
-}
-
-function readSettingsUI() {
+function readExportUI() {
   const s = state.project.settings;
   s.captions = $('#opt-captions').checked;
   s.captionStyle = { ...(s.captionStyle || {}), upper: $('#opt-upper').checked };
   s.punchIn = $('#opt-punch').checked;
-  s.bubbleSide = $('#opt-bubble-left').checked ? 'left' : 'right';
   s.watermark = $('#opt-watermark').checked;
   s.faceX = +$('#face-x').value;
   save(); drawPreview();
 }
-['#opt-captions', '#opt-upper', '#opt-punch', '#opt-bubble-left', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', () => state.project && readSettingsUI()));
+['#opt-captions', '#opt-upper', '#opt-punch', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', () => state.project && readExportUI()));
 
 function download(blob, name) {
   const a = document.createElement('a');
@@ -968,36 +1022,37 @@ function download(blob, name) {
 const baseName = () => (state.file ? state.file.name.replace(/\.[^.]+$/, '') : 'storycuts-demo');
 
 async function doExport() {
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { toast('This browser can\'t record video. Try Chrome, Edge or Safari 17+.', 6000); return; }
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { toast('This browser can\'t record video. Please use Chrome or Edge.', 6000); return; }
   const btn = $('#btn-export');
   if (state.exporting) { state.exporting.abort(); return; }
+  const undrawn = sceneSegs().filter((sg) => !sg.image?.key).length;
+  if (undrawn && !confirm(`${undrawn} scene${undrawn > 1 ? 's aren\'t' : ' isn\'t'} drawn yet and will show as a placeholder. Export anyway?`)) return;
   const ac = new AbortController();
   state.exporting = ac;
-  btn.textContent = 'Cancel export';
+  btn.querySelector('span').textContent = 'Cancel export';
   const bar = $('#ex-progress');
   bar.classList.remove('hidden');
   setStatus('#ex-status', 'Rendering… keep this tab open and in front.', 'busy');
   try {
     if (!state.media.paused) state.media.pause();
-    const aspect = $('#ex-aspect').value;
     const { blob, ext } = await exportVideo(state.project, state.media, {
-      aspect, signal: ac.signal, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
+      aspect: state.aspect, signal: ac.signal, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
     });
-    if (ac.signal.aborted) { setStatus('#ex-status', 'Export cancelled.', ''); return; }
-    download(blob, `${baseName()}-storycuts-${aspect}.${ext}`);
-    setStatus('#ex-status', `Done: ${(blob.size / 1e6).toFixed(1)} MB ${ext.toUpperCase()}.${ext === 'webm' ? ' (Your browser records WebM; TikTok and YouTube accept it, or convert to MP4 with any converter.)' : ''}`, 'ok');
+    if (ac.signal.aborted) { setStatus('#ex-status', 'Export cancelled.'); return; }
+    download(blob, `${baseName()}-storycuts-${state.aspect}.${ext}`);
+    setStatus('#ex-status', `Done! ${(blob.size / 1e6).toFixed(1)} MB ${ext.toUpperCase()} saved to your downloads.${ext === 'webm' ? ' (WebM works on TikTok and YouTube.)' : ''}`, 'ok');
   } catch (e) {
     console.error(e);
-    setStatus('#ex-status', `Export failed: ${e.message}`, 'err');
+    setStatus('#ex-status', `Export failed: ${errText(e)}`, 'err');
   } finally {
     state.exporting = null;
-    btn.textContent = 'Export video';
+    btn.querySelector('span').textContent = 'Export video';
+    setTimeout(() => bar.classList.add('hidden'), 800);
   }
 }
 
 function saveProjectFile() {
-  const p = state.project;
-  const blob = new Blob([JSON.stringify({ app: 'storycuts', v: 1, video: state.file?.name || 'demo', ...p }, null, 1)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'storycuts', v: 2, video: state.file?.name || 'demo', ...state.project }, null, 1)], { type: 'application/json' });
   download(blob, `${baseName()}.storycuts.json`);
 }
 
@@ -1011,57 +1066,34 @@ async function loadProjectFile(file) {
     const { words, characters, segments, settings, approved, title } = data;
     Object.assign(state.project, { words, characters, segments, settings: { ...state.project.settings, ...settings }, approved, title });
     runQC(state.project);
-    save(); syncSettingsUI(); renderAll();
+    save(); syncOptionsUI(); refresh();
     toast('Project loaded.');
   } catch (e) {
     toast(`Couldn't open that project: ${e.message}`, 5000);
   }
 }
 
-// ---------- settings ----------
-
-function openSettings() {
-  const s = settingsGet();
-  $('#api-key').value = s.key;
-  $('#model').value = s.model;
-  $('#gemini-key').value = s.gemini;
-  $('#openai-key').value = s.openai;
-  $('#image-model').innerHTML = IMAGE_MODELS.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
-  $('#image-model').value = s.imageModel;
-  $('#art-style').innerHTML = Object.entries(STYLES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');
-  $('#art-style').value = s.style;
-  $('#opt-qc').checked = s.qc;
-  $('#settings').showModal();
-}
-
-$('#settings').addEventListener('close', () => {
-  if ($('#settings').returnValue === 'save') {
-    const before = settingsGet().style;
-    store.set('storycuts:key', $('#api-key').value.trim());
-    store.set('storycuts:model', $('#model').value);
-    store.set('storycuts:gkey', $('#gemini-key').value.trim());
-    store.set('storycuts:okey', $('#openai-key').value.trim());
-    store.set('storycuts:imodel', $('#image-model').value);
-    store.set('storycuts:style', $('#art-style').value);
-    store.set('storycuts:qc', $('#opt-qc').checked);
-    if (state.project?.words.length) updateCost();
-    if (state.project?.characters.length) renderChars();
-    updateSceneBar();
-    toast(before !== $('#art-style').value && state.project?.characters.some((c) => c.image)
-      ? 'Saved. New art style: redraw characters, then scenes.' : 'Settings saved in this browser.', 4500);
-  }
-});
-
 // ---------- wiring ----------
 
-$('#file').addEventListener('change', (e) => loadFile(e.target.files[0]).catch(() => {}));
+$('#file').addEventListener('change', (e) => loadFile(e.target.files[0]));
 const drop = $('#drop');
 ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
-drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]).catch(() => {}));
+drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
 $('#btn-demo').addEventListener('click', loadDemo);
-$('#btn-transcribe').addEventListener('click', doTranscribe);
+$('#cta-demo').addEventListener('click', () => { loadDemo(); });
+$('#btn-create').addEventListener('click', createVideo);
 $('#btn-use-paste').addEventListener('click', usePaste);
+$('#btn-reset').addEventListener('click', resetPlan);
+$('#btn-approve').addEventListener('click', approveAndDraw);
+$('#btn-play').addEventListener('click', togglePlay);
+$('#scrub').addEventListener('input', async (e) => {
+  if (!state.project) return;
+  state.scrubbing = true;
+  await state.media?.seek((+e.target.value / 1000) * state.project.duration);
+  drawPreview();
+  state.scrubbing = false;
+});
 $('#transcript').addEventListener('click', async (e) => {
   const i = e.target.dataset.i;
   if (i == null || !state.media) return;
@@ -1070,38 +1102,23 @@ $('#transcript').addEventListener('click', async (e) => {
   if (state.project.approved) select(segmentAt(state.project.segments, w.s).id, false);
   drawPreview();
 });
-$('#btn-plan-ai').addEventListener('click', planAI);
-$('#btn-plan-quick').addEventListener('click', planQuick);
-$('#btn-play').addEventListener('click', togglePlay);
-$('#scrub').addEventListener('input', async (e) => {
-  state.scrubbing = true;
-  await state.media?.seek((+e.target.value / 1000) * state.project.duration);
-  drawPreview();
-  state.scrubbing = false;
-});
-document.querySelectorAll('.aspect-toggle button').forEach((b) => b.addEventListener('click', () => {
-  state.aspect = b.dataset.aspect;
-  document.querySelectorAll('.aspect-toggle button').forEach((x) => x.classList.toggle('on', x === b));
-  $('#ex-aspect').value = state.aspect;
-  sizePreview(); drawPreview();
-}));
-$('#ex-aspect').addEventListener('change', (e) => {
-  state.aspect = e.target.value;
-  document.querySelectorAll('.aspect-toggle button').forEach((x) => x.classList.toggle('on', x.dataset.aspect === state.aspect));
-  sizePreview(); drawPreview();
-});
 $('#btn-export').addEventListener('click', doExport);
 $('#btn-srt').addEventListener('click', () => state.project?.words.length && download(new Blob([toSRT(state.project.words)], { type: 'text/plain' }), `${baseName()}.srt`));
 $('#btn-save').addEventListener('click', saveProjectFile);
 $('#load-project').addEventListener('change', (e) => e.target.files[0] && loadProjectFile(e.target.files[0]));
-$('#btn-settings').addEventListener('click', openSettings);
+$('#btn-keys').addEventListener('click', openSettings);
 $('#btn-undo').addEventListener('click', undo);
 document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); undo(); }
-  if (e.key === ' ' && state.project?.approved && !/INPUT|TEXTAREA|SELECT|BUTTON/.test(document.activeElement.tagName)) { e.preventDefault(); togglePlay(); }
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !typing) { e.preventDefault(); undo(); }
+  if (e.key === ' ' && state.project?.approved && !typing && document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); togglePlay(); }
 });
 $('#video').addEventListener('seeked', drawPreview);
+
+renderStyles();
+updateKeysDot();
 sizePreview();
+renderStepper();
 
 // test hook
-window.__storycuts = { state, loadDemo, planQuick };
+window.__storycuts = { state, loadDemo };
