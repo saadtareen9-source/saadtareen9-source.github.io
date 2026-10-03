@@ -33,7 +33,7 @@
     <h1 style="font-size:2.2rem">Official style references</h1>
     <p class="lead">Each built-in style gets one official reference image. It's attached to every character and scene drawn in that style, so the look stays the same for every user, every time. It's also the thumbnail on the style slider.</p>
     <ol class="steps">
-      <li>Make sure your OpenAI key is saved on the main StoryCuts page (API keys).</li>
+      <li>Make sure your OpenAI and Claude keys are saved on the main StoryCuts page (API keys). Claude checks every image (including counting fingers) and it's redrawn automatically if anything is off.</li>
       <li>Click <b>Draw all styles</b> (or Draw on single ones). Redraw any you don't love. Every style draws the same scene, so you can compare them.</li>
       <li>Click <b>Download all</b> (or Download on single ones) and drag the files into your chat with Claude. They'll be added to the site.</li>
     </ol>
@@ -53,16 +53,17 @@
   </div>
   <div class="toast" id="toast"></div>
   <script type="module">
-    import { STYLES, STYLE_SUBJECT, drawImage, loadStyleManifest } from '../js/images.js';
+    import { STYLES, STYLE_SUBJECT, HANDS, drawImage, checkImage, loadStyleManifest } from '../js/images.js';
     const $ = (s) => document.querySelector(s);
     const get = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
     const urls = {};
+    const checks = {};
 
     function render() {
       const dl = document.querySelector('#dl-all'); if (dl) dl.disabled = !Object.keys(urls).length;
       $('#grid').innerHTML = Object.entries(STYLES).map(([id, s]) => `
         <div class="card" data-id="${id}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
-          <div class="art">${busy.has(id) ? '<div class="art-busy"><small>Drawing…</small></div>' : urls[id] ? `<img src="${urls[id]}" alt="">` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
+          <div class="art">${busy.has(id) ? '<div class="art-busy"><small>Drawing &amp; checking…</small></div>' : urls[id] ? `<img src="${urls[id]}" alt="">${checks[id] ? (checks[id].pass ? `<span class="qc-badge ok live">✓ Checked ${checks[id].score}/10</span>` : `<span class="qc-badge warn live" title="${checks[id].issues.join('; ')}">⚠ ${checks[id].issues[0] || 'Check it'}</span>`) : '<span class="qc-badge live">Not checked</span>'}` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
           <div class="meta">
             <b>${s.label}</b>
             <div class="row">
@@ -75,7 +76,7 @@
 
     function prompt(id) {
       const s = STYLES[id];
-      return `ART STYLE: ${s.prompt} Avoid: ${s.avoid}. Polished, professional, finished artwork; this image defines the house style for an entire series, so make it a clean, beautiful, representative example of the style.\n\nScene: ${STYLE_SUBJECT}\n\nAbsolutely no text, letters, logos or watermarks.`;
+      return `ART STYLE: ${s.prompt} Avoid: ${s.avoid}. Polished, professional, finished artwork; this image defines the house style for an entire series, so make it a clean, beautiful, representative example of the style. ${HANDS}\n\nScene: ${STYLE_SUBJECT}\n\nAbsolutely no text, letters, logos or watermarks.`;
     }
 
     const busy = new Set();
@@ -83,10 +84,24 @@
       const key = get('storycuts:okey');
       if (!key) { $('#status').textContent = 'No OpenAI key found. Save it on the main StoryCuts page (API keys) first, in this same browser.'; $('#status').className = 'status err'; return false; }
       busy.add(id); render();
+      const claude = get('storycuts:key');
+      const model = get('storycuts:model') || 'claude-opus-5-5';
       try {
-        const blob = await drawImage({ openai: key }, $('#quality').value, [{ text: prompt(id) }], '9:16');
+        let best = null, hints = '';
+        for (let attempt = 1; attempt <= (claude ? 3 : 1); attempt++) {
+          const blob = await drawImage({ openai: key }, $('#quality').value, [{ text: prompt(id) + (hints ? `\nFix these problems from a previous attempt: ${hints}` : '') }], '9:16');
+          let qc = null;
+          if (claude) {
+            try { qc = await checkImage(claude, model, blob, `Official style reference for the "${STYLES[id].label}" style: ${STYLES[id].prompt}\nScene: ${STYLE_SUBJECT}`, []); } catch (e) { console.warn('check failed', e); }
+            if (qc && qc.score > 0 && qc.score < 7) qc.pass = false;
+          }
+          if (!best || (qc?.score || 0) > (best.qc?.score || 0)) best = { blob, qc };
+          if (!qc || qc.pass) break;
+          hints = `${qc.fix_instructions} Avoid: ${qc.issues.join('; ')}`;
+        }
         if (urls[id]) URL.revokeObjectURL(urls[id]);
-        urls[id] = URL.createObjectURL(blob);
+        urls[id] = URL.createObjectURL(best.blob);
+        checks[id] = best.qc;
         return true;
       } catch (err) {
         console.error(err);

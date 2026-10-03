@@ -95,6 +95,7 @@ export function styleSpec(settings = {}) {
     + `${extra ? ` Extra style direction from the creator (takes priority where it differs): ${extra}.` : ''}`
     + `${settings.styleRef?.key || (!custom && base.anchor) ? ' Match the attached style reference image\'s art style, colour palette, line quality, lighting and rendering exactly (not its content or characters).' : ''}`
     + ' Keep the same palette, line weight, lighting and level of detail across the whole series. Polished, professional, finished artwork with a clean readable composition; nothing sloppy, smudged, half-rendered or distorted.'
+    + ` ${HANDS}`
     + `${base.avoid ? ` Avoid: ${base.avoid}.` : ''}`;
   return { label: base.label, text };
 }
@@ -104,7 +105,9 @@ export function styleSpec(settings = {}) {
 // (listed in assets/styles/manifest.json). It is attached to every generation
 // for that style, so "Realistic" looks the same for every user, every time.
 
-export const STYLE_SUBJECT = 'Two friends, a young woman with curly dark hair in a mustard sweater and a tall man with short brown hair and glasses in a blue shirt, laughing together at a kitchen table with coffee mugs; window light, a potted plant and shelves behind them. Medium-wide shot, both faces and hands clearly visible.';
+export const HANDS = 'HANDS: every hand must have correct anatomy with exactly five fingers (or a clean four-finger cartoon hand if the style is very simple), never extra, fused or missing fingers. Prefer poses where hands are relaxed, holding something or partly out of frame rather than spread open toward the viewer.';
+
+export const STYLE_SUBJECT = 'Two friends, a young woman with curly dark hair in a mustard sweater and a tall man with short brown hair and glasses in a blue shirt, laughing together at a kitchen table, each holding a coffee mug with both hands; window light, a potted plant and shelves behind them. Medium-wide shot, faces clearly visible.';
 
 let manifestPromise = null;
 export function loadStyleManifest() {
@@ -407,7 +410,8 @@ const QC_SCHEMA = {
 
 const QC_SYSTEM = `You are the art director checking AI illustrations for a storytime video before they go out. Be strict about real defects, relaxed about stylisation (it's a cartoon).
 Fail the image if any of these are true:
-- malformed anatomy: extra or missing limbs, extra fingers, fused or broken hands, warped faces, merged bodies
+- malformed anatomy: extra or missing limbs, fused or broken hands, warped faces, merged bodies
+- wrong finger count: look closely at EVERY visible hand, one at a time, and count the fingers including the thumb. More than five, fewer than four, or fingers that merge or branch is an automatic fail with score 4 or lower, however good the rest is. (A clean four-finger cartoon hand is fine in very simple cartoon styles.)
 - any visible text, letters, numbers, captions, speech bubbles, logos or watermarks
 - a character doesn't match their reference image (hair, clothing colour, accessories, proportions)
 - the wrong cast: a main character missing, or unexplained extra people in focus
@@ -423,7 +427,7 @@ export async function checkImage(claudeKey, model, blob, brief, refs) {
     content.push({ type: 'text', text: `Reference for ${r.name}:` });
     content.push({ type: 'image', source: { type: 'base64', media_type: r.inline.mime, data: r.inline.data } });
   }
-  const img = await toInline(blob, 896);
+  const img = await toInline(blob, 1280, 'image/png');
   content.push({ type: 'text', text: 'Image to check:' });
   content.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.data } });
   const { data } = await callClaude(claudeKey, {
