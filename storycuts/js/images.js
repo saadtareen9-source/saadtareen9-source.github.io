@@ -92,17 +92,59 @@ export function styleSpec(settings = {}) {
     : STYLES[settings.style] || STYLES.stick;
   const extra = (settings.styleNotes || '').trim();
   const text = `ART STYLE (follow exactly; it must look identical in every image of the series): ${base.prompt}`
-    + `${extra ? ` Extra style direction from the creator: ${extra}.` : ''}`
-    + `${settings.styleRef?.key ? ' Match the attached style reference image\'s art style, colour palette, line quality and rendering (not its content).' : ''}`
+    + `${extra ? ` Extra style direction from the creator (takes priority where it differs): ${extra}.` : ''}`
+    + `${settings.styleRef?.key || (!custom && base.anchor) ? ' Match the attached style reference image\'s art style, colour palette, line quality, lighting and rendering exactly (not its content or characters).' : ''}`
     + ' Keep the same palette, line weight, lighting and level of detail across the whole series. Polished, professional, finished artwork with a clean readable composition; nothing sloppy, smudged, half-rendered or distorted.'
     + `${base.avoid ? ` Avoid: ${base.avoid}.` : ''}`;
   return { label: base.label, text };
 }
 
+// ---------- baseline style anchors ----------
+// Each built-in style can have one official reference image in assets/styles/
+// (listed in assets/styles/manifest.json). It is attached to every generation
+// for that style, so "Realistic" looks the same for every user, every time.
+
+export const STYLE_SUBJECT = 'Two friends, a young woman with curly dark hair in a mustard sweater and a tall man with short brown hair and glasses in a blue shirt, laughing together at a kitchen table with coffee mugs; window light, a potted plant and shelves behind them. Medium-wide shot, both faces and hands clearly visible.';
+
+let manifestPromise = null;
+export function loadStyleManifest() {
+  if (!manifestPromise) {
+    manifestPromise = fetch(new URL('../assets/styles/manifest.json', import.meta.url), { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}))
+      .then((m) => {
+        for (const [id, file] of Object.entries(m.anchors || {})) {
+          if (STYLES[id]) {
+            STYLES[id].anchor = new URL(`../assets/styles/${file}`, import.meta.url).href;
+            STYLES[id].thumb = STYLES[id].thumb || STYLES[id].anchor;
+          }
+        }
+        return m;
+      });
+  }
+  return manifestPromise;
+}
+
+const anchorCache = new Map();
+async function anchorInline(url) {
+  if (!anchorCache.has(url)) {
+    anchorCache.set(url, fetch(url).then((r) => { if (!r.ok) throw new Error('missing'); return r.blob(); }).then((b) => toInline(b, 768)).catch(() => null));
+  }
+  return anchorCache.get(url);
+}
+
+/** The style reference to attach: the user's own example image, else the style's official anchor. */
 async function styleRefPart(settings) {
-  if (!settings?.styleRef?.key) return null;
-  const blob = await getBlob(settings.styleRef.key);
-  return blob ? toInline(blob, 768) : null;
+  if (settings?.styleRef?.key) {
+    const blob = await getBlob(settings.styleRef.key);
+    if (blob) return toInline(blob, 768);
+  }
+  if (settings?.style !== 'custom') {
+    await loadStyleManifest();
+    const anchor = (STYLES[settings?.style] || STYLES.stick).anchor;
+    if (anchor) return anchorInline(anchor);
+  }
+  return null;
 }
 
 const NO_TEXT = 'Absolutely no text, letters, numbers, captions, speech bubbles, signs with writing, logos or watermarks anywhere in the image.';
@@ -316,7 +358,7 @@ async function openaiImage(apiKey, modelId, parts, aspectRatio) {
   throw new Error('No image came back. Try again or reword the scene.');
 }
 
-async function drawImage(keys, modelId, parts, aspect) {
+export async function drawImage(keys, modelId, parts, aspect) {
   const info = modelInfo(modelId);
   try {
     return info.provider === 'gemini'
@@ -442,6 +484,7 @@ async function generateChecked({ keys, opts, buildParts, brief, refs, aspect, on
  * be passed so the cartoon resembles them.
  */
 export async function generateCharacterImage(project, ch, { keys, opts, projectKey, selfFrame, onStatus }) {
+  await loadStyleManifest();
   const style = styleSpec(project.settings);
   const brief = `Character design for ${characterBrief(ch)} One character only, full body, standing, friendly neutral pose, facing slightly to the side, centered on a plain light background. This image is the master reference for this character in every future scene, so make the design clear, appealing and distinctive.`;
   const selfRef = ch.id === 'me' && selfFrame ? await toInline(selfFrame, 768) : null;
@@ -466,6 +509,7 @@ function locationAnchor(project, seg) {
 }
 
 export async function generateSceneImage(project, seg, { keys, opts, projectKey, aspect, note = '', onStatus }) {
+  await loadStyleManifest();
   const style = styleSpec(project.settings);
   const ids = [...new Set(seg.scene.actors.map((a) => a.character_id))];
   const cast = ids.map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);

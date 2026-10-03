@@ -11,7 +11,7 @@ Upload → choose a style (slider of style cards) → **Create my video** (trans
 Scenes are full-frame cuts by default; a "face bubble" mode keeps your face in a corner during scenes.
 Consistency: characters are drawn once as master references; the AI editor defines recurring locations with fixed descriptions, and the first shot of each location is drawn first and passed as a reference to later shots there; each style has a detailed recipe plus an "avoid" list; Claude rejects any image scoring under 7/10 (anatomy, stray text, character/location/style mismatch, sloppy rendering) and it's redrawn.
 Custom styles: "Create your own" (text description + optional example image used as a style reference) and "Extra details" added to any style.
-Style card thumbnails: drop an image in `assets/styles/` and set `thumb` on the style in `js/images.js`.
+Baseline style anchors: each built-in style can have one official reference image (`assets/styles/<id>.png`, listed in `assets/styles/manifest.json`). It's attached to every generation in that style so the look is identical across users and projects, and doubles as the slider thumbnail. Create them with `tools/style-anchors.html` (uses your saved OpenAI key; every style draws the same subject).
 
 ## The six MVP steps
 1. **Upload** a video (stays in the browser; rights confirmation required).

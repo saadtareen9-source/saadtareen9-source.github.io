@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StoryCuts · Style references</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 32px) 80px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; margin-top: 24px; }
+    .card { border-radius: 20px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); }
+    .art { aspect-ratio: 9 / 16; background: linear-gradient(150deg, var(--t1), var(--t2)); position: relative; display: grid; place-items: center; }
+    .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .art .live { position: absolute; top: 10px; left: 10px; z-index: 2; }
+    .card .meta { padding: 12px 14px 14px; display: grid; gap: 10px; }
+    .card .meta b { font-family: var(--display); }
+    .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .steps { color: var(--text-2); line-height: 1.8; }
+    .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="wrap">
+    <a class="brand" href="../"><span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>StoryCuts</a>
+    <h1 style="font-size:2.2rem">Official style references</h1>
+    <p class="lead">Each built-in style gets one official reference image. It's attached to every character and scene drawn in that style, so the look stays the same for every user, every time. It's also the thumbnail on the style slider.</p>
+    <ol class="steps">
+      <li>Make sure your OpenAI key is saved on the main StoryCuts page (API keys).</li>
+      <li>Click <b>Draw</b> on a style. Redraw until you love it. Every style draws the same scene, so you can compare them.</li>
+      <li>Click <b>Download</b> on the ones you're happy with and send the files to Claude. They'll be added to the site.</li>
+    </ol>
+    <div class="bar">
+      <label class="field" style="min-width:260px">Quality
+        <select id="quality">
+          <option value="gpt-image-2@high">High (recommended, about $0.15 each)</option>
+          <option value="gpt-image-2">Medium (about $0.05 each)</option>
+        </select>
+      </label>
+      <span class="status" id="status"></span>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script type="module">
+    import { STYLES, STYLE_SUBJECT, drawImage, loadStyleManifest } from '../js/images.js';
+    const $ = (s) => document.querySelector(s);
+    const get = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
+    const urls = {};
+
+    function render() {
+      $('#grid').innerHTML = Object.entries(STYLES).map(([id, s]) => `
+        <div class="card" data-id="${id}" style="--t1:${s.tint[0]};--t2:${s.tint[1]}">
+          <div class="art">${urls[id] ? `<img src="${urls[id]}" alt="">` : s.anchor ? `<img src="${s.anchor}" alt=""><span class="qc-badge ok live">Live on site</span>` : ''}</div>
+          <div class="meta">
+            <b>${s.label}</b>
+            <div class="row">
+              <button class="btn primary sm" data-draw="${id}">${urls[id] || s.anchor ? 'Redraw' : 'Draw'}</button>
+              ${urls[id] ? `<a class="btn glass sm" href="${urls[id]}" download="${id}.png">Download</a>` : ''}
+            </div>
+          </div>
+        </div>`).join('');
+    }
+
+    function prompt(id) {
+      const s = STYLES[id];
+      return `ART STYLE: ${s.prompt} Avoid: ${s.avoid}. Polished, professional, finished artwork; this image defines the house style for an entire series, so make it a clean, beautiful, representative example of the style.\n\nScene: ${STYLE_SUBJECT}\n\nAbsolutely no text, letters, logos or watermarks.`;
+    }
+
+    $('#grid').addEventListener('click', async (e) => {
+      const id = e.target.dataset?.draw;
+      if (!id) return;
+      const key = get('storycuts:okey');
+      if (!key) { $('#status').textContent = 'No OpenAI key found. Save it on the main StoryCuts page first.'; $('#status').className = 'status err'; return; }
+      e.target.classList.add('busy');
+      $('#status').textContent = `Drawing ${STYLES[id].label}… (up to a minute)`; $('#status').className = 'status busy';
+      try {
+        const blob = await drawImage({ openai: key }, $('#quality').value, [{ text: prompt(id) }], '9:16');
+        if (urls[id]) URL.revokeObjectURL(urls[id]);
+        urls[id] = URL.createObjectURL(blob);
+        $('#status').textContent = `${STYLES[id].label} drawn.`; $('#status').className = 'status ok';
+      } catch (err) {
+        console.error(err);
+        $('#status').textContent = `Couldn't draw ${STYLES[id].label}: ${err.message}`; $('#status').className = 'status err';
+      }
+      render();
+    });
+
+    loadStyleManifest().then(render);
+  </script>
+</body>
+</html>
