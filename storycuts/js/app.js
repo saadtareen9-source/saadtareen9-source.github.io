@@ -262,6 +262,7 @@ function refresh() {
   if (p.approved) { renderTimeline(); renderInspector(); ensurePeaks(); }
   renderTranscript();
   renderPrep();
+  renderSummary();
   updateCosts();
   sizePreview();
   drawPreview();
@@ -295,6 +296,7 @@ function goStep(n, { scroll = true } = {}) {
   });
   renderStepper();
   if (n === 2) requestAnimationFrame(() => layoutStyles(true));
+  if (n === 4) renderSummary();
   if (n === 5 && state.project?.approved) {
     requestAnimationFrame(() => { sizePreview(); renderTimeline(); renderInspector(); drawPreview(); ensurePeaks(); });
   }
@@ -340,6 +342,10 @@ function renderPipeline() {
   $$('#pipeline li').forEach((li) => {
     li.className = stageState(li.dataset.stage);
   });
+  const p0 = state.project;
+  const started = !!(state.busy || p0?.segments.length || Object.values(state.stages || {}).some(Boolean));
+  $('#create-start').classList.toggle('hidden', started);
+  $('#run').classList.toggle('hidden', !started);
   const btn = $('#btn-create');
   const p = state.project;
   const label = btn.querySelector('span');
@@ -603,6 +609,22 @@ $$('#seg-pacing button').forEach((b) => b.addEventListener('click', () => {
   if (state.project.segments.length) toast('Pacing changed. Use "Start over" in step 3 to re-plan the edit with it.', 5000);
 }));
 
+// ---------- step 4 summary ----------
+
+function renderSummary() {
+  const p = state.project;
+  if (!p) return;
+  const s = p.settings;
+  const st = s.style === 'custom' ? { label: 'Your custom style' } : STYLES[s.style] || STYLES.stick;
+  const pacing = { mostly: 'Mostly story', balanced: 'Balanced', story: 'Story only' }[s.pacing || 'balanced'];
+  const row = (ico, label, value, back) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}">Change</button></div>`;
+  $('#create-summary').innerHTML = [
+    row(st.thumb ? `<img src="${esc(st.thumb)}" alt="">` : icon('palette'), 'Style', st.label + (s.styleNotes?.trim() ? ' + your details' : ''), 2),
+    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}`, 3),
+    row(icon('user'), 'Video', state.file ? state.file.name : 'Demo story', 1),
+  ].join('');
+}
+
 // ---------- step 3 prep: transcript + your characters ----------
 
 function renderPrep() {
@@ -729,7 +751,7 @@ function updateCosts() {
   const shots = p.segments.length ? p.segments.filter((sg) => sg.type !== 'face').length : Math.max(4, Math.round(p.duration / 5));
   const chars = p.characters.length || 3;
   const imgs = estimateImageCost(shots + chars, s, s.qc && !!s.key);
-  $('#create-cost').textContent = `Estimated cost ≈ ${fmtUSD(plan + imgs)} · paid to your AI accounts`;
+  $('#create-cost').textContent = `Estimated cost about ${fmtUSD(plan + imgs)}, paid to your own AI accounts.`;
   if (p.approved) {
     const todo = sceneSegs().filter(needsImage).length;
     $('#scenes-cost').textContent = todo ? `${todo} to draw · ≈ ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key))}` : `${sceneSegs().length} scenes drawn`;

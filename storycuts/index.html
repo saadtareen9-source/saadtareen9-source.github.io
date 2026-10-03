@@ -193,49 +193,38 @@
 
       <!-- 3 CREATE -->
       <div class="panel" id="panel-create" data-step="4">
-        <div class="panel-head"><span class="num">4</span><div><h3>Create your video</h3><p>We transcribe your story, plan the edit, design your cast, then draw every scene.</p></div></div>
-        <div class="prep">
-          <div class="prep-card spot" id="prep-transcript">
-            <div class="prep-ico"><svg><use href="#i-film"/></svg></div>
-            <div class="prep-body">
-              <b>Transcript</b>
-              <p class="muted small" id="transcript-state">We'll transcribe your video automatically.</p>
-              <div class="tool-row">
-                <label class="btn glass sm" data-tip=".txt, .srt or .vtt"><svg><use href="#i-upload"/></svg>Upload transcript<input type="file" id="transcript-file" accept=".txt,.srt,.vtt,text/plain,text/vtt" hidden></label>
-                <button class="btn ghost sm" id="btn-paste-open">Paste text</button>
-                <button class="btn link sm" id="btn-transcript-clear" hidden>Use automatic instead</button>
+        <div class="panel-head"><span class="num">4</span><div><h3>Create your video</h3><p>Check your choices, then let StoryCuts do the work.</p></div></div>
+
+        <div class="create-start" id="create-start">
+          <div class="summary" id="create-summary"></div>
+          <button class="btn primary xl create-btn" id="btn-create"><svg><use href="#i-spark"/></svg><span>Create my video</span></button>
+          <p class="create-note"><span id="create-cost"></span><br>Takes a few minutes. You'll approve your characters before any scenes are drawn.</p>
+
+          <details class="extras" id="extras">
+            <summary>Optional: add your own transcript or characters</summary>
+            <div class="extras-body">
+              <div class="extra-row" id="prep-transcript">
+                <div><b>Transcript</b><p class="muted small" id="transcript-state">We'll transcribe your video automatically.</p></div>
+                <div class="tool-row">
+                  <label class="btn glass sm"><svg><use href="#i-upload"/></svg>Upload file<input type="file" id="transcript-file" accept=".txt,.srt,.vtt,text/plain,text/vtt" hidden></label>
+                  <button class="btn glass sm" id="btn-paste-open">Paste text</button>
+                  <button class="btn link sm" id="btn-transcript-clear" hidden>Use automatic</button>
+                </div>
               </div>
+              <div class="extra-row" id="prep-cast">
+                <div><b>Characters</b><p class="muted small">The AI finds everyone in your story. Add people only if you want to describe them yourself.</p></div>
+                <div class="cast-pre" id="cast-pre"></div>
+                <div class="tool-row"><button class="btn glass sm" id="btn-cast-pre-add">+ Add a person</button></div>
+              </div>
+              <label class="field">Notes for the AI editor
+                <input id="plan-notes" placeholder="e.g. my dad is very tall, the dog is called Biscuit">
+              </label>
+              <label class="field">Transcription quality
+                <select id="asr-quality"><option value="fast">Fast</option><option value="accurate">More accurate (slower)</option></select>
+              </label>
             </div>
-          </div>
-          <div class="prep-card spot" id="prep-cast">
-            <div class="prep-ico"><svg><use href="#i-user"/></svg></div>
-            <div class="prep-body">
-              <b>Characters <span class="muted small">(optional)</span></b>
-              <p class="muted small">The AI finds everyone in your story. Add people here if you want to describe them yourself.</p>
-              <div class="cast-pre" id="cast-pre"></div>
-              <button class="btn ghost sm" id="btn-cast-pre-add">+ Add a person</button>
-            </div>
-          </div>
+          </details>
         </div>
-        <div class="create-row">
-          <button class="btn primary xl" id="btn-create"><svg><use href="#i-spark"/></svg><span>Create my video</span></button>
-          <div class="create-meta"><span id="create-cost" class="muted"></span><button class="btn link sm" id="btn-reset" hidden>Start over</button></div>
-        </div>
-        <ol class="pipeline" id="pipeline">
-          <li data-stage="transcribe"><i></i><div><b>Transcribe</b><small>Every word, with timing</small></div></li>
-          <li data-stage="plan"><i></i><div><b>Plan the edit</b><small>When to show you, when to cut away</small></div></li>
-          <li data-stage="cast"><i></i><div><b>Design your cast</b><small>One look per character</small></div></li>
-          <li data-stage="scenes"><i></i><div><b>Draw the scenes</b><small>Checked and redrawn if needed</small></div></li>
-        </ol>
-        <div class="live-card hidden" id="create-live">
-          <div class="orb"><i></i><i></i><i></i></div>
-          <div>
-            <b id="live-title">Working…</b>
-            <p id="live-tip" class="muted"></p>
-          </div>
-          <span class="elapsed" id="live-time">0:00</span>
-        </div>
-        <div class="status" id="create-status"></div>
 
         <div class="paste hidden" id="paste-box">
           <p id="paste-msg"><b>Paste what you say in the video.</b> We'll line the words up with your audio.</p>
@@ -243,17 +232,24 @@
           <div class="tool-row"><button class="btn primary" id="btn-use-paste">Use this transcript</button><button class="btn ghost" id="btn-paste-cancel">Cancel</button></div>
         </div>
 
-        <details class="advanced">
-          <summary>Advanced options</summary>
-          <div class="adv-grid">
-            <label class="field">Notes for the AI editor
-              <input id="plan-notes" placeholder="e.g. my dad is very tall, the dog is called Biscuit">
-            </label>
-            <label class="field">Transcription
-              <select id="asr-quality"><option value="fast">Fast (Whisper base)</option><option value="accurate">Accurate (Whisper small)</option></select>
-            </label>
+        <div class="run hidden" id="run">
+          <div class="live-card hidden" id="create-live">
+            <div class="orb"><i></i><i></i><i></i></div>
+            <div>
+              <b id="live-title">Working…</b>
+              <p id="live-tip" class="muted"></p>
+            </div>
+            <span class="elapsed" id="live-time">0:00</span>
           </div>
-        </details>
+          <ol class="pipeline" id="pipeline">
+            <li data-stage="transcribe"><i></i><b>Transcribing your story</b></li>
+            <li data-stage="plan"><i></i><b>Planning the edit</b></li>
+            <li data-stage="cast"><i></i><b>Designing your characters</b></li>
+            <li data-stage="scenes"><i></i><b>Drawing the scenes</b></li>
+          </ol>
+          <div class="status" id="create-status"></div>
+          <button class="btn link sm" id="btn-reset" hidden>Start over with new settings</button>
+        </div>
 
         <div class="cast hidden" id="cast">
           <div class="cast-head">
