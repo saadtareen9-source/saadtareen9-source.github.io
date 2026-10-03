@@ -3,7 +3,7 @@ import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, s
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, decodeAudio, speechSpans } from './transcribe.js';
 import {
-  IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, pool,
+  IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
@@ -189,14 +189,14 @@ function save() {
   const p = state.project;
   if (!p) return;
   store.set(storageKey(), {
-    v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters,
+    v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters, locations: p.locations,
     segments: p.segments, settings: p.settings, approved: p.approved,
   });
 }
 
 function snapshot() {
   const p = state.project;
-  state.history.push(JSON.stringify({ words: p.words, characters: p.characters, segments: p.segments, approved: p.approved }));
+  state.history.push(JSON.stringify({ words: p.words, characters: p.characters, locations: p.locations, segments: p.segments, approved: p.approved }));
   if (state.history.length > 60) state.history.shift();
   $('#btn-undo').disabled = false;
 }
@@ -228,7 +228,7 @@ function defaultSettings() {
 
 function loadProject(duration) {
   const saved = store.get(storageKey());
-  state.project = { title: 'My story', duration, words: [], characters: [], segments: [], approved: false, settings: defaultSettings() };
+  state.project = { title: 'My story', duration, words: [], characters: [], locations: [], segments: [], approved: false, settings: defaultSettings() };
   state.history = [];
   state.selected = null;
   state.cache = {};
@@ -367,8 +367,14 @@ function renderStyles() {
       </span>
       <span class="tick">${icon('check')}</span>
       <span class="meta"><b>${esc(s.label)}</b><small>${esc(s.blurb)}</small></span>
-    </button>`).join('');
+    </button>`).join('') + `
+    <button class="style-card custom ${cur === 'custom' ? 'on' : ''}" data-style="custom" role="radio" aria-checked="${cur === 'custom'}">
+      <span class="thumb"><span class="ph"><span class="plus">+</span></span><img class="ref-thumb" alt="" hidden></span>
+      <span class="tick">${icon('check')}</span>
+      <span class="meta"><b>Create your own</b><small>Describe it or upload an example</small></span>
+    </button>`;
   updateSlideButtons();
+  syncStyleExtras();
 }
 
 function updateSlideButtons() {
@@ -390,7 +396,51 @@ $('#style-track').addEventListener('click', (e) => {
   store.set('storycuts:style', id);
   save();
   $$('.style-card').forEach((c) => { c.classList.toggle('on', c === card); c.setAttribute('aria-checked', c === card); });
-  if (hadArt) toast(`Style set to ${STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500);
+  syncStyleExtras();
+  if (hadArt) toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500);
+  if (id === 'custom') setTimeout(() => $('#custom-style').focus(), 50);
+});
+
+function syncStyleExtras() {
+  const s = state.project?.settings;
+  const custom = s?.style === 'custom';
+  $('#custom-box').classList.toggle('hidden', !custom);
+  if (!s) return;
+  if (document.activeElement !== $('#style-notes')) $('#style-notes').value = s.styleNotes || '';
+  if (document.activeElement !== $('#custom-style')) $('#custom-style').value = s.customStyle || '';
+  const showRef = async (img) => {
+    if (!img) return;
+    if (s.styleRef?.key) { await fillImg(img, s.styleRef.key); img.hidden = false; } else img.hidden = true;
+  };
+  showRef($('#style-ref-img'));
+  showRef($('.style-card.custom .ref-thumb'));
+  $('#btn-clear-ref').hidden = !s.styleRef?.key;
+}
+
+let styleTimer;
+['#style-notes', '#custom-style'].forEach((sel) => $(sel).addEventListener('input', (e) => {
+  if (!state.project) return;
+  state.project.settings[sel === '#style-notes' ? 'styleNotes' : 'customStyle'] = e.target.value.slice(0, 400);
+  clearTimeout(styleTimer);
+  styleTimer = setTimeout(save, 300);
+}));
+
+$('#style-ref').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !state.project) return;
+  if (!f.type.startsWith('image/')) { toast('Please choose an image file.'); return; }
+  const key = `${storageKey()}/styleref/${Date.now().toString(36)}`;
+  await putBlob(key, f);
+  state.project.settings.styleRef = { key, name: f.name };
+  save();
+  syncStyleExtras();
+  toast('Style reference added. Every character and scene will copy its look.');
+});
+$('#btn-clear-ref').addEventListener('click', () => {
+  delete state.project.settings.styleRef;
+  save();
+  syncStyleExtras();
 });
 
 function syncOptionsUI() {
@@ -486,6 +536,7 @@ async function createVideo() {
         snapshot();
         p.title = raw.title || p.title;
         p.characters = raw.characters;
+        p.locations = (raw.locations || []).map((l) => ({ ...l, id: slug(l.id) }));
         p.segments = raw.segments;
         p.approved = false;
         runQC(p);
@@ -535,7 +586,7 @@ async function usePaste() {
 function resetPlan() {
   if (!confirm('Start over? This clears the plan, cast and scenes for this video (your transcript is kept).')) return;
   snapshot();
-  Object.assign(state.project, { characters: [], segments: [], approved: false });
+  Object.assign(state.project, { characters: [], locations: [], segments: [], approved: false });
   state.stages = {};
   state.selected = null;
   save();
@@ -729,7 +780,9 @@ async function generateScenes(list, note = '') {
   let done = 0;
   const aspect = state.aspect === 'vertical' ? '9:16' : '16:9';
   setStatus('#scenes-status', `Drawing ${list.length} scene${list.length > 1 ? 's' : ''}… you can keep editing while this runs.`, 'busy');
-  const results = await pool(list, 3, async (sg) => {
+  // first shot of each location is drawn first so later shots can reuse it as a reference
+  const [anchors, rest] = orderForConsistency(state.project, list);
+  const drawOne = async (sg) => {
     if (ac.stop) throw new Error('stopped');
     try {
       sg.image = await generateSceneImage(state.project, sg, {
@@ -746,7 +799,8 @@ async function generateScenes(list, note = '') {
       if (sg.id === state.selected) renderInspector();
       drawPreview();
     }
-  });
+  };
+  const results = [...await pool(anchors, 3, drawOne), ...await pool(rest, 3, drawOne)];
   state.genAbort = null;
   setTimeout(() => bar.classList.add('hidden'), 600);
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');

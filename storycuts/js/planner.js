@@ -37,8 +37,9 @@ async function client(apiKey) {
 const sceneSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['image_prompt', 'setting', 'actors', 'props', 'effects', 'sound_effect'],
+  required: ['image_prompt', 'location_id', 'setting', 'actors', 'props', 'effects', 'sound_effect'],
   properties: {
+    location_id: { type: 'string', description: 'id of the location (from "locations") where this scene happens' },
     image_prompt: {
       type: 'string',
       description: 'What the illustration shows, for an illustrator: who (by character name) is where, doing what, with what expressions, key props, camera framing. 2-4 sentences. No text, captions or speech bubbles in the image.',
@@ -91,9 +92,22 @@ const characterSchema = {
 const planSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['title', 'characters', 'segments'],
+  required: ['title', 'characters', 'locations', 'segments'],
   properties: {
     title: { type: 'string' },
+    locations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'name', 'description'],
+        properties: {
+          id: { type: 'string', description: 'short snake_case id' },
+          name: { type: 'string' },
+          description: { type: 'string', description: 'Fixed visual description so the place looks identical in every scene: layout, colours, key furniture/props, time of day, lighting. 1-2 sentences.' },
+        },
+      },
+    },
     characters: { type: 'array', items: characterSchema },
     segments: {
       type: 'array',
@@ -127,7 +141,8 @@ Editing rules:
 - Consecutive scenes in the same place keep the same setting. Characters keep the same look throughout: only use character ids you define.
 - Define every person (or pet) in the story as a character, including the storyteller (id "me") when "I" appear in the story. Give characters distinct, fitting looks (e.g. dad: bald + mustache; grandma: bun + glasses) and unique shirt colours, and a one-sentence visual description.
 - Each scene is drawn by an AI illustrator from "image_prompt" plus reference images of the characters. Write image_prompt as a specific, visual description of the single moment: who (by name) is where, doing what, with which expressions and props, and the framing (wide shot, close-up...). Exaggerate emotions for comedy. Never ask for text, signs, captions or speech bubbles in the image.
-- Also fill the structured fields (setting, actors, poses...) to match; they're used for previews and drafts.
+- Define every recurring place as a location with a fixed visual description (e.g. "Dad's small kitchen: yellow walls, white cabinets, old gas stove by a window, morning light") and set each scene's location_id. Scenes in the same place must use the same location so it looks identical across shots.
+- Also fill the structured fields (setting, actors, poses...) to match.
 - Put reported dialogue in short speech bubbles (max ~8 words). Use sound effects sparingly, only for big moments.
 - Place actors with x between 0.15 and 0.85, at least 0.25 apart; characters interacting should face each other.
 - For "face" shots, still fill "scene" with a simple placeholder (setting "blank", no actors); it is ignored.
@@ -207,6 +222,7 @@ Plan the edit.`;
   return {
     title: data.title,
     characters: data.characters,
+    locations: data.locations || [],
     segments: segmentsFromWordIndices(data.segments, words),
     usage,
     served,
@@ -220,7 +236,10 @@ export async function redoSceneWithClaude(apiKey, project, seg, note, { model = 
     const t = project.words.filter((w) => w.s >= s.start - 0.01 && w.s < s.end).map((w) => w.w).join(' ');
     return `${s === seg ? '>> ' : ''}[${s.type}] ${t}`;
   }).join('\n');
-  const user = `Characters (use only these ids):
+  const user = `Locations (reuse one of these ids when the scene is in one of these places):
+${JSON.stringify((project.locations || []).map(({ id, name }) => ({ id, name })))}
+
+Characters (use only these ids):
 ${JSON.stringify(project.characters.map(({ id, name, description }) => ({ id, name, description })))}
 
 Surrounding shots (>> marks the one to redo):

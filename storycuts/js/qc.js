@@ -124,7 +124,8 @@ export function normalizeScene(scene, characters, report = [], segIndex = null) 
   if (sfx.length > 12) { sfx = sfx.split(/\s+/)[0].slice(0, 12); note('sfx', 'Trimmed a long sound effect.'); }
 
   const image_prompt = String(s.image_prompt || '').trim().slice(0, 900);
-  return { image_prompt, setting, actors, props, effects, sound_effect: sfx };
+  const location_id = slug(s.location_id || '') === 'char' ? '' : slug(s.location_id || '');
+  return { image_prompt, location_id, setting, actors, props, effects, sound_effect: sfx };
 }
 
 /**
