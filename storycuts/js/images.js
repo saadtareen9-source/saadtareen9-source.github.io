@@ -52,23 +52,41 @@ function db() {
   return dbp;
 }
 
+// Images that couldn't be written to disk are kept for this session only.
+const memBlobs = new Map();
+export let storageProblem = null;
+
 export async function putBlob(key, blob) {
-  const d = await db();
-  await new Promise((resolve, reject) => {
-    const tx = d.transaction('images', 'readwrite');
-    tx.objectStore('images').put(blob, key);
-    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
-  });
+  memBlobs.set(key, blob);
+  try {
+    // Stored as raw bytes: some browsers fail to save Blob objects in IndexedDB.
+    const record = { type: blob.type, buf: await blob.arrayBuffer() };
+    const d = await db();
+    await new Promise((resolve, reject) => {
+      const tx = d.transaction('images', 'readwrite');
+      tx.objectStore('images').put(record, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Saving was cancelled'));
+    });
+    memBlobs.delete(key);
+  } catch (e) {
+    console.warn('StoryCuts: could not save image to browser storage, keeping it for this session only', e);
+    storageProblem = e;
+  }
 }
 
 export async function getBlob(key) {
+  if (memBlobs.has(key)) return memBlobs.get(key);
   try {
     const d = await db();
-    return await new Promise((resolve, reject) => {
+    const rec = await new Promise((resolve, reject) => {
       const req = d.transaction('images').objectStore('images').get(key);
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
+    if (!rec) return null;
+    return rec instanceof Blob ? rec : new Blob([rec.buf], { type: rec.type || 'image/png' });
   } catch {
     return null;
   }
@@ -230,9 +248,16 @@ async function openaiImage(apiKey, modelId, parts, aspectRatio) {
 
 async function drawImage(keys, modelId, parts, aspect) {
   const info = modelInfo(modelId);
-  return info.provider === 'gemini'
-    ? gemini(keys.gemini, modelId, parts, aspect)
-    : openaiImage(keys.openai, modelId, parts, aspect);
+  try {
+    return info.provider === 'gemini'
+      ? await gemini(keys.gemini, modelId, parts, aspect)
+      : await openaiImage(keys.openai, modelId, parts, aspect);
+  } catch (e) {
+    if (e instanceof TypeError && /fetch|load|network/i.test(e.message)) {
+      throw new Error(`Couldn't reach ${info.provider === 'gemini' ? 'Google' : 'OpenAI'} (${e.message}). Check your internet connection, or try turning off ad blockers for this site.`);
+    }
+    throw e;
+  }
 }
 
 // ---------- prompts ----------
@@ -307,7 +332,13 @@ async function generateChecked({ keys, opts, buildParts, brief, refs, aspect, on
   let hints = '';
   for (let attempt = 1; attempt <= maxTries; attempt++) {
     onStatus?.(attempt === 1 ? 'Drawing…' : `Redrawing (attempt ${attempt}): ${hints.slice(0, 80)}`);
-    const blob = await drawImage(keys, opts.imageModel, buildParts(hints), aspect);
+    let blob;
+    try {
+      blob = await drawImage(keys, opts.imageModel, buildParts(hints), aspect);
+    } catch (e) {
+      if (best) break; // keep the earlier attempt rather than failing outright
+      throw e;
+    }
     let qc = null;
     if (maxTries > 1) {
       onStatus?.('Checking the image…');
@@ -325,7 +356,11 @@ async function generateChecked({ keys, opts, buildParts, brief, refs, aspect, on
   }
   const key = `${store}/${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   await putBlob(key, best.blob);
-  await preloadBitmap(key);
+  try {
+    await preloadBitmap(key);
+  } catch (e) {
+    throw new Error(`The image came back but your browser couldn't open it (${e.name}: ${e.message}).`);
+  }
   return { key, aspect, qc: best.qc, attempts: best.attempts, at: Date.now() };
 }
 

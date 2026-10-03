@@ -9,7 +9,7 @@ import {
 } from './planner.js';
 import { transcribeInBrowser, wordsFromText, decodeAudio, speechSpans } from './transcribe.js';
 import {
-  IMAGE_MODELS, STYLES, modelInfo, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, pool,
+  IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, pool,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
@@ -336,6 +336,10 @@ function needImageKey() {
   return true;
 }
 
+const STORAGE_WARN = ' Note: your browser wouldn\'t let StoryCuts save the pictures, so they\'ll be lost if you close this tab. Use a normal (not private/incognito) Chrome window to keep them.';
+
+const errText = (e) => `${e?.name && !['Error', 'TypeError'].includes(e.name) ? `${e.name}: ` : ''}${e?.message || e}`;
+
 const fmtUSD = (x) => `$${x < 0.01 ? '0.01' : x.toFixed(2)}`;
 
 function updateCost() {
@@ -487,10 +491,11 @@ async function drawCharacters(list) {
   $('#btn-gen-chars').disabled = false;
   const failed = results.filter((r) => !r.ok);
   renderChars();
-  if (failed.length) setStatus('#chars-status', `Couldn't draw ${failed.length}: ${failed[0].error.message}`, 'err');
+  failed.forEach((f) => console.error('StoryCuts character drawing failed', f.error));
+  if (failed.length) setStatus('#chars-status', `Couldn't draw ${failed.length}: ${errText(failed[0].error)}`, 'err');
   else {
     const scenesDrawn = state.project.segments.some((sg) => sg.image?.key);
-    setStatus('#chars-status', `Done.${scenesDrawn ? ' Redraw your scenes to use the new looks.' : ' Happy with them? Approve the cast.'}`, 'ok');
+    setStatus('#chars-status', `Done.${scenesDrawn ? ' Redraw your scenes to use the new looks.' : ' Happy with them? Approve the cast.'}${storageProblem ? STORAGE_WARN : ''}`, 'ok');
   }
 }
 
@@ -614,9 +619,10 @@ async function generateScenes(list, note = '') {
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
   const flagged = list.filter((sg) => sg.image?.qc && !sg.image.qc.pass).length;
   const redrawn = list.filter((sg) => sg.image?.attempts > 1).length;
-  if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} drawn, ${failed.length} failed: ${failed[0].error.message}`, 'err');
+  failed.forEach((f) => console.error('StoryCuts scene drawing failed', f.error));
+  if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} drawn, ${failed.length} failed: ${errText(failed[0].error)}`, 'err');
   else if (ac.stop) setStatus('#scenes-status', 'Stopped.', '');
-  else setStatus('#scenes-status', `All ${list.length} drawn.${redrawn ? ` ${redrawn} auto-redrawn after failing the quality check.` : ''}${flagged ? ` ${flagged} still flagged (⚠ on the timeline): take a look.` : ''}`, flagged ? '' : 'ok');
+  else setStatus('#scenes-status', `${storageProblem ? STORAGE_WARN.trim() + ' ' : ''}All ${list.length} drawn.${redrawn ? ` ${redrawn} auto-redrawn after failing the quality check.` : ''}${flagged ? ` ${flagged} still flagged (⚠ on the timeline): take a look.` : ''}`, flagged ? '' : 'ok');
   updateSceneBar();
   renderInspector();
 }
