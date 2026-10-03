@@ -1013,7 +1013,7 @@ async function generateScenes(list, note = '') {
       drawPreview();
     }
   };
-  const results = [...await pool(anchors, 3, drawOne), ...await pool(rest, 3, drawOne)];
+  const results = [...await pool(anchors, 2, drawOne), ...await pool(rest, 2, drawOne)];
   state.genAbort = null;
   setTimeout(() => bar.classList.add('hidden'), 600);
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
