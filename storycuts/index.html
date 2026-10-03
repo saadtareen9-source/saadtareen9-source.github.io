@@ -165,10 +165,13 @@
         </select>
       </label>
       <hr>
-      <label class="field">Google Gemini API key (for AI images)
+      <label class="field">OpenAI API key (draws the pictures)
+        <input id="openai-key" type="password" autocomplete="off" placeholder="sk-…">
+      </label>
+      <small class="muted">Get one at platform.openai.com → API keys. Stored in this browser only and sent directly to OpenAI.</small>
+      <label class="field">Google Gemini API key (optional, only if you pick a Google image model below)
         <input id="gemini-key" type="password" autocomplete="off" placeholder="AIza…">
       </label>
-      <small class="muted">Draws your characters and scenes. Get a free key at aistudio.google.com. Stored in this browser only and sent directly to Google.</small>
       <label class="field">Image model
         <select id="image-model"></select>
       </label>
@@ -185,7 +188,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast"></div>
-  <footer>StoryCuts prototype · illustrations by Gemini, editing and quality checks by Claude.</footer>
+  <footer>StoryCuts prototype · illustrations by OpenAI GPT Image, editing and quality checks by Claude.</footer>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
