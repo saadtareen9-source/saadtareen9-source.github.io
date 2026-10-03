@@ -107,3 +107,35 @@ export function wordsFromText(text, duration, spans = null) {
     return { w, s: +toReal(a).toFixed(3), e: +toReal(b - 0.02).toFixed(3) };
   });
 }
+
+/**
+ * Parse an SRT or WebVTT subtitle file into timed words (each cue's time is
+ * spread across its words by length). Returns null if it isn't subtitles.
+ */
+export function wordsFromSubtitles(text) {
+  if (!/-->/.test(text)) return null;
+  const ts = (t) => {
+    const m = t.trim().replace(',', '.').match(/(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)/);
+    return m ? (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) : NaN;
+  };
+  const words = [];
+  for (const block of text.replace(/\r/g, '').split(/\n\s*\n/)) {
+    const lines = block.split('\n').filter((l) => l.trim());
+    const ti = lines.findIndex((l) => l.includes('-->'));
+    if (ti < 0) continue;
+    const [a, b] = lines[ti].split('-->');
+    const s = ts(a), e = ts(b.split(/\s/).filter(Boolean)[0] || '');
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) continue;
+    const tokens = lines.slice(ti + 1).join(' ').replace(/<[^>]+>/g, '').replace(/\{[^}]+\}/g, '').split(/\s+/).filter(Boolean);
+    if (!tokens.length) continue;
+    const weights = tokens.map((t) => 1 + t.length * 0.35);
+    const total = weights.reduce((x, y) => x + y, 0);
+    let cum = 0;
+    tokens.forEach((w, i) => {
+      const ws = s + ((e - s) * cum) / total;
+      cum += weights[i];
+      words.push({ w, s: +ws.toFixed(3), e: +(s + ((e - s) * cum) / total - 0.02).toFixed(3) });
+    });
+  }
+  return words.length ? words : null;
+}

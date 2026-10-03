@@ -501,6 +501,22 @@ export async function generateCharacterImage(project, ch, { keys, opts, projectK
   });
 }
 
+/**
+ * Everyone who appears in a scene: its listed actors plus any character named
+ * in the scene description, so nobody is drawn without their reference image.
+ */
+export function sceneCast(project, seg, note = '') {
+  const text = `${seg.scene?.image_prompt || ''} ${note}`;
+  const named = project.characters.filter((c) => {
+    const n = (c.name || '').trim();
+    if (!n) return false;
+    const re = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}('s)?\\b`, 'i');
+    return re.test(text);
+  }).map((c) => c.id);
+  const ids = [...new Set([...(seg.scene?.actors || []).map((a) => a.character_id), ...named])];
+  return ids.map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);
+}
+
 /** The best already-drawn image of the same location, to keep places consistent. */
 function locationAnchor(project, seg) {
   const loc = seg.scene?.location_id;
@@ -511,9 +527,8 @@ function locationAnchor(project, seg) {
 export async function generateSceneImage(project, seg, { keys, opts, projectKey, aspect, note = '', onStatus }) {
   await loadStyleManifest();
   const style = styleSpec(project.settings);
-  const ids = [...new Set(seg.scene.actors.map((a) => a.character_id))];
-  const cast = ids.map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);
-  const refs = (await Promise.all(cast.slice(0, 4).map(refFor))).filter(Boolean);
+  const cast = sceneCast(project, seg, note);
+  const refs = (await Promise.all(cast.slice(0, 5).map(refFor))).filter(Boolean);
   const loc = (project.locations || []).find((l) => l.id === seg.scene.location_id);
   const anchor = locationAnchor(project, seg);
   const anchorBlob = anchor ? await getBlob(anchor.image.key) : null;
@@ -521,7 +536,7 @@ export async function generateSceneImage(project, seg, { keys, opts, projectKey,
   const styleRef = await styleRefPart(project.settings);
   const bubbleNote = seg.type === 'scene_bubble' && project.settings.faceMode === 'bubble'
     ? `Keep the ${project.settings.bubbleSide === 'left' ? 'top-left' : 'top-right'} corner free of important detail (a face overlay goes there).` : '';
-  const brief = `${sceneBrief(project, seg)}${loc ? ` Location: ${loc.name}: ${loc.description}` : ''}${note ? ` Creator's request: ${note}` : ''}`;
+  const brief = `${sceneBrief(project, seg)}${loc ? ` Location: ${loc.name}: ${loc.description}` : ''}${note ? ` Creator's request: ${note}` : ''}${cast.length ? ` Characters who must appear and match their reference images exactly: ${cast.map((c) => c.name).join(', ')}.` : ''}`;
   const buildParts = (hints) => {
     const parts = [{
       text: `${style.text}\n\nScene: ${brief}\n\nCharacters in this scene: ${cast.map(characterBrief).join(' ')}\n`

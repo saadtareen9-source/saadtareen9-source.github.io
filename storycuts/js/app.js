@@ -1,7 +1,7 @@
 import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, ASPECTS, shotType } from './render.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
-import { transcribeInBrowser, wordsFromText, decodeAudio, speechSpans } from './transcribe.js';
+import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
 import {
   IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
@@ -222,6 +222,8 @@ function defaultSettings() {
     style: store.get('storycuts:style', 'stick'),
     aspect: 'vertical',
     faceMode: 'full',
+    pacing: 'mostly',
+    castHints: [],
     captions: true, captionStyle: { upper: true }, punchIn: true, faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
 }
@@ -255,9 +257,11 @@ function refresh() {
   if (p.characters.length) renderChars();
   if (p.approved) { renderTimeline(); renderInspector(); }
   renderTranscript();
+  renderPrep();
   updateCosts();
   sizePreview();
   drawPreview();
+  requestAnimationFrame(updateSegThumbs);
 }
 
 function renderStepper() {
@@ -349,7 +353,7 @@ function loadDemo() {
   const words = wordsFromText(DEMO_TEXT, duration, [[0.6, 43.4]]);
   state.media = new DemoMedia(duration, words);
   state.stages = {};
-  showFileChip('Demo story', '0:44', 'transcript included');
+  showFileChip('Demo story', '0:44', 'silent demo: your own video keeps its sound');
   loadProject(duration);
   if (!state.project.words.length) { state.project.words = words; save(); refresh(); }
   scrollTo('#panel-style');
@@ -447,6 +451,7 @@ function syncOptionsUI() {
   const s = state.project.settings;
   $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === state.aspect));
   $$('#seg-face button').forEach((b) => b.classList.toggle('on', b.dataset.face === (s.faceMode || 'full')));
+  $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'mostly')));
   $('#opt-captions').checked = !!s.captions;
   $('#opt-upper').checked = !!s.captionStyle?.upper;
   $('#opt-punch').checked = !!s.punchIn;
@@ -472,6 +477,130 @@ $$('#seg-face button').forEach((b) => b.addEventListener('click', () => {
   $$('#seg-face button').forEach((x) => x.classList.toggle('on', x === b));
   refresh();
 }));
+
+$$('#seg-pacing button').forEach((b) => b.addEventListener('click', () => {
+  if (!state.project) return;
+  state.project.settings.pacing = b.dataset.pacing;
+  save();
+  $$('#seg-pacing button').forEach((x) => x.classList.toggle('on', x === b));
+  if (state.project.segments.length) toast('Pacing changed. Use "Start over" in step 3 to re-plan the edit with it.', 5000);
+}));
+
+// ---------- step 3 prep: transcript + your characters ----------
+
+function renderPrep() {
+  const p = state.project;
+  if (!p) return;
+  const custom = p.transcriptSource && p.transcriptSource !== 'auto';
+  const n = p.words.length;
+  $('#transcript-state').textContent = n
+    ? `${n} words ready${p.transcriptSource === 'subtitles' ? ' (from your subtitles, with exact timing)' : p.transcriptSource === 'text' ? ' (from your text, timed to your audio)' : state.file ? ' (transcribed)' : ' (demo)'}.`
+    : 'We\'ll transcribe your video automatically.';
+  $('#prep-transcript').classList.toggle('ready', n > 0);
+  $('#btn-transcript-clear').hidden = !(custom && state.file && !p.segments.length);
+  const hints = p.settings.castHints || [];
+  const box = $('#cast-pre');
+  if (document.activeElement?.closest('#cast-pre')) return;
+  box.innerHTML = hints.map((h, i) => `
+    <div class="row" data-i="${i}">
+      <input data-k="name" placeholder="Name (e.g. Dad)" value="${esc(h.name)}" maxlength="30">
+      <input data-k="description" placeholder="Look (e.g. tall, bald, big mustache, red polo)" value="${esc(h.description)}" maxlength="160">
+      <button class="x" data-del="${i}" aria-label="Remove">✕</button>
+    </div>`).join('');
+  $('#prep-cast').classList.toggle('ready', hints.some((h) => h.name?.trim()));
+}
+
+$('#btn-cast-pre-add').addEventListener('click', () => {
+  if (!state.project) return;
+  state.project.settings.castHints = [...(state.project.settings.castHints || []), { name: '', description: '' }];
+  save(); renderPrep();
+  $('#cast-pre .row:last-child input')?.focus();
+});
+$('#cast-pre').addEventListener('input', (e) => {
+  const row = e.target.closest('.row');
+  if (!row) return;
+  state.project.settings.castHints[+row.dataset.i][e.target.dataset.k] = e.target.value;
+  save();
+  $('#prep-cast').classList.toggle('ready', state.project.settings.castHints.some((h) => h.name?.trim()));
+});
+$('#cast-pre').addEventListener('click', (e) => {
+  const d = e.target.closest('[data-del]');
+  if (!d) return;
+  state.project.settings.castHints.splice(+d.dataset.del, 1);
+  save(); renderPrep();
+});
+
+function transcriptLocked() {
+  if (state.project?.segments.length) { toast('Your edit is already planned. Use "Start over" to change the transcript.', 4500); return true; }
+  return false;
+}
+
+$('#transcript-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !state.project || transcriptLocked()) return;
+  const text = await f.text();
+  const subs = wordsFromSubtitles(text);
+  let words = subs;
+  if (!words) {
+    let spans = null;
+    try { if (state.file) spans = speechSpans(await decodeAudio(state.file)); } catch { /* no audio */ }
+    words = wordsFromText(text, state.project.duration, spans);
+  }
+  if (!words.length) { toast('That file doesn\'t seem to contain any words.'); return; }
+  state.project.words = words;
+  state.project.transcriptSource = subs ? 'subtitles' : 'text';
+  save(); renderPrep(); renderTranscript();
+  toast(subs ? 'Subtitles loaded with their exact timing.' : 'Transcript loaded and lined up with your audio.');
+});
+$('#btn-paste-open').addEventListener('click', () => {
+  if (transcriptLocked()) return;
+  $('#paste-msg').innerHTML = '<b>Paste what you say in the video.</b> We\'ll line the words up with your audio.';
+  $('#paste-box').classList.remove('hidden');
+  $('#paste-text').focus();
+});
+$('#btn-paste-cancel').addEventListener('click', () => $('#paste-box').classList.add('hidden'));
+$('#btn-transcript-clear').addEventListener('click', () => {
+  state.project.words = [];
+  state.project.transcriptSource = 'auto';
+  save(); renderPrep(); renderTranscript();
+});
+
+// ---------- live progress card ----------
+
+const TIPS = {
+  transcribe: ['Listening to every word…', 'Lining each word up with your audio…', 'First run downloads the speech model; after that it\'s faster.'],
+  plan: ['Finding the hook…', 'Deciding when to show you and when to cut away…', 'Spotting every character and place in your story…', 'Writing a scene for each moment…'],
+  cast: ['Sketching your characters…', 'Picking colours and outfits…', 'Checking hands, faces and details…', 'Each character is drawn once and reused in every scene.'],
+  scenes: ['Drawing your scenes…', 'Keeping every character on-model…', 'Checking each frame and redrawing any that slip…'],
+};
+
+function liveStart(stage, title) {
+  const el = $('#create-live');
+  el.classList.remove('hidden');
+  $('#live-title').textContent = title;
+  clearInterval(state.liveTimer);
+  const t0 = state.liveT0 || (state.liveT0 = performance.now());
+  let k = 0;
+  const tips = TIPS[stage] || [];
+  const tick = () => {
+    const s = Math.floor((performance.now() - t0) / 1000);
+    $('#live-time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const tip = () => {
+    const p = $('#live-tip');
+    p.style.opacity = 0;
+    setTimeout(() => { p.textContent = tips[k++ % Math.max(1, tips.length)] || ''; p.style.opacity = 1; }, 250);
+  };
+  tip(); tick();
+  state.liveTimer = setInterval(() => { tick(); if (Math.floor((performance.now() - t0) / 1000) % 4 === 0) tip(); }, 1000);
+}
+
+function liveStop() {
+  clearInterval(state.liveTimer);
+  state.liveT0 = null;
+  $('#create-live').classList.add('hidden');
+}
 
 // ---------- step 3: create ----------
 
@@ -505,17 +634,20 @@ async function createVideo() {
     // 1. transcript
     if (!p.words.length) {
       setStage('transcribe', 'active');
+      liveStart('transcribe', 'Transcribing your story');
       try {
         const words = await transcribeInBrowser(state.file, {
           quality: $('#asr-quality').value,
-          onStatus: (m) => setStatus('#create-status', m, 'busy'),
+          onStatus: (m) => { $('#live-title').textContent = m.replace(/…$/, ''); },
         });
         if (!words.length) throw new Error('no speech found');
-        p.words = words; save(); renderTranscript();
+        p.words = words; p.transcriptSource = 'auto'; save(); renderTranscript(); renderPrep();
       } catch (e) {
         console.error(e);
         setStage('transcribe', 'error');
-        setStatus('#create-status', `Couldn't transcribe automatically (${errText(e)}).`, 'err');
+        liveStop();
+        setStatus('#create-status', `Couldn't transcribe automatically (${errText(e)}). Upload or paste your transcript instead.`, 'err');
+        $('#paste-msg').innerHTML = '<b>Automatic transcription didn\'t work on this device.</b> Paste what you say in the video and we\'ll line it up with your audio.';
         $('#paste-box').classList.remove('hidden');
         return;
       }
@@ -525,14 +657,14 @@ async function createVideo() {
     // 2. plan
     if (!p.segments.length) {
       setStage('plan', 'active');
-      setStatus('#create-status', 'The AI editor is reading your story and planning every cut… (20–60 seconds)', 'busy');
+      liveStart('plan', 'Planning your edit');
       const s = settingsGet();
       const notes = [
         $('#plan-notes').value.trim(),
         p.settings.faceMode === 'bubble' ? '' : 'Use only "face" and "scene" shots (no scene_bubble): the creator wants full-frame cuts.',
       ].filter(Boolean).join(' ');
       try {
-        const raw = await planWithClaude(s.key, p.words, p.duration, { model: s.model, notes });
+        const raw = await planWithClaude(s.key, p.words, p.duration, { model: s.model, notes, pacing: p.settings.pacing, cast: p.settings.castHints || [] });
         snapshot();
         p.title = raw.title || p.title;
         p.characters = raw.characters;
@@ -544,6 +676,7 @@ async function createVideo() {
       } catch (e) {
         console.error(e);
         setStage('plan', 'error');
+        liveStop();
         setStatus('#create-status', `Planning failed: ${e?.status === 401 ? 'your Claude key was rejected. Check it under API keys.' : errText(e)}`, 'err');
         return;
       }
@@ -557,15 +690,18 @@ async function createVideo() {
     setStage('cast', 'active');
     if (missing.length) {
       setStatus('#create-status', '');
+      liveStart('cast', `Designing your cast (${missing.length})`);
       scrollTo('#cast');
       const ok = await drawCharacters(missing);
-      if (!ok) { setStage('cast', 'error'); return; }
+      if (!ok) { setStage('cast', 'error'); liveStop(); return; }
     }
+    liveStop();
     setStage('cast', 'wait');
     setStatus('#create-status', 'Your cast is ready. Take a look, then draw the scenes.', 'ok');
     scrollTo('#cast');
   } finally {
     state.busy = false;
+    liveStop();
     renderPipeline(); renderStepper();
   }
 }
@@ -577,10 +713,12 @@ async function usePaste() {
   let spans = null;
   try { if (state.file) spans = speechSpans(await decodeAudio(state.file)); } catch { /* no audio track */ }
   state.project.words = wordsFromText(text, state.project.duration, spans);
+  state.project.transcriptSource = 'text';
   save();
   $('#paste-box').classList.add('hidden');
-  renderTranscript();
-  createVideo();
+  setStatus('#create-status', '');
+  renderTranscript(); renderPrep();
+  if (stageState('transcribe') === 'error') createVideo();
 }
 
 function resetPlan() {
@@ -620,7 +758,7 @@ function renderChars() {
     <div class="char" data-i="${i}">
       <div class="char-art">
         ${c.image?.key ? '<img alt="">' : `<div class="empty"><div><b>${esc((c.name || '?')[0])}</b>Not drawn yet</div></div>`}
-        ${busy.has(c.id) ? '<div class="art-busy">Drawing…</div>' : ''}
+        ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
       </div>
       <div class="char-fields">
@@ -725,7 +863,7 @@ $('#chars').addEventListener('click', (e) => {
       state.project.segments.forEach((sg) => {
         if (sg.scene) sg.scene.actors = sg.scene.actors.filter((a) => a.character_id !== ch.id);
       });
-      state.project.segments = normalizeSegments(state.project.segments, state.project.characters, state.project.duration);
+      state.project.segments = normalizeSegments(state.project.segments, state.project.characters, state.project.duration, [], { pacing: state.project.settings.pacing });
     });
   }
 });
@@ -746,7 +884,7 @@ async function approveAndDraw() {
   if (p.characters.some((c) => !c.image?.key) && !confirm('Some characters haven\'t been drawn yet, so their scenes may not match. Continue anyway?')) return;
   snapshot();
   p.characters = normalizeCharacters(p.characters);
-  p.segments = normalizeSegments(p.segments, p.characters, p.duration);
+  p.segments = normalizeSegments(p.segments, p.characters, p.duration, [], { pacing: p.settings.pacing });
   p.approved = true;
   save();
   state.stages = { ...(state.stages || {}), cast: 'done' };
@@ -1169,8 +1307,103 @@ document.addEventListener('keydown', (e) => {
 });
 $('#video').addEventListener('seeked', drawPreview);
 
+// ---------- interaction polish ----------
+
+/** Segmented controls get a thumb that slides to the selected option. */
+function updateSegThumbs() {
+  $$('.seg').forEach((seg) => {
+    let thumb = seg.querySelector('.seg-thumb');
+    if (!thumb) {
+      thumb = document.createElement('span');
+      thumb.className = 'seg-thumb';
+      seg.prepend(thumb);
+      seg.classList.add('has-thumb');
+      new MutationObserver(updateSegThumbs).observe(seg, { subtree: true, attributeFilter: ['class'] });
+    }
+    const on = seg.querySelector('button.on');
+    if (!on || !on.offsetWidth) { thumb.style.opacity = 0; return; }
+    thumb.style.opacity = 1;
+    const tx = `translate(${on.offsetLeft}px, ${on.offsetTop}px)`;
+    if (thumb.style.transform !== tx || thumb.style.width !== `${on.offsetWidth}px`) {
+      thumb.style.transform = tx;
+      thumb.style.width = `${on.offsetWidth}px`;
+      thumb.style.height = `${on.offsetHeight}px`;
+    }
+  });
+}
+window.addEventListener('resize', () => requestAnimationFrame(updateSegThumbs));
+document.fonts?.ready.then(updateSegThumbs);
+
+/** Cursor spotlight + gentle 3D tilt on cards and glass buttons. */
+document.addEventListener('pointermove', (e) => {
+  const el = e.target.closest?.('.spot, .btn.glass, .style-card, .char, .pipeline li');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+  el.style.setProperty('--my', `${e.clientY - r.top}px`);
+  if (el.classList.contains('style-card') && e.pointerType === 'mouse') {
+    el.style.setProperty('--ry', `${((e.clientX - r.left) / r.width - 0.5) * 10}deg`);
+    el.style.setProperty('--rx', `${(0.5 - (e.clientY - r.top) / r.height) * 8}deg`);
+  }
+}, { passive: true });
+document.addEventListener('pointerout', (e) => {
+  const el = e.target.closest?.('.style-card');
+  if (el && !el.contains(e.relatedTarget)) { el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); }
+});
+
+/** Style carousel: drag with momentum, page dots. */
+(function carousel() {
+  const track = $('#style-track');
+  let down = false, startX = 0, startLeft = 0, lastX = 0, lastT = 0, vel = 0, moved = false, raf = 0;
+  track.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    down = true; moved = false;
+    startX = lastX = e.clientX; startLeft = track.scrollLeft; lastT = performance.now(); vel = 0;
+    cancelAnimationFrame(raf);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    const dx = e.clientX - startX;
+    if (!moved && Math.abs(dx) > 6) { moved = true; track.classList.add('dragging'); }
+    if (!moved) return;
+    track.scrollLeft = startLeft - dx;
+    const now = performance.now();
+    vel = (e.clientX - lastX) / Math.max(1, now - lastT);
+    lastX = e.clientX; lastT = now;
+  });
+  window.addEventListener('pointerup', () => {
+    if (!down) return;
+    down = false;
+    if (!moved) return;
+    let v = vel * 16;
+    const glide = () => {
+      track.scrollLeft -= v;
+      v *= 0.94;
+      if (Math.abs(v) > 0.4) raf = requestAnimationFrame(glide);
+      else track.classList.remove('dragging');
+    };
+    raf = requestAnimationFrame(glide);
+  });
+  track.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  const dots = () => {
+    const pages = Math.max(1, Math.ceil(track.scrollWidth / track.clientWidth - 0.05));
+    const cur = Math.round((track.scrollLeft / Math.max(1, track.scrollWidth - track.clientWidth)) * (pages - 1));
+    $('#style-dots').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, i) => `<i class="${i === cur ? 'on' : ''}"></i>`).join('') : '';
+  };
+  track.addEventListener('scroll', () => requestAnimationFrame(dots), { passive: true });
+  window.addEventListener('resize', dots);
+  setTimeout(dots, 300);
+}());
+
+/** Reveal sections as they scroll into view. */
+const io = new IntersectionObserver((entries) => entries.forEach((en) => {
+  if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+}), { threshold: 0.12 });
+$$('.reveal').forEach((el) => io.observe(el));
+
 renderStyles();
 loadStyleManifest().then(() => renderStyles());
+requestAnimationFrame(updateSegThumbs);
 updateKeysDot();
 sizePreview();
 renderStepper();

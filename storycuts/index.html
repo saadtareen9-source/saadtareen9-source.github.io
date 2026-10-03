@@ -15,6 +15,7 @@
 <body>
   <!-- icon sprite -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs><linearGradient id="sketch-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset=".6" stop-color="#f472b6"/><stop offset="1" stop-color="#fbbf24"/></linearGradient></defs>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.5 0-.9-.7-1.3-.7-2.2 0-.9.8-1.6 1.7-1.6H17a4 4 0 004-4c0-4.7-4-8.7-9-8.7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="7.5" cy="11" r="1.3" fill="currentColor"/><circle cx="10" cy="7" r="1.3" fill="currentColor"/><circle cx="14.5" cy="7" r="1.3" fill="currentColor"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
@@ -88,12 +89,12 @@
     </section>
 
     <!-- HOW -->
-    <section class="how" id="how">
+    <section class="how reveal" id="how">
       <h2 class="section-title">From talking head to illustrated story in three steps</h2>
       <div class="how-grid">
-        <article class="how-card"><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Upload</h3><p>Film yourself telling a story on your phone and drop the video in.</p></article>
-        <article class="how-card"><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Pick a style</h3><p>Stick figures, anime, 3D, realistic and more. Your cast is designed once and stays consistent.</p></article>
-        <article class="how-card"><span class="how-ico"><svg><use href="#i-film"/></svg></span><h3>Review &amp; export</h3><p>An AI editor plans every cut. Tweak anything, then export for TikTok, Reels, Shorts or YouTube.</p></article>
+        <article class="how-card spot"><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Upload</h3><p>Film yourself telling a story on your phone and drop the video in.</p></article>
+        <article class="how-card spot"><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Pick a style</h3><p>Stick figures, anime, 3D, realistic and more. Your cast is designed once and stays consistent.</p></article>
+        <article class="how-card spot"><span class="how-ico"><svg><use href="#i-film"/></svg></span><h3>Review &amp; export</h3><p>An AI editor plans every cut. Tweak anything, then export for TikTok, Reels, Shorts or YouTube.</p></article>
       </div>
     </section>
 
@@ -133,6 +134,7 @@
           <div class="style-track" id="style-track" role="radiogroup" aria-label="Art style"></div>
           <button class="slide-btn next" id="style-next" aria-label="More styles"><svg><use href="#i-right"/></svg></button>
         </div>
+        <div class="dots" id="style-dots"></div>
         <div class="custom-box hidden" id="custom-box">
           <label class="field">Describe your style
             <textarea id="custom-style" rows="3" maxlength="400" placeholder="e.g. 90s Saturday-morning cartoon, thick outlines, grainy VHS colours, exaggerated faces"></textarea>
@@ -161,6 +163,14 @@
             </div>
           </div>
           <div class="opt-group">
+            <span class="opt-label">Edit pacing</span>
+            <div class="seg" id="seg-pacing">
+              <button data-pacing="mostly" class="on"><i class="pc"><b class="f" style="flex:1.2"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b><b class="s" style="flex:3"></b><b class="f" style="flex:.6"></b></i>Mostly story <small>Your intro, then mostly scenes</small></button>
+              <button data-pacing="balanced"><i class="pc"><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1.5"></b><b class="s" style="flex:2"></b><b class="f" style="flex:1"></b></i>Balanced <small>About half and half</small></button>
+              <button data-pacing="story"><i class="pc"><b class="s" style="flex:1"></b></i>Story only <small>Scenes the whole way</small></button>
+            </div>
+          </div>
+          <div class="opt-group">
             <span class="opt-label">During scenes</span>
             <div class="seg" id="seg-face">
               <button data-face="full" class="on"><i class="fm fm-full"></i>Full-frame cuts <small>Scene or your face</small></button>
@@ -173,6 +183,29 @@
       <!-- 3 CREATE -->
       <div class="panel locked" id="panel-create" data-step="3">
         <div class="panel-head"><span class="num">3</span><div><h3>Create your video</h3><p>We transcribe your story, plan the edit, design your cast, then draw every scene.</p></div></div>
+        <div class="prep">
+          <div class="prep-card spot" id="prep-transcript">
+            <div class="prep-ico"><svg><use href="#i-film"/></svg></div>
+            <div class="prep-body">
+              <b>Transcript</b>
+              <p class="muted small" id="transcript-state">We'll transcribe your video automatically.</p>
+              <div class="tool-row">
+                <label class="btn glass sm" data-tip=".txt, .srt or .vtt"><svg><use href="#i-upload"/></svg>Upload transcript<input type="file" id="transcript-file" accept=".txt,.srt,.vtt,text/plain,text/vtt" hidden></label>
+                <button class="btn ghost sm" id="btn-paste-open">Paste text</button>
+                <button class="btn link sm" id="btn-transcript-clear" hidden>Use automatic instead</button>
+              </div>
+            </div>
+          </div>
+          <div class="prep-card spot" id="prep-cast">
+            <div class="prep-ico"><svg><use href="#i-user"/></svg></div>
+            <div class="prep-body">
+              <b>Characters <span class="muted small">(optional)</span></b>
+              <p class="muted small">The AI finds everyone in your story. Add people here if you want to describe them yourself.</p>
+              <div class="cast-pre" id="cast-pre"></div>
+              <button class="btn ghost sm" id="btn-cast-pre-add">+ Add a person</button>
+            </div>
+          </div>
+        </div>
         <div class="create-row">
           <button class="btn primary xl" id="btn-create"><svg><use href="#i-spark"/></svg><span>Create my video</span></button>
           <div class="create-meta"><span id="create-cost" class="muted"></span><button class="btn link sm" id="btn-reset" hidden>Start over</button></div>
@@ -183,12 +216,20 @@
           <li data-stage="cast"><i></i><div><b>Design your cast</b><small>One look per character</small></div></li>
           <li data-stage="scenes"><i></i><div><b>Draw the scenes</b><small>Checked and redrawn if needed</small></div></li>
         </ol>
+        <div class="live-card hidden" id="create-live">
+          <div class="orb"><i></i><i></i><i></i></div>
+          <div>
+            <b id="live-title">Working…</b>
+            <p id="live-tip" class="muted"></p>
+          </div>
+          <span class="elapsed" id="live-time">0:00</span>
+        </div>
         <div class="status" id="create-status"></div>
 
         <div class="paste hidden" id="paste-box">
-          <p><b>Automatic transcription didn't work on this device.</b> Paste what you say in the video and we'll line it up with your audio.</p>
+          <p id="paste-msg"><b>Paste what you say in the video.</b> We'll line the words up with your audio.</p>
           <textarea id="paste-text" rows="4" placeholder="So my dad walks into the kitchen, sees the smoke, and just freezes…"></textarea>
-          <button class="btn primary" id="btn-use-paste">Use this transcript &amp; continue</button>
+          <div class="tool-row"><button class="btn primary" id="btn-use-paste">Use this transcript</button><button class="btn ghost" id="btn-paste-cancel">Cancel</button></div>
         </div>
 
         <details class="advanced">
@@ -278,7 +319,7 @@
     </section>
 
     <!-- FAQ -->
-    <section class="faq" id="faq">
+    <section class="faq reveal" id="faq">
       <h2 class="section-title">Questions</h2>
       <details><summary>Is my video uploaded anywhere?</summary><p>No. Your video is played and edited inside your browser. Only the words you say are sent to the AI editor, and only the scene descriptions (plus your character designs) are sent to the image model.</p></details>
       <details><summary>What does it cost?</summary><p>StoryCuts uses your own AI accounts, so you pay the providers directly: about a few cents per drawn image and a few cents to plan the edit. A 1-minute story typically costs well under a dollar. You see an estimate before anything is generated.</p></details>

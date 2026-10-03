@@ -132,7 +132,7 @@ export function normalizeScene(scene, characters, report = [], segIndex = null) 
  * Turn a plan into contiguous, time-based segments that cover [0, duration],
  * applying editorial rules along the way.
  */
-export function normalizeSegments(segments, characters, duration, report = []) {
+export function normalizeSegments(segments, characters, duration, report = [], { pacing = 'mostly' } = {}) {
   let segs = (segments || [])
     .filter((s) => Number.isFinite(s.start))
     .map((s) => ({
@@ -162,8 +162,8 @@ export function normalizeSegments(segments, characters, duration, report = []) {
     }
   }
 
-  // the hook: open on the creator's face
-  if (segs[0].type !== 'face') {
+  // the hook: open on the creator's face (unless the creator chose story-only)
+  if (pacing !== 'story' && segs[0].type !== 'face') {
     if (segs[0].end - segs[0].start > 3) {
       const hook = { id: newId(), start: 0, end: 1.5, type: 'face', reason: 'Hook: open on your face.', scene: null };
       segs[0].start = 1.5;
@@ -199,7 +199,7 @@ export function normalizeSegments(segments, characters, duration, report = []) {
 export function runQC(project) {
   const report = [];
   project.characters = normalizeCharacters(project.characters, report);
-  project.segments = normalizeSegments(project.segments, project.characters, project.duration, report);
+  project.segments = normalizeSegments(project.segments, project.characters, project.duration, report, { pacing: project.settings?.pacing });
   const scenes = project.segments.filter((s) => s.type !== 'face').length;
   const checks = project.segments.length * 6 + project.characters.length * 2;
   return { report, checks, scenes };
