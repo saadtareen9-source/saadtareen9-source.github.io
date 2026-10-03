@@ -133,6 +133,25 @@
           <div class="style-track" id="style-track" role="radiogroup" aria-label="Art style"></div>
           <button class="slide-btn next" id="style-next" aria-label="More styles"><svg><use href="#i-right"/></svg></button>
         </div>
+        <div class="custom-box hidden" id="custom-box">
+          <label class="field">Describe your style
+            <textarea id="custom-style" rows="3" maxlength="400" placeholder="e.g. 90s Saturday-morning cartoon, thick outlines, grainy VHS colours, exaggerated faces"></textarea>
+          </label>
+          <div class="ref-row">
+            <img id="style-ref-img" alt="Style reference" hidden>
+            <div>
+              <b>Example image</b> <span class="muted small">(optional, recommended)</span>
+              <p class="muted small">Upload a picture in the style you want. Every frame will copy its look, not its content.</p>
+              <div class="tool-row">
+                <label class="btn glass sm"><svg><use href="#i-upload"/></svg>Upload image<input type="file" id="style-ref" accept="image/*" hidden></label>
+                <button class="btn link sm" id="btn-clear-ref" hidden>Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <label class="field style-notes">Extra details <span class="hint">optional · added to whichever style you pick</span>
+          <input id="style-notes" maxlength="400" placeholder="e.g. pastel colours, rainy mood, characters with big expressive eyes">
+        </label>
         <div class="options">
           <div class="opt-group">
             <span class="opt-label">Format</span>

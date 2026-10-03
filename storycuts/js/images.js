@@ -23,51 +23,87 @@ export const STYLES = {
     label: 'Stick figures',
     blurb: 'Funny, simple, made for storytime',
     tint: ['#fde68a', '#fca5a5'],
+    avoid: 'realistic anatomy, detailed hands and fingers, shading gradients, 3D rendering, photorealism, anime eyes',
     prompt: 'Charming hand-drawn stick-figure cartoon in the style of popular animated storytime YouTube channels: characters have round white heads with simple expressive faces, thick clean black outlines, simple colored clothing, flat pastel colors, soft simple backgrounds, bright and funny, clean composition.',
   },
   cartoon: {
     label: 'Flat cartoon',
     blurb: 'Bold, bright explainer look',
     tint: ['#93c5fd', '#c4b5fd'],
+    avoid: 'photorealism, 3D rendering, sketchy or unfinished lines, muddy colours, anime style',
     prompt: 'Modern flat 2D cartoon illustration, bold clean outlines, rounded friendly character designs with big expressive faces, vibrant flat colors with subtle shading, simple uncluttered backgrounds, like a high-quality animated explainer video.',
   },
   anime: {
     label: 'Anime',
     blurb: 'Expressive, cinematic, cel-shaded',
     tint: ['#f9a8d4', '#a5b4fc'],
+    avoid: '3D rendering, photorealism, western cartoon proportions, chibi unless asked, blurry or muddy line art',
     prompt: 'Clean modern anime illustration, crisp line art, cel shading, expressive faces and reactions, vivid colors, cinematic anime background art, high quality key-visual look.',
   },
   '3d': {
     label: '3D animated',
     blurb: 'Feature-film 3D characters',
     tint: ['#67e8f9', '#86efac'],
+    avoid: '2D flat illustration, line art outlines, photorealism, uncanny realistic skin, plastic toy look',
     prompt: 'Stylized 3D animated movie still: appealing rounded characters with big expressive eyes, soft global illumination, subsurface skin shading, rich colors, shallow depth of field, like a frame from a modern family animated feature.',
   },
   realistic: {
     label: 'Realistic',
     blurb: 'Cinematic, photo-real scenes',
     tint: ['#cbd5e1', '#fcd34d'],
+    avoid: 'cartoon or illustrated look, plastic skin, over-smoothed faces, extra fingers, distorted hands, uncanny eyes, over-saturated HDR',
     prompt: 'Cinematic photorealistic film still, natural lighting, realistic people and places, 35mm lens, shallow depth of field, subtle film grain, emotionally expressive faces.',
   },
   comic: {
     label: 'Comic book',
     blurb: 'Inked lines, punchy colour',
     tint: ['#fdba74', '#f87171'],
+    avoid: 'photorealism, 3D rendering, soft airbrushed shading, muddy colours',
     prompt: 'Punchy comic-book illustration, dynamic inked line art, halftone shading, saturated colors, exaggerated funny expressions, cinematic framing.',
   },
   clay: {
     label: 'Claymation',
     blurb: 'Handmade stop-motion charm',
     tint: ['#fcd34d', '#fb923c'],
+    avoid: '2D illustration, photorealism, smooth CGI plastic, line art',
     prompt: 'Claymation stop-motion scene: handmade plasticine characters with visible fingerprints and texture, miniature handcrafted sets, soft studio lighting, charming and slightly goofy.',
+  },
+  sketch: {
+    label: 'Sketch',
+    blurb: 'Hand-drawn pencil and ink',
+    tint: ['#e5e7eb', '#a8a29e'],
+    avoid: 'photorealism, 3D rendering, flat vector colour fills, heavy saturated colour',
+    prompt: 'Expressive hand-drawn sketch illustration: confident pencil and ink linework with loose cross-hatching, light watercolour wash accents on off-white paper, characterful exaggerated poses, like a talented storyboard artist\'s finished frame.',
   },
   storybook: {
     label: 'Storybook',
     blurb: 'Soft watercolour warmth',
     tint: ['#bbf7d0', '#fde68a'],
+    avoid: 'photorealism, 3D rendering, harsh neon colours, hard digital vector look',
     prompt: 'Warm children\'s storybook illustration, soft gouache and watercolor textures, gentle colors, cute rounded characters, cozy detailed backgrounds.',
   },
 };
+
+/** The full style instruction for a project, including custom styles and extra details. */
+export function styleSpec(settings = {}) {
+  const custom = settings.style === 'custom';
+  const base = custom
+    ? { label: 'Custom', prompt: (settings.customStyle || '').trim() || 'Clean, polished, professional illustration.', avoid: '' }
+    : STYLES[settings.style] || STYLES.stick;
+  const extra = (settings.styleNotes || '').trim();
+  const text = `ART STYLE (follow exactly; it must look identical in every image of the series): ${base.prompt}`
+    + `${extra ? ` Extra style direction from the creator: ${extra}.` : ''}`
+    + `${settings.styleRef?.key ? ' Match the attached style reference image\'s art style, colour palette, line quality and rendering (not its content).' : ''}`
+    + ' Keep the same palette, line weight, lighting and level of detail across the whole series. Polished, professional, finished artwork with a clean readable composition; nothing sloppy, smudged, half-rendered or distorted.'
+    + `${base.avoid ? ` Avoid: ${base.avoid}.` : ''}`;
+  return { label: base.label, text };
+}
+
+async function styleRefPart(settings) {
+  if (!settings?.styleRef?.key) return null;
+  const blob = await getBlob(settings.styleRef.key);
+  return blob ? toInline(blob, 768) : null;
+}
 
 const NO_TEXT = 'Absolutely no text, letters, numbers, captions, speech bubbles, signs with writing, logos or watermarks anywhere in the image.';
 
@@ -334,8 +370,10 @@ Fail the image if any of these are true:
 - a character doesn't match their reference image (hair, clothing colour, accessories, proportions)
 - the wrong cast: a main character missing, or unexplained extra people in focus
 - the image doesn't show the moment described in the brief, or the emotion is wrong
-- the art style clearly differs from the reference images
-Give a score from 1 to 10. Keep issues short.`;
+- the art style differs from the style described in the brief or from the reference images (palette, line work, rendering, level of detail)
+- it looks sloppy: smudged or melted details, unfinished areas, muddy colours, warped perspective, garbled background objects
+- a location reference is given and the place looks clearly different (layout, colours, key furniture)
+Score 1-10: 9-10 publishable, 7-8 good with minor flaws, 6 or below needs a redraw. Keep issues short and concrete.`;
 
 export async function checkImage(claudeKey, model, blob, brief, refs) {
   const content = [{ type: 'text', text: `Brief for this illustration:\n${brief}` }];
@@ -382,6 +420,7 @@ async function generateChecked({ keys, opts, buildParts, brief, refs, aspect, on
         qc = { pass: true, score: 0, issues: [`Quality check unavailable: ${e.message}`], fix_instructions: '' };
       }
     }
+    if (qc && qc.score > 0 && qc.score < 7) qc.pass = false;
     const score = qc ? qc.score : 0;
     if (!best || score > best.score) best = { blob, qc, score, attempts: attempt };
     best.attempts = attempt;
@@ -403,40 +442,74 @@ async function generateChecked({ keys, opts, buildParts, brief, refs, aspect, on
  * be passed so the cartoon resembles them.
  */
 export async function generateCharacterImage(project, ch, { keys, opts, projectKey, selfFrame, onStatus }) {
-  const style = STYLES[opts.style] || STYLES.stick;
-  const brief = `Character design for ${characterBrief(ch)} One character only, full body, standing, friendly neutral pose, facing slightly to the side, centered on a plain white background.`;
+  const style = styleSpec(project.settings);
+  const brief = `Character design for ${characterBrief(ch)} One character only, full body, standing, friendly neutral pose, facing slightly to the side, centered on a plain light background. This image is the master reference for this character in every future scene, so make the design clear, appealing and distinctive.`;
   const selfRef = ch.id === 'me' && selfFrame ? await toInline(selfFrame, 768) : null;
+  const styleRef = await styleRefPart(project.settings);
   const buildParts = (hints) => {
-    const parts = [{ text: `${style.prompt}\n\n${brief}${selfRef ? '\nBase this character on the person in the attached photo: keep their hairstyle, hair colour, skin tone, glasses/facial hair and clothing colours, translated into the art style. Do not make it photorealistic.' : ''}\n${NO_TEXT}${hints ? `\nFix these problems from a previous attempt: ${hints}` : ''}` }];
-    if (selfRef) parts.push({ inlineData: { mimeType: selfRef.mime, data: selfRef.data } });
+    const parts = [{ text: `${style.text}\n\n${brief}${selfRef ? '\nBase this character on the person in the attached photo: keep their hairstyle, hair colour, skin tone, glasses/facial hair and clothing colours, translated into the art style.' : ''}\n${NO_TEXT}${hints ? `\nFix these problems from a previous attempt: ${hints}` : ''}` }];
+    if (selfRef) { parts.push({ text: 'Photo of the person:' }); parts.push({ inlineData: { mimeType: selfRef.mime, data: selfRef.data } }); }
+    if (styleRef) { parts.push({ text: 'Style reference image (copy the art style only):' }); parts.push({ inlineData: { mimeType: styleRef.mime, data: styleRef.data } }); }
     return parts;
   };
+  const qcRefs = styleRef ? [{ name: 'the art style (style reference)', inline: styleRef }] : [];
   return generateChecked({
-    keys, opts, buildParts, brief: `${style.label} style. ${brief}`, refs: [], aspect: '1:1', onStatus, store: `${projectKey}/char/${ch.id}`,
+    keys, opts, buildParts, brief: `${style.text}\n${brief}`, refs: qcRefs, aspect: '1:1', onStatus, store: `${projectKey}/char/${ch.id}`,
   });
 }
 
+/** The best already-drawn image of the same location, to keep places consistent. */
+function locationAnchor(project, seg) {
+  const loc = seg.scene?.location_id;
+  if (!loc) return null;
+  return project.segments.find((o) => o !== seg && o.scene?.location_id === loc && o.image?.key && !o.image.stale && o.image.qc?.pass !== false) || null;
+}
+
 export async function generateSceneImage(project, seg, { keys, opts, projectKey, aspect, note = '', onStatus }) {
-  const style = STYLES[opts.style] || STYLES.stick;
+  const style = styleSpec(project.settings);
   const ids = [...new Set(seg.scene.actors.map((a) => a.character_id))];
   const cast = ids.map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);
-  const refs = (await Promise.all(cast.map(refFor))).filter(Boolean);
+  const refs = (await Promise.all(cast.slice(0, 4).map(refFor))).filter(Boolean);
+  const loc = (project.locations || []).find((l) => l.id === seg.scene.location_id);
+  const anchor = locationAnchor(project, seg);
+  const anchorBlob = anchor ? await getBlob(anchor.image.key) : null;
+  const locRef = anchorBlob ? { name: `the location "${loc?.name || 'this place'}" (location reference)`, inline: await toInline(anchorBlob, 768) } : null;
+  const styleRef = await styleRefPart(project.settings);
   const bubbleNote = seg.type === 'scene_bubble' && project.settings.faceMode === 'bubble'
     ? `Keep the ${project.settings.bubbleSide === 'left' ? 'top-left' : 'top-right'} corner free of important detail (a face overlay goes there).` : '';
-  const brief = `${sceneBrief(project, seg)}${note ? ` ${note}` : ''}`;
+  const brief = `${sceneBrief(project, seg)}${loc ? ` Location: ${loc.name}: ${loc.description}` : ''}${note ? ` Creator's request: ${note}` : ''}`;
   const buildParts = (hints) => {
     const parts = [{
-      text: `${style.prompt}\n\nScene: ${brief}\n\nCharacters in this scene: ${cast.map(characterBrief).join(' ')}\n${refs.length ? 'Use the reference images below for each character\'s exact design (same face, hair, clothing colours and accessories) and match their art style.' : ''}\nFrame it as a single clear moment that reads instantly on a phone screen; characters large in frame. ${bubbleNote}\n${NO_TEXT}${hints ? `\nFix these problems from a previous attempt: ${hints}` : ''}`,
+      text: `${style.text}\n\nScene: ${brief}\n\nCharacters in this scene: ${cast.map(characterBrief).join(' ')}\n`
+        + `${refs.length ? 'Each character must match their reference image exactly: same face, hair, body shape, clothing colours and accessories, and the same art style. ' : ''}`
+        + `${locRef ? 'The location reference shows this same place in an earlier shot: keep its layout, colours, furniture and lighting consistent (a new camera angle is fine; do not copy the characters or composition). ' : ''}`
+        + `\nFrame it as a single clear moment that reads instantly on a phone screen; main characters large in frame with clear, exaggerated expressions. ${bubbleNote}\n${NO_TEXT}${hints ? `\nFix these problems from a previous attempt: ${hints}` : ''}`,
     }];
     for (const r of refs) {
       parts.push({ text: `Reference image for ${r.name}:` });
       parts.push({ inlineData: { mimeType: r.inline.mime, data: r.inline.data } });
     }
+    if (locRef) { parts.push({ text: 'Location reference image:' }); parts.push({ inlineData: { mimeType: locRef.inline.mime, data: locRef.inline.data } }); }
+    if (styleRef) { parts.push({ text: 'Style reference image (copy the art style only):' }); parts.push({ inlineData: { mimeType: styleRef.mime, data: styleRef.data } }); }
     return parts;
   };
+  const qcRefs = [...refs, ...(locRef ? [locRef] : []), ...(styleRef ? [{ name: 'the art style (style reference)', inline: styleRef }] : [])];
   return generateChecked({
-    keys, opts, buildParts, brief, refs, aspect, onStatus, store: `${projectKey}/scene/${seg.id}`,
+    keys, opts, buildParts, brief: `${style.text}\nScene: ${brief}`, refs: qcRefs, aspect, onStatus, store: `${projectKey}/scene/${seg.id}`,
   });
+}
+
+/** Order scenes so the first shot of each location is drawn before the rest reuse it. */
+export function orderForConsistency(project, list) {
+  const anchors = [];
+  const seen = new Set();
+  for (const sg of list) {
+    const loc = sg.scene?.location_id;
+    if (!loc || seen.has(loc)) continue;
+    seen.add(loc);
+    if (!locationAnchor(project, sg) || list.includes(locationAnchor(project, sg))) anchors.push(sg);
+  }
+  return [anchors, list.filter((sg) => !anchors.includes(sg))];
 }
 
 export function estimateImageCost(nImages, opts, withQC) {
