@@ -224,7 +224,7 @@ function defaultSettings() {
     style: store.get('storycuts:style', 'stick'),
     aspect: 'vertical',
     faceMode: 'full',
-    pacing: 'mostly',
+    pacing: 'balanced',
     castHints: [],
     captions: true, captionStyle: { upper: true }, punchIn: true, faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
@@ -252,8 +252,8 @@ function refresh() {
   const p = state.project;
   if (!p) return;
   document.body.classList.toggle('bubble-mode', p.settings.faceMode === 'bubble');
-  ['#panel-style', '#panel-create'].forEach((s) => $(s).classList.remove('locked'));
-  $('#panel-editor').classList.toggle('locked', !p.approved);
+  $('#panel-upload [data-next]').disabled = false;
+  $('#btn-to-editor').hidden = !p.approved;
   $('#cast').classList.toggle('hidden', !p.characters.length);
   $('#btn-reset').hidden = !p.segments.length;
   renderPipeline();
@@ -268,15 +268,53 @@ function refresh() {
   requestAnimationFrame(updateSegThumbs);
 }
 
+// ---------- step-by-step wizard ----------
+
+const maxStep = () => (!state.project ? 1 : state.project.approved ? 5 : 4);
+
 function renderStepper() {
-  const p = state.project;
-  const cur = !p ? 1 : p.approved ? 4 : (p.segments.length || state.busy) ? 3 : 2;
+  const cur = state.step || 1;
+  const max = maxStep();
   $$('#stepper li').forEach((li) => {
     const n = +li.dataset.s;
     li.classList.toggle('active', n === cur);
     li.classList.toggle('done', n < cur);
+    li.classList.toggle('reach', n <= max);
   });
 }
+
+function goStep(n, { scroll = true } = {}) {
+  n = Math.max(1, Math.min(maxStep(), n));
+  const prev = state.step || 1;
+  state.step = n;
+  $$('.wizard > .panel').forEach((panel) => {
+    const on = +panel.dataset.step === n;
+    panel.classList.toggle('active', on);
+    panel.classList.remove('in-fwd', 'in-back');
+    if (on && prev !== n) { void panel.offsetWidth; panel.classList.add(n > prev ? 'in-fwd' : 'in-back'); }
+  });
+  renderStepper();
+  if (n === 2) requestAnimationFrame(() => layoutStyles(true));
+  if (n === 5 && state.project?.approved) {
+    requestAnimationFrame(() => { sizePreview(); renderTimeline(); renderInspector(); drawPreview(); ensurePeaks(); });
+  }
+  if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); state.sfxPlayer.stop(); }
+  requestAnimationFrame(updateSegThumbs);
+  if (scroll) {
+    const top = $('#studio').getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.4) $('#studio').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+$('#wizard').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-next], [data-back]');
+  if (!b || b.disabled) return;
+  goStep(+(b.dataset.next || b.dataset.back));
+});
+$('#stepper').addEventListener('click', (e) => {
+  const li = e.target.closest('li');
+  if (li && +li.dataset.s <= maxStep()) goStep(+li.dataset.s);
+});
 
 // pipeline stages: transcribe → plan → cast → scenes
 function stageState(stage) {
@@ -342,7 +380,7 @@ async function loadFile(file) {
   showFileChip(`${icon('film')} ${esc(file.name)}`, fmtTime(video.duration), `${video.videoWidth}×${video.videoHeight}`);
   loadProject(video.duration);
   if (video.duration > 600) toast('Long video: StoryCuts works best on stories under 5 minutes.', 6000);
-  scrollTo('#panel-style');
+  setTimeout(() => goStep(state.project.approved ? 5 : 2), 500);
 }
 
 function showFileChip(...parts) {
@@ -360,7 +398,7 @@ function loadDemo() {
   showFileChip('Demo story', '0:44', 'silent demo: your own video keeps its sound');
   loadProject(duration);
   if (!state.project.words.length) { state.project.words = words; save(); refresh(); }
-  scrollTo('#panel-style');
+  goStep(state.project.approved ? 5 : 2);
 }
 
 // ---------- step 2: style & options ----------
@@ -376,12 +414,12 @@ function renderStyles() {
         <span class="ph"><b>${esc(s.label)}</b></span>
         ${s.thumb ? `<img src="${esc(s.thumb)}" alt="" onerror="this.remove()">` : ''}
       </span>
-      <span class="tick">${icon('check')}</span>
+      <span class="sel-pill">${icon('check')}Selected</span>
       <span class="meta"><b>${esc(s.label)}</b><small>${esc(s.blurb)}</small></span>
     </button>`).join('') + `
     <button class="style-card custom" data-style="custom" role="option" aria-label="Create your own style">
       <span class="thumb"><span class="ph"><span class="plus">+</span></span><img class="ref-thumb" alt="" hidden></span>
-      <span class="tick">${icon('check')}</span>
+      <span class="sel-pill">${icon('check')}Selected</span>
       <span class="meta"><b>Create your own</b><small>Describe it or upload an example</small></span>
     </button>`;
   $('#style-dots').innerHTML = styleIds().map((id, i) => `<button class="dot" data-i="${i}" aria-label="${esc(id === 'custom' ? 'Create your own' : STYLES[id].label)}"></button>`).join('');
@@ -416,6 +454,9 @@ function layoutStyles(instant = false, drag = 0) {
     card.tabIndex = center ? 0 : -1;
   });
   $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === state.styleIndex));
+  const id = ids[state.styleIndex];
+  const btn = $('#btn-style-next');
+  if (btn) btn.firstChild.textContent = `Continue with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`;
   if (instant) requestAnimationFrame(() => track.classList.remove('instant'));
 }
 
@@ -445,6 +486,7 @@ $('#style-track').addEventListener('click', (e) => {
   const i = styleIds().indexOf(card.dataset.style);
   if (i !== state.styleIndex) selectStyleIndex(i);
   else if (card.dataset.style === 'custom') $('#custom-style').focus();
+  else { card.classList.remove('chosen'); void card.offsetWidth; card.classList.add('chosen'); setTimeout(() => goStep(3), 260); }
 });
 $('#style-track').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') { e.preventDefault(); selectStyleIndex(state.styleIndex - 1); $('#style-track .style-card.on')?.focus(); }
@@ -454,25 +496,27 @@ $('#style-track').addEventListener('keydown', (e) => {
 // drag / swipe
 (function coverflowDrag() {
   const track = $('#style-track');
-  let down = false, x0 = 0, dx = 0;
+  let down = false, x0 = 0, dx = 0, raf = 0;
   const unit = () => Math.min(($('#style-track .style-card')?.offsetWidth || 300) * 0.62, track.clientWidth * 0.3);
   track.addEventListener('pointerdown', (e) => { down = true; x0 = e.clientX; dx = 0; state.styleDragged = false; });
   window.addEventListener('pointermove', (e) => {
     if (!down) return;
     dx = e.clientX - x0;
     if (Math.abs(dx) > 6) { state.styleDragged = true; track.classList.add('dragging'); }
-    if (state.styleDragged) layoutStyles(false, dx / unit());
+    if (state.styleDragged && !raf) raf = requestAnimationFrame(() => { raf = 0; if (down) layoutStyles(false, dx / unit()); });
   });
-  window.addEventListener('pointerup', () => {
+  const end = () => {
     if (!down) return;
     down = false;
     track.classList.remove('dragging');
     if (state.styleDragged) {
       const moveBy = Math.round(-dx / unit());
-      if (moveBy) selectStyleIndex(state.styleIndex + moveBy); else layoutStyles();
+      if (moveBy) selectStyleIndex(state.styleIndex + Math.max(-3, Math.min(3, moveBy))); else layoutStyles();
       setTimeout(() => { state.styleDragged = false; }, 0);
     }
-  });
+  };
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
   window.addEventListener('resize', () => layoutStyles(true));
   // the stage never scrolls; cards are positioned with transforms
   track.addEventListener('scroll', () => { if (track.scrollLeft) track.scrollLeft = 0; });
@@ -524,7 +568,7 @@ function syncOptionsUI() {
   const s = state.project.settings;
   $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === state.aspect));
   $$('#seg-face button').forEach((b) => b.classList.toggle('on', b.dataset.face === (s.faceMode || 'full')));
-  $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'mostly')));
+  $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'balanced')));
   $('#opt-captions').checked = !!s.captions;
   $('#opt-upper').checked = !!s.captionStyle?.upper;
   $('#opt-punch').checked = !!s.punchIn;
@@ -696,8 +740,8 @@ function updateCosts() {
 
 async function createVideo() {
   const p = state.project;
-  if (!p) { toast('Upload a video first (or try the demo).'); scrollTo('#panel-upload'); return; }
-  if (p.approved) { scrollTo('#panel-editor'); return; }
+  if (!p) { toast('Upload a video first (or try the demo).'); goStep(1); return; }
+  if (p.approved) { goStep(5); return; }
   if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
   state.busy = true;
   state.stages = {};
@@ -964,8 +1008,7 @@ async function approveAndDraw() {
   state.stages = { ...(state.stages || {}), cast: 'done' };
   if (!state.selected) state.selected = p.segments.find((s) => s.type !== 'face')?.id;
   refresh();
-  ensurePeaks();
-  scrollTo('#panel-editor');
+  goStep(5);
   const todo = sceneSegs().filter(needsImage);
   if (todo.length && hasImageKey()) {
     setStage('scenes', 'active');
@@ -1178,7 +1221,7 @@ const tlRefreshSoon = () => { clearTimeout(tlRefreshTimer); tlRefreshTimer = set
 
 function renderTimeline() {
   const p = state.project;
-  if (!p?.approved) return;
+  if (!p?.approved || !$('#tl-scroll').clientWidth) return; // editor not visible yet
   tlSetup();
   const el = $('#timeline');
   el.innerHTML = p.segments.map((s, i) => {
@@ -1319,6 +1362,7 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
       renderFxTrack();
     }
   });
+  window.addEventListener('pointercancel', () => { drag = null; });
   window.addEventListener('pointerup', () => {
     if (!drag) return;
     const d = drag;
@@ -1660,6 +1704,7 @@ const drop = $('#drop');
 drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
 $('#btn-demo').addEventListener('click', loadDemo);
 $('#cta-demo').addEventListener('click', () => { loadDemo(); });
+$$('a[href="#studio"]').forEach((a) => a.addEventListener('click', () => { if (state.project) return; goStep(1, { scroll: false }); }));
 $('#btn-create').addEventListener('click', createVideo);
 $('#btn-use-paste').addEventListener('click', usePaste);
 $('#btn-reset').addEventListener('click', resetPlan);
@@ -1720,20 +1765,13 @@ document.fonts?.ready.then(updateSegThumbs);
 
 /** Cursor spotlight + gentle 3D tilt on cards and glass buttons. */
 document.addEventListener('pointermove', (e) => {
-  const el = e.target.closest?.('.spot, .btn.glass, .style-card, .char, .pipeline li');
+  if (e.pointerType !== 'mouse') return;
+  const el = e.target.closest?.('.spot, .btn.glass, .char, .pipeline li');
   if (!el) return;
   const r = el.getBoundingClientRect();
   el.style.setProperty('--mx', `${e.clientX - r.left}px`);
   el.style.setProperty('--my', `${e.clientY - r.top}px`);
-  if (el.classList.contains('style-card') && e.pointerType === 'mouse') {
-    el.style.setProperty('--ry', `${((e.clientX - r.left) / r.width - 0.5) * 10}deg`);
-    el.style.setProperty('--rx', `${(0.5 - (e.clientY - r.top) / r.height) * 8}deg`);
-  }
 }, { passive: true });
-document.addEventListener('pointerout', (e) => {
-  const el = e.target.closest?.('.style-card');
-  if (el && !el.contains(e.relatedTarget)) { el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); }
-});
 
 /** Reveal sections as they scroll into view. */
 const io = new IntersectionObserver((entries) => entries.forEach((en) => {
@@ -1741,6 +1779,7 @@ const io = new IntersectionObserver((entries) => entries.forEach((en) => {
 }), { threshold: 0.12 });
 $$('.reveal').forEach((el) => io.observe(el));
 
+goStep(1, { scroll: false });
 renderStyles();
 loadStyleManifest().then(() => renderStyles());
 requestAnimationFrame(updateSegThumbs);
