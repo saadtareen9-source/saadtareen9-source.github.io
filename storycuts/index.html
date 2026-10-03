@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StoryCuts: tell your story, we'll illustrate it</title>
+  <meta name="description" content="Upload a video of yourself telling a story. StoryCuts edits it into an illustrated video: your face for the best moments, stick-figure scenes for the action, the same characters throughout.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='22' r='14' fill='white' stroke='black' stroke-width='6'/><path d='M50 36v32M50 68l-16 26M50 68l16 26M50 46l-20 14M50 46l20-14' stroke='black' stroke-width='6' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="22" r="14" fill="#fff" stroke="#141414" stroke-width="7"/><path d="M50 36v32M50 68l-16 26M50 68l16 26M50 46l-20 14M50 46l20-14" stroke="#141414" stroke-width="7" stroke-linecap="round" fill="none"/></svg>
+      <span>StoryCuts</span>
+    </div>
+    <nav>
+      <button class="ghost" id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button class="ghost" id="btn-settings">Settings</button>
+    </nav>
+  </header>
+
+  <section class="hero" id="hero">
+    <h1>Tell your story on camera.<br><span>We'll turn it into a cartoon around you.</span></h1>
+    <p>Upload a storytime video. StoryCuts keeps your face for the hook, punchlines and reactions, and cuts away to stick-figure scenes that act out what you're describing, with the same characters every time.</p>
+  </section>
+
+  <main id="app">
+    <!-- 1 -->
+    <section class="card" id="step-upload" data-step="1">
+      <h2><b>1</b> Upload your video</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="video/*" hidden>
+        <strong>Drop a video here</strong> or click to choose.
+        <small>Phone videos work great. Everything stays in your browser; your video is never uploaded anywhere.</small>
+      </label>
+      <label class="check"><input type="checkbox" id="rights"> I own this video or have the rights to edit it.</label>
+      <div class="row hidden" id="video-info"></div>
+      <p class="row"><button class="link" id="btn-demo">No video handy? Try the built-in demo story</button></p>
+    </section>
+
+    <!-- 2 -->
+    <section class="card locked" id="step-transcript" data-step="2">
+      <h2><b>2</b> Transcript</h2>
+      <div class="row">
+        <button class="primary" id="btn-transcribe">Transcribe automatically</button>
+        <select id="asr-quality" title="Model size">
+          <option value="fast">Fast (Whisper base)</option>
+          <option value="accurate">Accurate (Whisper small)</option>
+        </select>
+        <span class="muted">Free, runs on your device.</span>
+      </div>
+      <details id="paste-box">
+        <summary>…or paste the transcript yourself</summary>
+        <textarea id="paste-text" rows="5" placeholder="So my dad walks into the kitchen, sees the smoke, and just freezes…"></textarea>
+        <button id="btn-use-paste">Use this text</button>
+        <small class="muted">StoryCuts lines the words up with the speech in your audio.</small>
+      </details>
+      <div class="status" id="asr-status"></div>
+      <div class="transcript hidden" id="transcript"></div>
+    </section>
+
+    <!-- 3 -->
+    <section class="card locked" id="step-plan" data-step="3">
+      <h2><b>3</b> Plan the edit</h2>
+      <p class="muted">The editor decides, line by line: <span class="tag face">your face</span> for the hook, punchlines and reactions, a <span class="tag scene">stick-figure scene</span> when you describe something happening, or <span class="tag scene_bubble">scene + your face</span> when both matter.</p>
+      <label class="field">Notes for the editor (optional)
+        <input id="plan-notes" placeholder="e.g. my dad is very tall, the dog is called Biscuit, keep it chaotic">
+      </label>
+      <div class="row">
+        <button class="primary" id="btn-plan-ai">Plan with Claude</button>
+        <span class="muted" id="cost"></span>
+      </div>
+      <div class="row"><button class="link" id="btn-plan-quick">No API key? Use the quick offline planner</button></div>
+      <div class="status" id="plan-status"></div>
+      <div class="qc hidden" id="qc"></div>
+    </section>
+
+    <!-- 4 -->
+    <section class="card locked" id="step-chars" data-step="4">
+      <h2><b>4</b> Approve your cast</h2>
+      <p class="muted">Everyone in your story gets one design that stays the same in every scene. Tweak anything, then approve.</p>
+      <div class="chars" id="chars"></div>
+      <div class="row">
+        <button id="btn-add-char">+ Add character</button>
+        <button class="primary" id="btn-approve">Approve cast</button>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="card locked wide" id="step-review" data-step="5">
+      <h2><b>5</b> Review the edit</h2>
+      <div class="review">
+        <div class="player">
+          <div class="aspect-toggle" role="tablist">
+            <button data-aspect="vertical" class="on">9:16</button>
+            <button data-aspect="horizontal">16:9</button>
+          </div>
+          <div class="stage" id="stage"><canvas id="preview"></canvas></div>
+          <div class="controls">
+            <button id="btn-play" class="primary round" aria-label="Play">▶</button>
+            <input type="range" id="scrub" min="0" max="1000" value="0">
+            <span id="time">0:00</span>
+          </div>
+          <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
+          <div class="legend"><span class="tag face">face</span><span class="tag scene">scene</span><span class="tag scene_bubble">scene + face</span></div>
+        </div>
+        <div class="inspector" id="inspector"><p class="muted">Select a shot on the timeline.</p></div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="card locked" id="step-export" data-step="6">
+      <h2><b>6</b> Export</h2>
+      <div class="grid2">
+        <label class="field">Format
+          <select id="ex-aspect">
+            <option value="vertical">Vertical 9:16 · TikTok, Reels, Shorts</option>
+            <option value="horizontal">Horizontal 16:9 · YouTube</option>
+          </select>
+        </label>
+        <label class="field">Face framing (left ↔ right)
+          <input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5">
+        </label>
+        <label class="check"><input type="checkbox" id="opt-captions" checked> Captions</label>
+        <label class="check"><input type="checkbox" id="opt-upper" checked> UPPERCASE captions</label>
+        <label class="check"><input type="checkbox" id="opt-punch" checked> Punch-in zoom on face cuts</label>
+        <label class="check"><input type="checkbox" id="opt-bubble-left"> Face bubble on the left</label>
+        <label class="check"><input type="checkbox" id="opt-watermark"> "made with StoryCuts" tag</label>
+      </div>
+      <div class="row">
+        <button class="primary" id="btn-export">Export video</button>
+        <button id="btn-srt">Download captions (.srt)</button>
+        <button id="btn-save">Save project</button>
+        <label class="btn">Open project<input type="file" id="load-project" accept=".json,application/json" hidden></label>
+      </div>
+      <p class="muted small">Export renders in real time while your video plays once. Keep this tab in front until it finishes.</p>
+      <div class="progress hidden" id="ex-progress"><div></div></div>
+      <div class="status" id="ex-status"></div>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h3>Settings</h3>
+      <label class="field">Anthropic API key
+        <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-…">
+      </label>
+      <small class="muted">Used only for "Plan with Claude" and "Redo with AI". Stored in this browser only and sent directly to api.anthropic.com. Get one at console.anthropic.com.</small>
+      <label class="field">Model
+        <select id="model">
+          <option value="claude-opus-5-5">Claude Opus 5.5 (best edits)</option>
+          <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
+        </select>
+      </label>
+      <div class="row end">
+        <button value="cancel" class="ghost">Close</button>
+        <button value="save" class="primary" id="btn-save-settings">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <video id="video" playsinline preload="auto" hidden></video>
+  <div class="toast" id="toast"></div>
+  <footer>StoryCuts prototype · scenes are drawn live from your edit plan, so characters never drift.</footer>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
