@@ -1,15 +1,20 @@
-// AI illustration: Gemini image models ("Nano Banana") draw the characters and
-// every scene, using each character's approved design as a reference image so
+// AI illustration: an image model (OpenAI GPT Image by default, or Google
+// Gemini "Nano Banana") draws the characters and every scene, using each character's approved design as a reference image so
 // they stay consistent. Claude then inspects every image (anatomy, stray text,
 // character match, does it show the right moment) and failed images are
 // regenerated automatically with the problems spelled out.
 
 import { callClaude } from './planner.js';
 
+// Prices are rough estimates per image for the cost preview.
 export const IMAGE_MODELS = [
-  { id: 'gemini-2.5-flash-image', label: 'Nano Banana: fast, about $0.04 per image', price: 0.039 },
-  { id: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro: best quality, about $0.13 per image', price: 0.134 },
+  { id: 'gpt-image-2', provider: 'openai', quality: 'medium', label: 'OpenAI GPT Image 2: about $0.05 per image', price: 0.05 },
+  { id: 'gpt-image-2@high', provider: 'openai', quality: 'high', label: 'OpenAI GPT Image 2, high quality: about $0.15 per image', price: 0.15 },
+  { id: 'gemini-2.5-flash-image', provider: 'gemini', label: 'Google Nano Banana: about $0.04 per image', price: 0.039 },
+  { id: 'gemini-3-pro-image-preview', provider: 'gemini', label: 'Google Nano Banana Pro: about $0.13 per image', price: 0.134 },
 ];
+
+export const modelInfo = (id) => IMAGE_MODELS.find((m) => m.id === id) || IMAGE_MODELS[0];
 
 export const STYLES = {
   stick: {
@@ -161,6 +166,75 @@ async function gemini(apiKey, model, parts, aspectRatio) {
   return b64ToBlob(d.data, d.mimeType || d.mime_type);
 }
 
+// ---------- OpenAI ----------
+
+const OPENAI_SIZES = { '9:16': '1024x1536', '16:9': '1536x1024', '1:1': '1024x1024' };
+
+/** Gemini-style parts -> one prompt plus numbered input images. */
+function partsToPrompt(parts) {
+  const texts = [];
+  const images = [];
+  for (const p of parts) {
+    if (p.text) texts.push(p.text);
+    const d = p.inlineData;
+    if (d) {
+      images.push(b64ToBlob(d.data, d.mimeType));
+      const n = images.length;
+      if (texts.length && /:\s*$/.test(texts[texts.length - 1])) texts[texts.length - 1] = texts[texts.length - 1].replace(/:\s*$/, ` = input image ${n}.`);
+      else texts.push(`(Attached photo = input image ${n}.)`);
+    }
+  }
+  return { prompt: texts.join('\n'), images };
+}
+
+async function openaiImage(apiKey, modelId, parts, aspectRatio) {
+  const info = modelInfo(modelId);
+  const model = modelId.split('@')[0];
+  const { prompt, images } = partsToPrompt(parts);
+  const size = OPENAI_SIZES[aspectRatio] || 'auto';
+  let res;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (images.length) {
+      // reference images go to the edits endpoint as multipart form data
+      const form = new FormData();
+      form.append('model', model);
+      form.append('prompt', prompt);
+      form.append('size', size);
+      form.append('quality', info.quality || 'medium');
+      images.forEach((b, i) => form.append('image[]', b, `ref${i + 1}.${b.type.includes('png') ? 'png' : 'jpg'}`));
+      res = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { authorization: `Bearer ${apiKey}` }, body: form });
+    } else {
+      res = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model, prompt, size, quality: info.quality || 'medium', n: 1 }),
+      });
+    }
+    if (res.status !== 429 && res.status < 500) break;
+    await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message || `HTTP ${res.status}`;
+    if (res.status === 401) throw new Error('Your OpenAI API key was rejected. Check it in Settings.');
+    if (/billing|quota|insufficient/i.test(msg)) throw new Error(`OpenAI says: ${msg} (add credit at platform.openai.com → Billing).`);
+    if (/verif/i.test(msg)) throw new Error(`OpenAI says: ${msg} (image models may require verifying your organization at platform.openai.com → Settings → Organization).`);
+    if (/safety|moderation/i.test(msg)) throw new Error('OpenAI\'s safety filter blocked this image. Try rewording the scene.');
+    throw new Error(`Image model error: ${msg}`);
+  }
+  const item = json.data?.[0];
+  if (item?.b64_json) return b64ToBlob(item.b64_json, 'image/png');
+  if (item?.url) return (await fetch(item.url)).blob();
+  throw new Error('No image came back. Try again or reword the scene.');
+}
+
+async function drawImage(keys, modelId, parts, aspect) {
+  const info = modelInfo(modelId);
+  return info.provider === 'gemini'
+    ? gemini(keys.gemini, modelId, parts, aspect)
+    : openaiImage(keys.openai, modelId, parts, aspect);
+}
+
 // ---------- prompts ----------
 
 export function characterBrief(ch) {
@@ -233,7 +307,7 @@ async function generateChecked({ keys, opts, buildParts, brief, refs, aspect, on
   let hints = '';
   for (let attempt = 1; attempt <= maxTries; attempt++) {
     onStatus?.(attempt === 1 ? 'Drawing…' : `Redrawing (attempt ${attempt}): ${hints.slice(0, 80)}`);
-    const blob = await gemini(keys.gemini, opts.imageModel, buildParts(hints), aspect);
+    const blob = await drawImage(keys, opts.imageModel, buildParts(hints), aspect);
     let qc = null;
     if (maxTries > 1) {
       onStatus?.('Checking the image…');
@@ -297,7 +371,7 @@ export async function generateSceneImage(project, seg, { keys, opts, projectKey,
 }
 
 export function estimateImageCost(nImages, opts, withQC) {
-  const m = IMAGE_MODELS.find((x) => x.id === opts.imageModel) || IMAGE_MODELS[0];
+  const m = modelInfo(opts.imageModel);
   const retries = withQC ? 1.3 : 1; // expect ~30% regenerations
   const qc = withQC ? 0.02 * retries : 0;
   return nImages * (m.price * retries + qc);

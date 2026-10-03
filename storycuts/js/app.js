@@ -9,7 +9,7 @@ import {
 } from './planner.js';
 import { transcribeInBrowser, wordsFromText, decodeAudio, speechSpans } from './transcribe.js';
 import {
-  IMAGE_MODELS, STYLES, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, pool,
+  IMAGE_MODELS, STYLES, modelInfo, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, pool,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
@@ -308,6 +308,7 @@ function settingsGet() {
     key: store.get('storycuts:key', ''),
     model: store.get('storycuts:model', DEFAULT_MODEL),
     gemini: store.get('storycuts:gkey', ''),
+    openai: store.get('storycuts:okey', ''),
     imageModel: store.get('storycuts:imodel', IMAGE_MODELS[0].id),
     style: store.get('storycuts:style', 'stick'),
     qc: store.get('storycuts:qc', true),
@@ -317,15 +318,20 @@ function settingsGet() {
 function imageJobOpts() {
   const s = settingsGet();
   return {
-    keys: { gemini: s.gemini, claude: s.qc ? s.key : '' },
+    keys: { gemini: s.gemini, openai: s.openai, claude: s.qc ? s.key : '' },
     opts: { imageModel: s.imageModel, style: s.style, claudeModel: s.model, qc: s.qc },
     projectKey: storageKey(),
   };
 }
 
-function needGemini() {
-  if (settingsGet().gemini) return false;
-  toast('Add your Google Gemini API key in Settings to draw images with AI.', 5000);
+function hasImageKey(s = settingsGet()) {
+  return modelInfo(s.imageModel).provider === 'gemini' ? !!s.gemini : !!s.openai;
+}
+
+function needImageKey() {
+  if (hasImageKey()) return false;
+  const gem = modelInfo(settingsGet().imageModel).provider === 'gemini';
+  toast(`Add your ${gem ? 'Google Gemini' : 'OpenAI'} API key in Settings to draw images with AI.`, 5000);
   openSettings();
   return true;
 }
@@ -440,7 +446,7 @@ function renderChars() {
   const missing = p.characters.filter((c) => !c.image?.key).length;
   const s = settingsGet();
   $('#btn-gen-chars').textContent = missing ? `Draw ${missing === p.characters.length ? 'the characters' : `${missing} missing`} with AI` : 'Redraw all characters';
-  $('#chars-cost').textContent = `≈ ${fmtUSD(estimateImageCost(missing || p.characters.length, s, s.qc && !!s.key))} with ${IMAGE_MODELS.find((m) => m.id === s.imageModel)?.label.split(':')[0] || s.imageModel}`;
+  $('#chars-cost').textContent = `≈ ${fmtUSD(estimateImageCost(missing || p.characters.length, s, s.qc && !!s.key))} with ${modelInfo(s.imageModel).label.split(':')[0]}`;
   $('#btn-approve').textContent = p.approved ? 'Cast approved ✓' : 'Approve cast';
 }
 
@@ -460,7 +466,7 @@ async function grabSelfFrame() {
 }
 
 async function drawCharacters(list) {
-  if (needGemini() || !list.length) return;
+  if (needImageKey() || !list.length) return;
   const job = imageJobOpts();
   state.charBusy = new Set(list.map((c) => c.id));
   renderChars();
@@ -573,7 +579,7 @@ function updateSceneBar() {
 }
 
 async function generateScenes(list, note = '') {
-  if (needGemini() || !list.length) return;
+  if (needImageKey() || !list.length) return;
   const job = imageJobOpts();
   const ac = { stop: false };
   state.genAbort = ac;
@@ -620,7 +626,7 @@ $('#btn-gen-scenes').addEventListener('click', () => {
   const todo = sceneSegs().filter(needsImage);
   const list = todo.length ? todo : sceneSegs();
   const s = settingsGet();
-  if (!s.gemini) { needGemini(); return; }
+  if (!hasImageKey(s)) { needImageKey(); return; }
   if (!todo.length && !confirm(`Redraw all ${list.length} scenes? ≈ ${fmtUSD(estimateImageCost(list.length, s, s.qc && !!s.key))}`)) return;
   generateScenes(list);
 });
@@ -860,15 +866,15 @@ inspector.addEventListener('click', async (e) => {
   } else if (act === 'redraw') {
     generateScenes([seg], $('#redo-note')?.value.trim());
   } else if (act === 'redo-ai') {
-    const { key, model, gemini } = settingsGet();
+    const { key, model } = settingsGet();
     if (!key) { toast('Add your Anthropic API key in Settings to rewrite scenes with Claude.'); openSettings(); return; }
     t.disabled = true;
     setStatus('#redo-status', 'Claude is rewriting this scene…', 'busy');
     try {
       const scene = await redoSceneWithClaude(key, p, seg, $('#redo-note')?.value.trim(), { model });
       edit(() => { seg.scene = normalizeScene(scene, p.characters); markStale(seg); });
-      if (gemini) generateScenes([seg]);
-      else toast('New scene written. Add a Gemini key to draw it.');
+      if (hasImageKey()) generateScenes([seg]);
+      else toast('New scene written. Add an image key in Settings to draw it.');
     } catch (err) {
       console.error(err);
       setStatus('#redo-status', `Couldn't rewrite: ${err.message}`, 'err');
@@ -1013,6 +1019,7 @@ function openSettings() {
   $('#api-key').value = s.key;
   $('#model').value = s.model;
   $('#gemini-key').value = s.gemini;
+  $('#openai-key').value = s.openai;
   $('#image-model').innerHTML = IMAGE_MODELS.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
   $('#image-model').value = s.imageModel;
   $('#art-style').innerHTML = Object.entries(STYLES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');
@@ -1027,6 +1034,7 @@ $('#settings').addEventListener('close', () => {
     store.set('storycuts:key', $('#api-key').value.trim());
     store.set('storycuts:model', $('#model').value);
     store.set('storycuts:gkey', $('#gemini-key').value.trim());
+    store.set('storycuts:okey', $('#openai-key').value.trim());
     store.set('storycuts:imodel', $('#image-model').value);
     store.set('storycuts:style', $('#art-style').value);
     store.set('storycuts:qc', $('#opt-qc').checked);
