@@ -67,7 +67,7 @@ export async function testRelay(url) {
   try {
     const r = await fetch(`${base}/health`);
     const body = await r.json().catch(() => null);
-    if (body?.relay === 'storycuts') return { ok: body.version >= 3, message: body.version >= 3 ? 'Relay connected. Animation will go through it.' : 'Relay connected, but it\'s an older version. Re-paste the latest relay code in Cloudflare and deploy again.' };
+    if (body?.relay === 'storycuts') return { ok: body.version >= 3, message: body.version >= 4 ? 'Relay connected. Animation will go through it.' : 'Relay connected, but it\'s an older version. Re-paste the latest relay code in Cloudflare and deploy again.' };
     return { ok: false, message: `That address answered, but it isn't the StoryCuts relay (HTTP ${r.status}). In Cloudflare, open the worker → Edit code, replace everything with the relay code, and press Deploy.` };
   } catch (e) {
     return { ok: false, message: `Couldn't reach that address (${e.message}). Check it's the worker address ending in .workers.dev.` };
@@ -253,6 +253,17 @@ export async function checkAnimationSetup(apiKey, relayUrl, model = 'sora-2') {
   const text = await res.clone().text().catch(() => '');
   if (res.ok || (res.status === 400 && /prompt|required|missing|invalid/i.test(text))) {
     return { ok: true, message: `Animation is ready: OpenAI's video service accepts requests from your account${relayBase ? ' through your relay' : ''}. Press Animate on a scene.` };
+  }
+  if (res.status === 404 && !text && relayBase) {
+    // ask the relay to compare a normal OpenAI call with a video call, from Cloudflare's side
+    try {
+      const d = await (await fetch(`${relayBase}/debug?model=${encodeURIComponent(model)}`, { headers: { authorization: `Bearer ${apiKey}` } })).json();
+      const m = d.models || {}; const v = d.videos || {};
+      const facts = `[relay ${d.colo || '?'}/${d.country || '?'} · model check ${m.status ?? m.error} · video check ${v.status ?? v.error}${v.body ? ` "${v.body.slice(0, 120)}"` : ' empty'}${v.server ? ` · server ${v.server}` : ''}]`;
+      if (m.status !== 200) return { ok: false, message: `OpenAI is refusing requests that come through Cloudflare (even a normal one failed), so the relay can't work from there. Send this to the StoryCuts developer: ${facts}` };
+      if (v.status === 400) return { ok: true, message: `Animation is ready: OpenAI accepts video requests from your account. Press Animate on a scene. ${facts}` };
+      return { ok: false, noAccess: true, message: `Confirmed from Cloudflare too: your account can see ${model}, but OpenAI's video service answers "not found" for it. This is on OpenAI's side. Make sure your organization is verified (platform.openai.com → Settings → Organization → Verify) and your API key has "All" permissions; if both are true, contact help.openai.com and say the Videos API returns 404 for your organization. ${facts}` };
+    } catch { /* older relay without /debug: fall through */ }
   }
   if (res.status === 404 && !text) {
     return { ok: false, noAccess: true, message: `Your account lists ${model}, but OpenAI's video service still answers "not found" when asked to make a video. This is on OpenAI's side: make sure your organization is verified (platform.openai.com → Settings → Organization → Verify) and that the API key is from that organization with "All" permissions. If both are true, contact OpenAI support (help.openai.com) and say the Videos API returns 404 for your organization.` };
