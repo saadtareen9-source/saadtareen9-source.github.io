@@ -1607,3 +1607,21 @@ body.ed-full .tbtn span { white-space: nowrap; }
 .choices button.unavailable:hover { transform: none; border-color: var(--line); background: rgba(255, 255, 255, 0.03); }
 .choices button.unavailable .ct small { color: #fcd34d; }
 .style-card .still-tag { position: absolute; top: 12px; right: 12px; z-index: 5; padding: 4px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fde68a; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; }
+
+/* ======================================================================
+   Create step: one phase at a time
+   ====================================================================== */
+.ready-card { display: grid; grid-template-columns: auto 1fr; gap: 16px 18px; align-items: center; padding: 22px; border-radius: 20px; background: linear-gradient(120deg, rgba(52, 211, 153, 0.12), rgba(139, 92, 246, 0.1)); border: 1px solid rgba(52, 211, 153, 0.4); animation: rise 0.5s var(--ease) both; }
+.rc-ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: rgba(52, 211, 153, 0.18); color: var(--ok); }
+.rc-ico svg { width: 26px; height: 26px; }
+.rc-txt h4 { margin: 0 0 4px; font-family: var(--display); font-size: 1.2rem; }
+.rc-txt p { margin: 0; color: var(--text-2); }
+.rc-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.rc-actions .btn.primary svg:last-child { order: 2; }
+@media (max-width: 640px) { .rc-actions .btn.primary { width: 100%; } .rc-actions { justify-content: center; } }
+.cast.reviewed .cast-bar { display: none; }
+.cast.reviewed { margin-top: 18px; }
+.char-art { background: linear-gradient(150deg, #1d1b2e, #141322); }
+.char-art img:not([src]) { visibility: hidden; }
+.wiz-nav #btn-reset { margin-left: auto; margin-right: 12px; }
+.cb-steps { flex-wrap: wrap; row-gap: 6px; }

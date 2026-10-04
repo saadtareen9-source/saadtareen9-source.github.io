@@ -384,7 +384,7 @@ function defaultSettings() {
     style: store.get('storycuts:style', 'stick'),
     aspect: 'vertical',
     faceMode: 'full',
-    pacing: 'balanced',
+    pacing: 'mostly',
     castHints: [],
     captions: true, captionStyle: { upper: true, preset: 'bold', pos: 'low', size: 1, highlight: '#ffd60a' }, punchIn: true,
     filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], sceneMotion: 'still', faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
@@ -402,6 +402,7 @@ function loadProject(duration) {
   state.cache = {};
   if (saved && Math.abs((saved.duration || 0) - duration) < 0.5) {
     Object.assign(state.project, saved, { duration, settings: { ...defaultSettings(), ...saved.settings } });
+    if (!['mostly', 'bookends', 'story'].includes(state.project.settings.pacing)) state.project.settings.pacing = 'mostly';
     if (saved.segments?.length) toast('Picked up where you left off with this video.');
   }
   state.aspect = state.project.settings.aspect || 'vertical';
@@ -416,8 +417,7 @@ function refresh() {
   if (!p) return;
   document.body.classList.toggle('bubble-mode', p.settings.faceMode === 'bubble');
   $('#panel-upload [data-next]').disabled = false;
-  $('#btn-to-editor').hidden = !p.approved;
-  $('#cast').classList.toggle('hidden', !p.characters.length);
+  $('#btn-to-editor').hidden = true;
   $('#btn-reset').hidden = !p.segments.length;
   renderPipeline();
   renderStepper();
@@ -459,7 +459,7 @@ function goStep(n, { scroll = true } = {}) {
   });
   renderStepper();
   if (n === 2) requestAnimationFrame(() => layoutStyles(true));
-  if (n === 4) renderSummary();
+  if (n === 4) { renderSummary(); if (state.project?.characters.length) checkCastPictures(); }
   setFullEditor(n === 5);
   if (n === 5 && state.project?.approved && !state.project.segments.some((sg) => sg.id === state.selected)) state.selected = state.project.segments[0]?.id;
   if (n === 5 && state.project?.approved) {
@@ -509,8 +509,15 @@ function renderPipeline() {
   });
   const p0 = state.project;
   const started = !!(state.busy || p0?.segments.length || Object.values(state.stages || {}).some(Boolean));
+  const failed = Object.values(state.stages || {}).includes('error');
+  const phase = !started ? 'start' : state.busy || failed || !p0?.segments.length ? 'running' : !p0.approved ? 'cast' : 'ready';
   $('#create-start').classList.toggle('hidden', started);
-  $('#run').classList.toggle('hidden', !started);
+  $('#run').classList.toggle('hidden', phase !== 'running');
+  $('#ready-card').classList.toggle('hidden', phase !== 'ready');
+  $('#cast').classList.toggle('hidden', !p0?.characters.length || phase === 'start' || (phase === 'ready' && !state.showCast));
+  $('#cast').classList.toggle('reviewed', phase === 'ready');
+  $('#btn-reset').hidden = !p0?.segments.length || !!state.busy;
+  $('#btn-show-cast').textContent = state.showCast ? 'Hide your characters' : 'See or change your characters';
   const btn = $('#btn-create');
   const p = state.project;
   const label = btn.querySelector('span');
@@ -826,7 +833,7 @@ function syncOptionsUI() {
   const s = state.project.settings;
   $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === state.aspect));
   $$('#seg-face button').forEach((b) => b.classList.toggle('on', b.dataset.face === (s.faceMode || 'full')));
-  $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'balanced')));
+  $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'mostly')));
   syncMotionUI();
   $('#opt-captions').checked = !!s.captions;
   $('#opt-upper').checked = !!s.captionStyle?.upper;
@@ -887,7 +894,7 @@ $$('#seg-pacing button').forEach((b) => b.addEventListener('click', () => {
   state.project.settings.pacing = b.dataset.pacing;
   save();
   $$('#seg-pacing button').forEach((x) => x.classList.toggle('on', x === b));
-  if (state.project.segments.length) toast('Pacing changed. Use "Start over" in step 3 to re-plan the edit with it.', 5000);
+  if (state.project.segments.length) toast('Pacing changed. Press "Start over with new settings" in step 4 to re-plan the edit with it.', 5000);
 }));
 
 // ---------- step 4 summary ----------
@@ -897,7 +904,7 @@ function renderSummary() {
   if (!p) return;
   const s = p.settings;
   const st = s.style === 'custom' ? { label: 'Your custom style' } : STYLES[s.style] || STYLES.stick;
-  const pacing = { mostly: 'Mostly story', balanced: 'Balanced', story: 'Story only' }[s.pacing || 'balanced'];
+  const pacing = { mostly: 'Normal', bookends: 'Intro & outro', story: 'Voice-over' }[s.pacing] || 'Normal';
   const row = (ico, label, value, back) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}">Change</button></div>`;
   $('#create-summary').innerHTML = [
     row(st.thumb ? `<img src="${esc(st.thumb)}" alt="">` : icon('palette'), 'Style', st.label + (s.styleNotes?.trim() ? ' + your details' : ''), 2),
@@ -1178,6 +1185,18 @@ function qcBadge(img) {
   return `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">${icon('alert')}Needs a look</span>`;
 }
 
+/** A character whose picture can't be loaded (cleared storage, another device) needs redrawing. */
+async function checkCastPictures() {
+  const p = state.project;
+  const gone = [];
+  for (const c of p.characters) if (c.image?.key && !(await hasBlob(c.image.key))) gone.push(c);
+  if (!gone.length || state.project !== p) return;
+  gone.forEach((c) => { delete c.image; });
+  save();
+  renderChars(); renderPipeline();
+  toast(`${gone.length} character picture${gone.length > 1 ? 's were' : ' was'} missing from this device. Draw ${gone.length > 1 ? 'them' : 'it'} again.`, 5000);
+}
+
 async function fillImg(el, key) {
   const blob = await getBlob(key);
   if (!blob) return;
@@ -1212,6 +1231,7 @@ function renderChars() {
     const img = card.querySelector('img');
     if (img) fillImg(img, ch.image.key);
   });
+  checkCastPictures();
   renderCastBar();
 }
 
@@ -1225,27 +1245,30 @@ function renderCastBar() {
   const busy = state.charBusy?.size || 0;
   const gen = $('#btn-gen-chars');
   const ok = $('#btn-approve');
+  const scenes = p.segments.filter((sg) => sg.type !== 'face').length;
   let title, sub;
   if (busy) {
-    title = 'Drawing your characters…';
-    sub = `${drawn} of ${n} ready. This takes about a minute.`;
+    title = `Drawing your characters: ${drawn} of ${n} done`;
+    sub = 'This takes about a minute. You can edit the descriptions while you wait.';
   } else if (missing) {
-    title = drawn ? `${missing} character${missing > 1 ? 's' : ''} still to draw` : `Draw your ${n} character${n > 1 ? 's' : ''} first`;
-    sub = 'Every scene uses these designs, so they need to be drawn before the scenes.';
+    title = drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Step 1: draw your characters';
+    sub = 'Every scene is drawn from these designs, so each character needs a picture first.';
   } else {
-    title = 'Your cast is ready';
-    sub = 'Happy with everyone? Redraw any card you don\'t love, then draw the scenes.';
+    title = 'Step 2: check your characters';
+    sub = `Look at each picture. Redraw anyone who looks wrong, then press the button to draw your ${scenes} scene${scenes === 1 ? '' : 's'}.`;
   }
   $('#cb-title').textContent = title;
   $('#cb-sub').textContent = sub;
   gen.hidden = !missing && !busy;
   gen.disabled = !!busy || state.busy;
   gen.classList.toggle('busy', !!busy);
-  gen.querySelector('span').textContent = busy ? 'Drawing…' : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'character' : `all ${n} characters`}`;
+  gen.querySelector('span').textContent = busy ? 'Drawing…' : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'my character' : `all ${n} characters`}`;
   ok.hidden = !!missing || !!busy;
   ok.disabled = state.busy;
+  ok.querySelector('span').textContent = `They look good, draw the ${scenes} scene${scenes === 1 ? '' : 's'}`;
   $('#cb-step1').className = `cb-step ${missing || busy ? 'on' : 'done'}`;
   $('#cb-step2').className = `cb-step ${missing || busy ? '' : 'on'}`;
+  $('#cb-step3').className = 'cb-step';
   $('#cast-bar').classList.toggle('ready', !missing && !busy);
 }
 
@@ -2393,6 +2416,8 @@ $('#btn-create').addEventListener('click', createVideo);
 $('#btn-use-paste').addEventListener('click', usePaste);
 $('#btn-reset').addEventListener('click', resetPlan);
 $('#btn-approve').addEventListener('click', approveAndDraw);
+$('#btn-open-editor').addEventListener('click', () => goStep(5));
+$('#btn-show-cast').addEventListener('click', () => { state.showCast = !state.showCast; renderPipeline(); if (state.showCast) scrollTo('#cast'); });
 $('#btn-play').addEventListener('click', togglePlay);
 $('#transcript').addEventListener('click', async (e) => {
   const i = e.target.dataset.i;
