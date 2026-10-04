@@ -310,13 +310,14 @@ function goStep(n, { scroll = true } = {}) {
   renderStepper();
   if (n === 2) requestAnimationFrame(() => layoutStyles(true));
   if (n === 4) renderSummary();
-  setFullEditor(n === 5 && isPhone());
+  setFullEditor(n === 5);
+  if (n === 5 && state.project?.approved && !state.project.segments.some((sg) => sg.id === state.selected)) state.selected = state.project.segments[0]?.id;
   if (n === 5 && state.project?.approved) {
     requestAnimationFrame(() => { sizePreview(); renderTimeline(); renderInspector(); drawPreview(); ensurePeaks(); });
   }
   if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
   requestAnimationFrame(updateSegThumbs);
-  if (scroll && !document.body.classList.contains('ed-full')) {
+  if (scroll && !editorOpen()) {
     const top = $('#studio').getBoundingClientRect().top;
     if (top < 0 || top > window.innerHeight * 0.4) $('#studio').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1561,11 +1562,19 @@ async function select(id, seek) {
 const isPhone = () => matchMedia('(max-width: 720px)').matches;
 const TAB_TITLES = { shot: 'Edit', sound: 'Audio', captions: 'Text', filters: 'Filters', trans: 'Transitions', export: 'Export' };
 
+const editorOpen = () => document.body.classList.contains('ed-full') || document.body.classList.contains('ed-app');
+
+/** Step 5 takes over the screen: a sheet-based layout on phones, an app layout on computers. */
 function setFullEditor(on) {
-  const was = document.body.classList.contains('ed-full');
-  if (was === on) return;
-  document.body.classList.toggle('ed-full', on);
+  const phone = on && isPhone();
+  const app = on && !phone;
+  const b = document.body.classList;
+  if (b.contains('ed-full') === phone && b.contains('ed-app') === app) return;
+  const was = editorOpen();
+  b.toggle('ed-full', phone);
+  b.toggle('ed-app', app);
   closeSheet();
+  if (on === was) { requestAnimationFrame(() => { if (state.step === 5) { renderTimeline(); drawPreview(); } }); return; }
   if (on) window.scrollTo(0, 0);
   else requestAnimationFrame(() => $('#studio').scrollIntoView({ block: 'start' }));
   requestAnimationFrame(() => { if (state.step === 5) { renderTimeline(); drawPreview(); } });
@@ -1585,10 +1594,15 @@ function closeSheet() {
 $('#sheet-done').addEventListener('click', closeSheet);
 $('#ed-close').addEventListener('click', () => goStep(4));
 $('#ed-export').addEventListener('click', () => showTab('export'));
-window.addEventListener('resize', () => { if (state.step === 5) setFullEditor(isPhone()); });
+window.addEventListener('resize', () => { if (state.step === 5) setFullEditor(true); });
+document.addEventListener('keydown', (e) => {
+  if (!document.body.classList.contains('ed-app') || e.target.closest('input, textarea, select')) return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+});
 
 function showTab(name, { open = true } = {}) {
   state.tab = name;
+  $('#sheet-title').textContent = TAB_TITLES[name] || '';
   if (open) openSheet(name);
   $$('#ed-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   $$('.ed-panel').forEach((p) => { p.hidden = p.dataset.pane !== name; });
