@@ -358,7 +358,7 @@ function renderPipeline() {
   else if (!p?.segments.length) label.textContent = 'Create my video';
   else if (!p.approved) label.textContent = 'Continue';
   else label.textContent = 'Open the editor';
-  $('#btn-approve').disabled = !!state.charBusy?.size || state.busy;
+  if (state.project?.characters) renderCastBar();
 }
 
 // ---------- step 1: upload ----------
@@ -838,9 +838,16 @@ function updateCosts() {
   $('#create-cost').textContent = `Estimated cost about ${fmtUSD(plan + imgs)}, paid to your own AI accounts.`;
   if (p.approved) {
     const todo = sceneSegs().filter(needsImage).length;
-    $('#scenes-cost').textContent = todo ? `${todo} to draw · ≈ ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key))}` : `${sceneSegs().length} scenes drawn`;
+    const drawing = !!state.genAbort;
+    $('#dc-title').textContent = drawing ? 'Drawing your scenes' : todo ? 'Scenes to draw' : 'All scenes drawn';
+    $('#scenes-cost').textContent = drawing ? `${state.genDone || 0} of ${state.genTotal} done` : todo ? `${todo} scene${todo === 1 ? '' : 's'} · about ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key))}` : `${sceneSegs().length} scenes, ready to watch`;
+    $('#draw-card').classList.toggle('busy', drawing);
+    $('#draw-card').classList.toggle('done', !drawing && !todo);
     const btn = $('#btn-gen-scenes');
-    btn.querySelector('span').textContent = state.genAbort ? 'Stop' : todo ? `Draw ${todo} scene${todo === 1 ? '' : 's'}` : 'Redraw all';
+    btn.classList.toggle('primary', !drawing && !!todo);
+    btn.classList.toggle('glass', drawing || !todo);
+    btn.querySelector('svg use').setAttribute('href', drawing ? '#i-close' : todo ? '#i-spark' : '#i-redo');
+    btn.querySelector('span').textContent = drawing ? 'Stop' : todo ? `Draw ${todo === 1 ? 'it' : 'all'}` : 'Redraw all';
   }
 }
 
@@ -1001,9 +1008,41 @@ function renderChars() {
     const img = card.querySelector('img');
     if (img) fillImg(img, ch.image.key);
   });
-  const missing = p.characters.filter((c) => !c.image?.key).length;
-  $('#btn-gen-chars').lastChild.textContent = missing ? `Draw ${missing} missing` : 'Redraw all';
-  $('#btn-approve').disabled = !!state.charBusy?.size || state.busy;
+  renderCastBar();
+}
+
+/** The bar under the cast: one clear next step at a time. */
+function renderCastBar() {
+  const p = state.project;
+  if (!p) return;
+  const n = p.characters.length;
+  const drawn = p.characters.filter((c) => c.image?.key).length;
+  const missing = n - drawn;
+  const busy = state.charBusy?.size || 0;
+  const gen = $('#btn-gen-chars');
+  const ok = $('#btn-approve');
+  let title, sub;
+  if (busy) {
+    title = 'Drawing your characters…';
+    sub = `${drawn} of ${n} ready. This takes about a minute.`;
+  } else if (missing) {
+    title = drawn ? `${missing} character${missing > 1 ? 's' : ''} still to draw` : `Draw your ${n} character${n > 1 ? 's' : ''} first`;
+    sub = 'Every scene uses these designs, so they need to be drawn before the scenes.';
+  } else {
+    title = 'Your cast is ready';
+    sub = 'Happy with everyone? Redraw any card you don\'t love, then draw the scenes.';
+  }
+  $('#cb-title').textContent = title;
+  $('#cb-sub').textContent = sub;
+  gen.hidden = !missing && !busy;
+  gen.disabled = !!busy || state.busy;
+  gen.classList.toggle('busy', !!busy);
+  gen.querySelector('span').textContent = busy ? 'Drawing…' : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'character' : `all ${n} characters`}`;
+  ok.hidden = !!missing || !!busy;
+  ok.disabled = state.busy;
+  $('#cb-step1').className = `cb-step ${missing || busy ? 'on' : 'done'}`;
+  $('#cb-step2').className = `cb-step ${missing || busy ? '' : 'on'}`;
+  $('#cast-bar').classList.toggle('ready', !missing && !busy);
 }
 
 async function grabSelfFrame() {
@@ -1028,7 +1067,6 @@ async function drawCharacters(list) {
   const job = imageJobOpts();
   state.charBusy = new Set(list.map((c) => c.id));
   renderChars();
-  $('#btn-gen-chars').disabled = true;
   setStatus('#chars-status', `Designing ${list.length} character${list.length > 1 ? 's' : ''} in ${STYLES[state.project.settings.style]?.label || 'your'} style…`, 'busy');
   const me = list.find((c) => c.id === 'me' && c.useVideoLook !== false);
   const selfFrame = me ? await grabSelfFrame().catch(() => null) : null;
@@ -1045,7 +1083,6 @@ async function drawCharacters(list) {
     }
   });
   state.charBusy = new Set();
-  $('#btn-gen-chars').disabled = false;
   renderChars();
   const failed = results.filter((r) => !r.ok);
   failed.forEach((f) => console.error('StoryCuts character drawing failed', f.error));
@@ -1054,7 +1091,7 @@ async function drawCharacters(list) {
     return false;
   }
   const scenesDrawn = state.project.segments.some((sg) => sg.image?.key);
-  setStatus('#chars-status', `${storageProblem ? `${STORAGE_WARN} ` : ''}${scenesDrawn ? 'Done. Redraw your scenes to use the new looks.' : 'Done.'}`, storageProblem ? '' : 'ok');
+  setStatus('#chars-status', `${storageProblem ? `${STORAGE_WARN} ` : ''}${scenesDrawn ? 'Redraw your scenes to use the new looks.' : ''}`);
   return true;
 }
 
@@ -1141,8 +1178,10 @@ async function generateScenes(list, note = '') {
   bar.classList.remove('hidden');
   bar.firstElementChild.style.width = '3%';
   let done = 0;
+  state.genDone = 0; state.genTotal = list.length;
+  updateCosts();
   const aspect = state.aspect === 'vertical' ? '9:16' : '16:9';
-  setStatus('#scenes-status', `Drawing ${list.length} scene${list.length > 1 ? 's' : ''}… you can keep editing while this runs.`, 'busy');
+  setStatus('#scenes-status', 'You can keep editing while this runs.');
   // first shot of each location is drawn first so later shots can reuse it as a reference
   const [anchors, rest] = orderForConsistency(state.project, list);
   const drawOne = async (sg) => {
@@ -1157,7 +1196,7 @@ async function generateScenes(list, note = '') {
       state.cache.pending.delete(sg.id);
       done++;
       bar.firstElementChild.style.width = `${(done / list.length) * 100}%`;
-      setStatus('#scenes-status', `Drew ${done} of ${list.length}…`, 'busy');
+      state.genDone = done; updateCosts();
       renderTimeline();
       if (sg.id === state.selected) renderInspector();
       drawPreview();
@@ -1173,7 +1212,8 @@ async function generateScenes(list, note = '') {
   if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} drawn, ${failed.length} failed: ${errText(failed[0].error)}`, 'err');
   else if (ac.stop) setStatus('#scenes-status', 'Stopped.');
   else {
-    setStatus('#scenes-status', `${storageProblem ? `${STORAGE_WARN} ` : ''}All ${list.length} scene${list.length > 1 ? 's' : ''} drawn.${redrawn ? ` ${redrawn} redrawn automatically after a quality check.` : ''}${flagged ? ` ${flagged} flagged with ⚠: take a look.` : ' Press play to watch.'}`, flagged || storageProblem ? '' : 'ok');
+    const notes = [storageProblem ? STORAGE_WARN : '', redrawn ? `${redrawn} redrawn automatically after a quality check.` : '', flagged ? `${flagged} flagged with ⚠: take a look.` : ''].filter(Boolean).join(' ');
+    setStatus('#scenes-status', notes);
   }
   updateCosts();
   renderInspector();
@@ -1603,8 +1643,10 @@ function renderInspector() {
   const sc = seg.scene;
   const types = p.settings.faceMode === 'bubble' ? ['face', 'scene', 'scene_bubble'] : ['face', 'scene'];
   const pending = state.cache.pending?.has(seg.id);
+  el.classList.toggle('fresh', el.dataset.seg !== seg.id);
+  el.dataset.seg = seg.id;
   el.innerHTML = `
-    <div class="insp-head"><strong>Shot ${i + 1} of ${p.segments.length}</strong><span class="muted small">${fmtTime(seg.start)}–${fmtTime(seg.end)} · ${(seg.end - seg.start).toFixed(1)}s</span></div>
+    <div class="insp-head"><strong>Shot ${i + 1} <span class="muted">of ${p.segments.length}</span></strong><span class="time-chip">${fmtTime(seg.start)}–${fmtTime(seg.end)} · ${(seg.end - seg.start).toFixed(1)}s</span></div>
     <p class="quote">“${esc(shotText(seg))}”</p>
     <div class="type-switch">${types.map((t) => `<button data-type="${t}" class="${type === t ? 'on' : ''}"><i></i>${{ face: 'Your face', scene: 'Scene', scene_bubble: 'Scene + face' }[t]}</button>`).join('')}</div>
     ${type === 'face' || !sc ? '' : `

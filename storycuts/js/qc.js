@@ -132,7 +132,7 @@ export function normalizeScene(scene, characters, report = [], segIndex = null) 
  * Turn a plan into contiguous, time-based segments that cover [0, duration],
  * applying editorial rules along the way.
  */
-export function normalizeSegments(segments, characters, duration, report = [], { pacing = 'mostly' } = {}) {
+export function normalizeSegments(segments, characters, duration, report = [], { pacing = 'mostly', cutbacks = false } = {}) {
   let segs = (segments || [])
     .filter((s) => Number.isFinite(s.start))
     .map((s) => ({
@@ -179,14 +179,42 @@ export function normalizeSegments(segments, characters, duration, report = [], {
     last.type = 'scene_bubble';
     report.push({ seg: segs.length - 1, check: 'ending', fix: 'Last shot now keeps your face in a bubble for the reaction.' });
   }
-  // long runs of cutaways lose the creator; break them up
-  let run = 0;
-  segs.forEach((s, i) => {
-    if (s.type === 'scene') {
-      run += s.end - s.start;
-      if (run > 9) { s.type = 'scene_bubble'; run = 0; report.push({ seg: i, check: 'creator-presence', fix: 'Added your face bubble so you don\'t vanish for too long.' }); }
-    } else run = 0;
-  });
+  // cut back to the creator during the story, not just at the start and end
+  const MAX_RUN = { mostly: 11, balanced: 6 }[pacing];
+  if (cutbacks && MAX_RUN) {
+    for (let guard = 0; guard < 40; guard++) {
+      // find the first run of illustrations longer than the limit
+      let runStart = -1, run = 0, found = null;
+      for (let i = 0; i < segs.length; i++) {
+        if (segs[i].type === 'face') { runStart = -1; run = 0; continue; }
+        if (runStart < 0) runStart = i;
+        run += segs[i].end - segs[i].start;
+        if (run > MAX_RUN) { found = [runStart, i]; break; }
+      }
+      if (!found) break;
+      const [a, b] = found;
+      // prefer turning a short middle shot into a face cut; otherwise split the longest one
+      const inner = segs.slice(a, b + 1).map((sg, k) => ({ sg, k: a + k })).filter(({ k }) => k > a || b === a);
+      const short = inner.filter(({ sg }) => sg.end - sg.start <= 3.5).sort((x, y) => (x.sg.end - x.sg.start) - (y.sg.end - y.sg.start))[0];
+      if (short && short.k > a) {
+        Object.assign(short.sg, { type: 'face', reason: 'Cut back to you mid-story.', scene: null });
+        delete short.sg.image;
+      } else {
+        const long = segs.slice(a, b + 1).reduce((x, y) => (y.end - y.start > x.end - x.start ? y : x));
+        const len = long.end - long.start;
+        const faceLen = Math.min(2, len * 0.35);
+        if (len < 2.2) break;
+        const cut = { id: newId(), start: long.end - faceLen, end: long.end, type: 'face', reason: 'Cut back to you mid-story.', scene: null };
+        long.end = cut.start;
+        segs.splice(segs.indexOf(long) + 1, 0, cut);
+      }
+      report.push({ seg: null, check: 'cutback', fix: 'Added a cut back to your face in the middle of the story.' });
+    }
+  }
+  // back-to-back face shots read as one shot
+  for (let i = segs.length - 1; i > 0; i--) {
+    if (segs[i].type === 'face' && segs[i - 1].type === 'face') { segs[i - 1].end = segs[i].end; segs.splice(i, 1); }
+  }
   segs.forEach((s, i) => {
     if (s.type !== 'face' && !s.scene) {
       s.scene = normalizeScene({}, characters, report, i);
@@ -199,7 +227,7 @@ export function normalizeSegments(segments, characters, duration, report = [], {
 export function runQC(project) {
   const report = [];
   project.characters = normalizeCharacters(project.characters, report);
-  project.segments = normalizeSegments(project.segments, project.characters, project.duration, report, { pacing: project.settings?.pacing });
+  project.segments = normalizeSegments(project.segments, project.characters, project.duration, report, { pacing: project.settings?.pacing, cutbacks: true });
   const scenes = project.segments.filter((s) => s.type !== 'face').length;
   const checks = project.segments.length * 6 + project.characters.length * 2;
   return { report, checks, scenes };
