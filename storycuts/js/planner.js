@@ -161,7 +161,8 @@ Understand the story first (story_summary):
 
 Staging: who is physically there (most important):
 - A character appears in a scene only if they are physically in that place at that moment. Being mentioned is not the same as being there.
-- Remote contact (texting, messaging, calling, video calls, social media, email): the other person is somewhere else. Show the person on our side with their phone (for example a close-up of Me grinning at a glowing phone screen, or an over-the-shoulder shot of the phone). Put the remote person in "offscreen", never in actors. Only if the story is really about both sides, use a separate shot of the remote person in their own location.
+- Remote contact (texting, messaging, calling, video calls, social media, email): the two people are in DIFFERENT places and must never share a frame. Show it as two consecutive shots: first the other person in their own location doing their side (typing, calling), then the storyteller in theirs (reading the phone, answering). Split the line between the two shots at a natural word. Each shot has one location; the person who isn't there goes in "offscreen".
+  Example: "then my friend Jake texts me, so I'm on my phone for like ten minutes" → shot A: Jake in his bedroom grinning as he types on his phone (location jake_room, actors [jake], offscreen [me]); shot B: Me in the kitchen staring at my phone and laughing while the pan smokes behind (location kitchen, actors [me], offscreen [jake]). Never Jake and Me in the same kitchen.
 - People who are only talked about, remembered, imagined, asleep elsewhere, or who arrive later are offscreen until they actually enter.
 - When someone arrives ("my dad walks in"), show the arrival: them in the doorway or entering, in the same location as before.
 - When the storyteller is the only one there, draw them alone. Do not add friends or family to fill the frame.
@@ -241,7 +242,7 @@ function segmentsFromWordIndices(raw, words) {
   for (const s of sorted) {
     const i = Math.max(0, Math.min(words.length - 1, s.start_word | 0));
     if (segs.length && words[i].s <= segs[segs.length - 1].start) continue;
-    segs.push({ id: newId(), start: segs.length ? words[i].s : 0, type: s.type, reason: s.reason, sfx: s.sfx, scene: s.type === 'face' ? null : s.scene });
+    segs.push({ id: newId(), start: segs.length ? words[i].s : 0, type: s.type, reason: s.reason, sfx: s.sfx, scene: s.type === 'face' ? null : s.scene, ...(s.pair ? { pair: true } : {}) });
   }
   return segs;
 }
@@ -252,7 +253,103 @@ export const PACING = {
   story: 'PACING: voice-over. Every shot must be a "scene" (no "face" shots at all, not even the opening or ending): illustrate everything, including the hook, commentary and reactions (show the storyteller "me" reacting when there is no action).',
 };
 
-export async function planWithClaude(apiKey, words, duration, { model = DEFAULT_MODEL, notes = '', pacing = 'mostly', cast = [] } = {}) {
+// ---------- continuity review ----------
+
+const REVIEW_SYSTEM = `You are the continuity supervisor on an illustrated storytime video. You get the story summary and every planned shot. Find shots where the picture would be wrong about who is physically where:
+- someone drawn in a place they are not in at that moment (texting, calling, messaging, being talked about, remembered, not arrived yet, already left)
+- two people in one frame who are actually in different places (remote contact must be two separate shots, one per place)
+- a location that doesn't match where the moment happens
+- an image_prompt that names someone who isn't in the shot's actors, or leaves out someone who is
+For each wrong shot, give the corrected staging. For remote contact, set split.enabled and split the shot at a word index (inside the shot, at least 3 words into it and 3 words before its end) so the first part shows the other person in their own place and the second part shows the storyteller in theirs (or the reverse, following the order of the line). Write complete, literal image_prompts naming only the people in frame. Use only existing character and location ids; you may add a location id that is new, with its name in the image_prompt. Only list shots that need fixing; return an empty list if everything is right.`;
+
+const stagingFields = {
+  actors: { type: 'array', items: { type: 'string' }, description: 'character ids physically in the frame' },
+  offscreen: { type: 'array', items: { type: 'string' }, description: 'character ids involved but not in this place' },
+  location_id: { type: 'string' },
+  moment: { type: 'string' },
+  image_prompt: { type: 'string' },
+};
+const reviewSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['fixes'],
+  properties: {
+    fixes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['shot', 'problem', ...Object.keys(stagingFields), 'split'],
+        properties: {
+          shot: { type: 'integer', description: 'index of the shot in the list' },
+          problem: { type: 'string' },
+          ...stagingFields,
+          split: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['enabled', 'start_word', ...Object.keys(stagingFields)],
+            properties: { enabled: { type: 'boolean' }, start_word: { type: 'integer' }, ...stagingFields },
+          },
+        },
+      },
+    },
+  },
+};
+
+const restage = (scene, fix, characters) => {
+  const known = new Set(characters.map((c) => c.id));
+  const keep = (fix.actors || []).filter((id) => known.has(id));
+  const old = new Map((scene?.actors || []).map((a) => [a.character_id, a]));
+  return {
+    ...(scene || {}),
+    moment: fix.moment || scene?.moment || '',
+    location_id: fix.location_id || scene?.location_id || '',
+    image_prompt: fix.image_prompt || scene?.image_prompt || '',
+    offscreen: (fix.offscreen || []).filter((id) => known.has(id) && !keep.includes(id)),
+    actors: keep.map((id, i) => old.get(id) || { character_id: id, x: keep.length === 1 ? 0.5 : 0.3 + (0.4 * i) / Math.max(1, keep.length - 1), pose: 'stand', expression: 'neutral', facing: 'right', speech: '' }),
+    props: scene?.props || [], effects: scene?.effects || [], sound_effect: scene?.sound_effect || '', setting: scene?.setting || 'blank',
+  };
+};
+
+/** Second pass: check every scene's staging and fix or split the wrong ones. */
+export async function reviewContinuity(apiKey, data, words, { model = DEFAULT_MODEL } = {}) {
+  const segs = [...data.segments].sort((a, b) => a.start_word - b.start_word);
+  const name = (id) => data.characters.find((c) => c.id === id)?.name || id;
+  const shots = segs.map((sg, i) => {
+    const end = segs[i + 1]?.start_word ?? words.length;
+    const said = words.slice(sg.start_word, end).map((w, k) => `${sg.start_word + k}|${w.w}`).join(' ');
+    if (sg.type === 'face') return `#${i} [face] ${said}`;
+    const sc = sg.scene || {};
+    return `#${i} [scene @${sc.location_id || '?'}] ${said}\n   in frame: ${(sc.actors || []).map((a) => name(a.character_id)).join(', ') || 'nobody'}; elsewhere: ${(sc.offscreen || []).map(name).join(', ') || 'nobody'}\n   picture: ${sc.image_prompt || ''}`;
+  });
+  const user = `Story (who is where):\n${data.story_summary || ''}\n\nCharacters: ${JSON.stringify(data.characters.map(({ id, name: n }) => ({ id, name: n })))}\nLocations: ${JSON.stringify((data.locations || []).map(({ id, name: n }) => ({ id, name: n })))}\n\nShots (index | words with word indices):\n${shots.join('\n')}\n\nReview the staging.`;
+  const { data: review } = await callClaude(apiKey, { model, system: REVIEW_SYSTEM, user, schema: reviewSchema, effort: 'low', maxTokens: 16000 });
+  let fixed = 0;
+  const added = [];
+  for (const fix of review.fixes || []) {
+    const sg = segs[fix.shot];
+    if (!sg || sg.type === 'face') continue;
+    sg.scene = restage(sg.scene, fix, data.characters);
+    fixed++;
+    const sp = fix.split;
+    const end = segs[fix.shot + 1]?.start_word ?? words.length;
+    if (sp?.enabled && sp.start_word > sg.start_word + 1 && sp.start_word < end - 1) {
+      // the two halves of a conversation stay together (no face cut between them)
+      sg.pair = true;
+      added.push({ pair: true, start_word: sp.start_word, type: sg.type, reason: 'Other side of the conversation, in its own place.', sfx: 'none', scene: restage(sg.scene, sp, data.characters) });
+    }
+  }
+  data.segments = [...segs, ...added].sort((a, b) => a.start_word - b.start_word);
+  // new places mentioned by the fixes still need a fixed description for consistency
+  const locIds = new Set((data.locations || []).map((l) => l.id));
+  data.segments.forEach((sg) => {
+    const id = sg.scene?.location_id;
+    if (id && !locIds.has(id)) { locIds.add(id); (data.locations ||= []).push({ id, name: id.replace(/_/g, ' '), description: sg.scene.image_prompt.slice(0, 220) }); }
+  });
+  return { fixed, split: added.length };
+}
+
+export async function planWithClaude(apiKey, words, duration, { model = DEFAULT_MODEL, notes = '', pacing = 'mostly', cast = [], onStage = () => {} } = {}) {
   const castText = cast.filter((c) => c.name?.trim()).map((c) => `- ${c.name.trim()}${c.description?.trim() ? `: ${c.description.trim()}` : ''}`).join('\n');
   const user = `Video length: ${duration.toFixed(1)}s. ${words.length} words.
 ${PACING[pacing] || PACING.mostly}
@@ -262,7 +359,13 @@ ${transcriptForPrompt(words)}
 
 Plan the edit.`;
   const { data, usage, model: served } = await callClaude(apiKey, { model, system: SYSTEM, user, schema: planSchema, effort: 'medium' });
+  let continuity = null;
+  try {
+    onStage('review');
+    continuity = await reviewContinuity(apiKey, data, words, { model });
+  } catch (e) { console.warn('StoryCuts: continuity review skipped', e); }
   return {
+    continuity,
     title: data.title,
     summary: data.story_summary || '',
     characters: data.characters,

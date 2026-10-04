@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=34">
+  <link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
   <!-- icon sprite -->
@@ -243,8 +243,8 @@
         <div class="opt-group">
           <span class="opt-label">Scenes</span>
           <div class="choices two" id="seg-motion">
-            <button data-motion="still" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Illustrations with a gentle camera move. Fast and included.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-motion="animated"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><span class="ct"><b>Animated scenes <em class="rec new">New</em></b><small>Each picture comes to life as a short animated clip. Slower, costs more.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Camera moves plus steam, sparkles, rain, glow and shakes that match each scene. Included.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Illustrations with a slow, simple zoom. Calmer look.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
@@ -427,6 +427,7 @@
               <div class="filter-grid" id="filter-grid"></div>
               <label class="range-field wide-range" id="filter-amt-row"><span>Strength</span><input type="range" id="filter-amt" min="0" max="1" step="0.05" value="1"></label>
               <p class="pane-title">Camera</p>
+              <label class="switch"><input type="checkbox" id="opt-living" checked><span></span>Living pictures (motion and effects on scenes)</label>
               <label class="switch"><input type="checkbox" id="opt-punch" checked><span></span>Zoom in on every other face cut</label>
               <label class="range-field wide-range"><span>Face framing</span><input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
             </div>
@@ -570,6 +571,7 @@
             <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
           </select>
         </label>
+        <div hidden>
         <label class="field">Animation model <span class="hint">for animated scenes (uses your OpenAI key)</span>
           <select id="video-model"></select>
         </label>
@@ -578,6 +580,7 @@
           <button type="button" class="btn glass sm" id="btn-test-relay">Check animation setup</button>
           <span class="relay-result" id="relay-result"></span>
         </label>
+        </div>
         <label class="check"><input type="checkbox" id="opt-qc" checked><span class="box"><svg><use href="#i-check"/></svg></span>Check every image with Claude and redraw bad ones</label>
       </details>
       <div class="modal-foot">
@@ -589,7 +592,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=34", "./js/app.js": "./js/app.js?v=34", "./js/billing.js": "./js/billing.js?v=34", "./js/constants.js": "./js/constants.js?v=34", "./js/draw.js": "./js/draw.js?v=34", "./js/images.js": "./js/images.js?v=34", "./js/loader.js": "./js/loader.js?v=34", "./js/planner.js": "./js/planner.js?v=34", "./js/qc.js": "./js/qc.js?v=34", "./js/render.js": "./js/render.js?v=34", "./js/sfx.js": "./js/sfx.js?v=34", "./js/transcribe.js": "./js/transcribe.js?v=34"}}</script>
-  <script type="module" src="js/app.js?v=34"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=35", "./js/app.js": "./js/app.js?v=35", "./js/billing.js": "./js/billing.js?v=35", "./js/constants.js": "./js/constants.js?v=35", "./js/draw.js": "./js/draw.js?v=35", "./js/images.js": "./js/images.js?v=35", "./js/loader.js": "./js/loader.js?v=35", "./js/planner.js": "./js/planner.js?v=35", "./js/qc.js": "./js/qc.js?v=35", "./js/render.js": "./js/render.js?v=35", "./js/sfx.js": "./js/sfx.js?v=35", "./js/transcribe.js": "./js/transcribe.js?v=35"}}</script>
+  <script type="module" src="js/app.js?v=35"></script>
 </body>
 </html>

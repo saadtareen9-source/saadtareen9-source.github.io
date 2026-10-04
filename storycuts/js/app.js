@@ -392,7 +392,7 @@ function defaultSettings() {
     pacing: 'mostly',
     castHints: [],
     captions: true, captionStyle: { upper: true, preset: 'bold', pos: 'low', size: 1, highlight: '#ffd60a' }, punchIn: true,
-    filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], sceneMotion: 'still', faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
+    filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], sceneMotion: 'living', faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
 }
 
@@ -407,6 +407,8 @@ function loadProject(duration) {
   state.cache = {};
   if (saved && Math.abs((saved.duration || 0) - duration) < 0.5) {
     Object.assign(state.project, saved, { duration, settings: { ...defaultSettings(), ...saved.settings } });
+    // animated video scenes were retired (the video API was discontinued)
+    if (state.project.settings.sceneMotion === 'animated') state.project.settings.sceneMotion = 'living';
     if (!['mostly', 'bookends', 'story'].includes(state.project.settings.pacing)) state.project.settings.pacing = 'mostly';
     if (saved.segments?.length) toast('Picked up where you left off with this video.');
   }
@@ -694,7 +696,7 @@ function selectStyleIndex(i) {
   store.set('storycuts:style', id);
   save();
   syncStyleExtras();
-  syncMotionUI({ announce: true });
+  syncMotionUI();
   updateCosts();
   clearTimeout(selectStyleIndex.t);
   if (hadArt) selectStyleIndex.t = setTimeout(() => toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500), 700);
@@ -867,32 +869,21 @@ $$('#seg-face button').forEach((b) => b.addEventListener('click', () => {
   refresh();
 }));
 
-/** Animated scenes are only offered for styles that video models can animate. */
-function syncMotionUI({ announce = false } = {}) {
+/** Living pictures (motion + effects) or plain still pictures. */
+function syncMotionUI() {
   const st = state.project?.settings;
   if (!st) return;
-  const ok = canAnimate(st);
-  const btn = $('#seg-motion [data-motion=animated]');
-  const small = btn.querySelector('small');
-  small.dataset.text ||= small.textContent;
-  btn.disabled = !ok;
-  btn.classList.toggle('unavailable', !ok);
-  small.textContent = ok ? small.dataset.text : `Not available for ${STYLES[st.style]?.label || 'this'} style: video models can't animate photo-real people reliably.`;
-  if (!ok && st.sceneMotion === 'animated') {
-    st.sceneMotion = 'still';
-    save();
-    if (announce) toast(`${STYLES[st.style]?.label || 'This'} style uses still pictures, so animated scenes were turned off.`, 5000);
-  }
-  $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x.dataset.motion === (st.sceneMotion || 'still')));
+  if (st.sceneMotion !== 'still') st.sceneMotion = 'living';
+  $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x.dataset.motion === st.sceneMotion));
+  $('#opt-living').checked = st.sceneMotion === 'living';
 }
 
 $$('#seg-motion button').forEach((b) => b.addEventListener('click', () => {
-  if (!state.project || b.disabled) return;
+  if (!state.project) return;
   state.project.settings.sceneMotion = b.dataset.motion;
   save();
-  $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x === b));
-  updateCosts(); drawPreview();
-  if (b.dataset.motion === 'animated') toast(`Animated scenes: each picture becomes a short clip, about ${fmtUSD(videoModelInfo(settingsGet().videoModel).perSec * 4)} to ${fmtUSD(videoModelInfo(settingsGet().videoModel).perSec * 8)} per scene.`, 5000);
+  syncMotionUI();
+  drawPreview();
 }));
 
 $$('#seg-pacing button').forEach((b) => b.addEventListener('click', () => {
@@ -914,7 +905,7 @@ function renderSummary() {
   const row = (ico, label, value, back) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}">Change</button></div>`;
   $('#create-summary').innerHTML = [
     row(st.thumb ? `<img src="${esc(st.thumb)}" alt="">` : icon('palette'), 'Style', st.label + (s.styleNotes?.trim() ? ' + your details' : ''), 2),
-    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}${animatedOn(p) ? ' · animated' : ''}`, 3),
+    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}${p.settings.sceneMotion === 'still' ? ' · still pictures' : ' · living pictures'}`, 3),
     row(icon('user'), 'Video', state.file ? state.file.name : 'Demo story', 1),
   ].join('');
 }
@@ -1100,7 +1091,10 @@ async function createVideo() {
         p.settings.faceMode === 'bubble' ? '' : 'Use only "face" and "scene" shots (no scene_bubble): the creator wants full-frame cuts.',
       ].filter(Boolean).join(' ');
       try {
-        const raw = await planWithClaude(s.key, p.words, p.duration, { model: s.model, notes, pacing: p.settings.pacing, cast: p.settings.castHints || [] });
+        const raw = await planWithClaude(s.key, p.words, p.duration, {
+          model: s.model, notes, pacing: p.settings.pacing, cast: p.settings.castHints || [],
+          onStage: () => state.live?.update({ title: 'Checking every scene for continuity', tips: ['Making sure everyone is only where they really are…', 'Texts and calls get one shot per side…', 'Matching each scene to the right place…'] }),
+        });
         snapshot();
         p.title = raw.title || p.title;
         p.storySummary = raw.summary || '';
@@ -2132,6 +2126,7 @@ function renderFilterPane() {
   $('#filter-amt').value = st.filterAmt ?? 1;
   $('#filter-amt-row').hidden = !st.filter || st.filter === 'none';
   $('#opt-punch').checked = !!st.punchIn;
+  $('#opt-living').checked = st.sceneMotion !== 'still';
   $('#face-x').value = st.faceX ?? 0.5;
 }
 $('#filter-grid').addEventListener('click', (e) => {
@@ -2391,11 +2386,13 @@ function readExportUI() {
   s.captionStyle = { ...(s.captionStyle || {}), upper: $('#opt-upper').checked };
   renderTextPane();
   s.punchIn = $('#opt-punch').checked;
+  s.sceneMotion = $('#opt-living').checked ? 'living' : 'still';
+  syncMotionUI();
   s.watermark = $('#opt-watermark').checked;
   s.faceX = +$('#face-x').value;
   save(); drawPreview();
 }
-['#opt-captions', '#opt-upper', '#opt-punch', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', () => state.project && readExportUI()));
+['#opt-captions', '#opt-upper', '#opt-punch', '#opt-living', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', () => state.project && readExportUI()));
 
 function download(blob, name) {
   const a = document.createElement('a');
