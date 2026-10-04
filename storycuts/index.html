@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
   <!-- icon sprite -->
@@ -329,6 +329,11 @@
         <div class="panel-head"><span class="num">5</span><div><h3>Edit &amp; export</h3><p>Scrub the timeline, tap any clip to change it, add sound effects, then export.</p></div></div>
 
         <div class="ed">
+          <div class="ed-top">
+            <button class="icon-btn ed-x" id="ed-close" aria-label="Close editor"><svg><use href="#i-close"/></svg></button>
+            <span class="ed-title">StoryCuts</span>
+            <button class="btn primary sm ed-export" id="ed-export"><span>Export</span></button>
+          </div>
           <div class="ed-view">
             <div class="stage" id="stage"><canvas id="preview"></canvas></div>
             <div class="transport">
@@ -351,6 +356,8 @@
               <button data-tab="trans"><svg><use href="#i-trans"/></svg>Transitions</button>
               <button data-tab="export"><svg><use href="#i-download"/></svg>Export</button>
             </nav>
+            <div class="ed-sheet" id="ed-sheet">
+            <div class="sheet-head"><i class="grip"></i><b id="sheet-title">Edit</b><button class="icon-btn sheet-done" id="sheet-done" aria-label="Done"><svg><use href="#i-check"/></svg></button></div>
             <div class="ed-panel" data-pane="shot">
               <div class="draw-card" id="draw-card">
                 <div class="dc-row">
@@ -425,6 +432,7 @@
                 <button class="btn glass sm" id="btn-save"><svg><use href="#i-download"/></svg>Save project</button>
                 <label class="btn glass sm">Open project<input type="file" id="load-project" accept=".json,application/json" hidden></label>
               </div>
+            </div>
             </div>
           </div>
 
@@ -551,6 +559,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=19"></script>
+  <script type="module" src="js/app.js?v=20"></script>
 </body>
 </html>

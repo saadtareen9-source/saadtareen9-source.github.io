@@ -310,12 +310,13 @@ function goStep(n, { scroll = true } = {}) {
   renderStepper();
   if (n === 2) requestAnimationFrame(() => layoutStyles(true));
   if (n === 4) renderSummary();
+  setFullEditor(n === 5 && isPhone());
   if (n === 5 && state.project?.approved) {
     requestAnimationFrame(() => { sizePreview(); renderTimeline(); renderInspector(); drawPreview(); ensurePeaks(); });
   }
   if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
   requestAnimationFrame(updateSegThumbs);
-  if (scroll) {
+  if (scroll && !document.body.classList.contains('ed-full')) {
     const top = $('#studio').getBoundingClientRect().top;
     if (top < 0 || top > window.innerHeight * 0.4) $('#studio').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1555,7 +1556,39 @@ async function select(id, seek) {
 }
 
 // tabs
-function showTab(name) {
+// ---------- phone: full-screen editor (CapCut-style) ----------
+const isPhone = () => matchMedia('(max-width: 720px)').matches;
+const TAB_TITLES = { shot: 'Edit', sound: 'Audio', captions: 'Text', filters: 'Filters', trans: 'Transitions', export: 'Export' };
+
+function setFullEditor(on) {
+  const was = document.body.classList.contains('ed-full');
+  if (was === on) return;
+  document.body.classList.toggle('ed-full', on);
+  closeSheet();
+  if (on) window.scrollTo(0, 0);
+  else requestAnimationFrame(() => $('#studio').scrollIntoView({ block: 'start' }));
+  requestAnimationFrame(() => { if (state.step === 5) { renderTimeline(); drawPreview(); } });
+}
+function openSheet(name) {
+  if (!document.body.classList.contains('ed-full')) return;
+  $('#sheet-title').textContent = TAB_TITLES[name] || '';
+  $('#ed-sheet').classList.add('open');
+  document.body.classList.add('sheet-open');
+}
+function closeSheet() {
+  $('#ed-sheet').classList.remove('open');
+  document.body.classList.remove('sheet-open');
+  if (document.body.classList.contains('ed-full')) $$('#ed-tabs button').forEach((b) => b.classList.remove('on'));
+  else showTab(state.tab || 'shot', { open: false });
+}
+$('#sheet-done').addEventListener('click', closeSheet);
+$('#ed-close').addEventListener('click', () => goStep(4));
+$('#ed-export').addEventListener('click', () => showTab('export'));
+window.addEventListener('resize', () => { if (state.step === 5) setFullEditor(isPhone()); });
+
+function showTab(name, { open = true } = {}) {
+  state.tab = name;
+  if (open) openSheet(name);
   $$('#ed-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   $$('.ed-panel').forEach((p) => { p.hidden = p.dataset.pane !== name; });
   if (name === 'sound') renderSoundPane();
