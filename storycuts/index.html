@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=30">
+  <link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
   <!-- icon sprite -->
@@ -574,7 +574,8 @@
           <select id="video-model"></select>
         </label>
         <label class="field">Video relay address <span class="hint">optional · only if animation says it can't reach OpenAI</span>
-          <span class="relay-row"><input id="video-relay" placeholder="https://storycuts-relay.yourname.workers.dev" autocomplete="off"><button type="button" class="btn glass sm" id="btn-test-relay">Test</button></span>
+          <span class="relay-row"><input id="video-relay" placeholder="https://storycuts-relay.yourname.workers.dev" autocomplete="off"></span>
+          <button type="button" class="btn glass sm" id="btn-test-relay">Check animation setup</button>
           <span class="relay-result" id="relay-result"></span>
         </label>
         <label class="check"><input type="checkbox" id="opt-qc" checked><span class="box"><svg><use href="#i-check"/></svg></span>Check every image with Claude and redraw bad ones</label>
@@ -588,6 +589,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=30"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=31", "./js/app.js": "./js/app.js?v=31", "./js/billing.js": "./js/billing.js?v=31", "./js/constants.js": "./js/constants.js?v=31", "./js/draw.js": "./js/draw.js?v=31", "./js/images.js": "./js/images.js?v=31", "./js/loader.js": "./js/loader.js?v=31", "./js/planner.js": "./js/planner.js?v=31", "./js/qc.js": "./js/qc.js?v=31", "./js/render.js": "./js/render.js?v=31", "./js/sfx.js": "./js/sfx.js?v=31", "./js/transcribe.js": "./js/transcribe.js?v=31"}}</script>
+  <script type="module" src="js/app.js?v=31"></script>
 </body>
 </html>
