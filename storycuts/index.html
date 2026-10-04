@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
   <!-- icon sprite -->
@@ -572,6 +572,9 @@
         <label class="field">Animation model <span class="hint">for animated scenes (uses your OpenAI key)</span>
           <select id="video-model"></select>
         </label>
+        <label class="field">Video relay address <span class="hint">optional · only if animation says it can't reach OpenAI</span>
+          <input id="video-relay" placeholder="https://storycuts-relay.yourname.workers.dev" autocomplete="off">
+        </label>
         <label class="check"><input type="checkbox" id="opt-qc" checked><span class="box"><svg><use href="#i-check"/></svg></span>Check every image with Claude and redraw bad ones</label>
       </details>
       <div class="modal-foot">
@@ -583,6 +586,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=27"></script>
+  <script type="module" src="js/app.js?v=28"></script>
 </body>
 </html>
