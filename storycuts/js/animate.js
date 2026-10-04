@@ -48,10 +48,28 @@ function motionPrompt(project, seg) {
   ].filter(Boolean).join('\n');
 }
 
-async function api(apiKey, path, init = {}) {
+const STEP_NAMES = { start: 'starting the animation', poll: 'checking on the animation', download: 'downloading the finished clip' };
+
+/** Network failures (no response at all) get retried, then explained by step. */
+/** Optional relay (see server/video-relay.js) for browsers OpenAI's video API won't talk to. */
+let relayBase = '';
+export function setVideoRelay(url) { relayBase = (url || '').trim().replace(/\/+$/, ''); }
+
+async function api(apiKey, path, init = {}, step = 'start') {
   let res;
   for (let attempt = 0; attempt <= 5; attempt++) {
-    res = await fetch(`https://api.openai.com/v1${path}`, { ...init, headers: { authorization: `Bearer ${apiKey}`, ...(init.headers || {}) } });
+    try {
+      res = await fetch(`${relayBase || 'https://api.openai.com'}/v1${path}`, { ...init, headers: { authorization: `Bearer ${apiKey}`, ...(init.headers || {}) } });
+    } catch (e) {
+      if (attempt < 3) { await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt)); continue; }
+      const err = new Error(`Couldn't reach OpenAI while ${STEP_NAMES[step]} (${e?.message || 'network error'}). `
+        + (step === 'start'
+          ? 'Your browser was not allowed to talk to OpenAI\'s video service directly. Check that no ad blocker is blocking api.openai.com; if it keeps happening, set up the free video relay (API keys → More options → Video relay address).'
+          : 'Your connection may have dropped. Try again in a minute.'));
+      err.step = step;
+      err.network = true;
+      throw err;
+    }
     if (res.status !== 429 && res.status < 500) break;
     const body = await res.clone().json().catch(() => ({}));
     if (body?.error?.code === 'insufficient_quota' || attempt === 5) break;
@@ -89,7 +107,7 @@ export async function animateScene(apiKey, project, seg, { model = 'sora-2', asp
   form.append('seconds', String(seconds));
   form.append('input_reference', await firstFrame(still, size), 'first-frame.jpg');
   onStatus('Starting animation…');
-  const created = await api(apiKey, '/videos', { method: 'POST', body: form });
+  const created = await api(apiKey, '/videos', { method: 'POST', body: form }, 'start');
   if (!created.ok) throw await apiError(created);
   let job = await created.json();
   const t0 = Date.now();
@@ -99,12 +117,12 @@ export async function animateScene(apiKey, project, seg, { model = 'sora-2', asp
     if (Date.now() - t0 > 15 * 60 * 1000) throw new Error('Animation took too long. Try again later.');
     onStatus(`Animating… ${Math.round(job.progress || 0)}%`);
     await new Promise((r) => setTimeout(r, 5000));
-    const r = await api(apiKey, `/videos/${job.id}`);
+    const r = await api(apiKey, `/videos/${job.id}`, {}, 'poll');
     if (!r.ok) throw await apiError(r);
     job = await r.json();
   }
   onStatus('Downloading animation…');
-  const vid = await api(apiKey, `/videos/${job.id}/content`);
+  const vid = await api(apiKey, `/videos/${job.id}/content`, {}, 'download');
   if (!vid.ok) throw await apiError(vid);
   const blob = await vid.blob();
   const key = `${projectKey}/anim/${seg.id}-${Date.now().toString(36)}`;

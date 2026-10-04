@@ -8,7 +8,7 @@ import {
   BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
 } from './billing.js';
 import {
-  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady,
+  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay,
 } from './animate.js';
 import { showLoader } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
@@ -152,6 +152,7 @@ function settingsGet() {
     imageModel: store.get('storycuts:imodel', IMAGE_MODELS[0].id),
     qc: store.get('storycuts:qc', true),
     videoModel: store.get('storycuts:vmodel', VIDEO_MODELS[0].id),
+    videoRelay: store.get('storycuts:vrelay', ''),
   };
 }
 
@@ -173,6 +174,7 @@ function openSettings() {
   $('#opt-qc').checked = s.qc;
   $('#video-model').innerHTML = VIDEO_MODELS.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
   $('#video-model').value = s.videoModel;
+  $('#video-relay').value = s.videoRelay;
   $('#settings').showModal();
   setTimeout(() => (s.key ? (s.openai ? null : $('#openai-key')) : $('#api-key'))?.focus(), 50);
 }
@@ -186,6 +188,8 @@ $('#settings').addEventListener('close', () => {
   store.set('storycuts:imodel', $('#image-model').value);
   store.set('storycuts:qc', $('#opt-qc').checked);
   store.set('storycuts:vmodel', $('#video-model').value);
+  store.set('storycuts:vrelay', $('#video-relay').value.trim());
+  setVideoRelay($('#video-relay').value);
   updateKeysDot();
   if (state.project) { updateCosts(); renderChars(); }
   toast(keysReady() ? 'Keys saved. You\'re ready to create.' : 'Saved. You still need both a Claude and an OpenAI key.');
@@ -1407,6 +1411,7 @@ const animSegs = () => sceneSegs().filter((sg) => sg.image?.key && !sg.image.sta
 
 async function animateScenes(list) {
   const s = settingsGet();
+  setVideoRelay(s.videoRelay);
   if (!s.openai) { openSettings(); return; }
   if (!list.length) return;
   const ac = { stop: false };
@@ -1428,6 +1433,10 @@ async function animateScenes(list) {
         onStatus: (m) => { if (sg.id === state.selected) setStatus('#anim-status', m, 'busy'); },
       });
       save();
+    } catch (e) {
+      // if OpenAI can't be reached at all, the other scenes will fail the same way
+      if (e.network && e.step === 'start') ac.stop = true;
+      throw e;
     } finally {
       state.cache.animating.delete(sg.id);
       state.genDone++;
@@ -1440,7 +1449,8 @@ async function animateScenes(list) {
   ld.stop();
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
   failed.forEach((f) => console.error('StoryCuts animation failed', f.error));
-  if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} animated. ${failed.length} kept as still pictures: ${errText(failed[0].error)}`, 'err');
+  const skipped = results.filter((r) => !r.ok && r.error.message === 'stopped').length;
+  if (failed.length) setStatus('#scenes-status', `${list.length - failed.length - skipped} animated, ${failed.length + skipped} kept as still pictures. ${errText(failed[0].error)}`, 'err');
   else setStatus('#scenes-status', ac.stop ? 'Stopped.' : '');
   updateCosts(); renderInspector();
 }
