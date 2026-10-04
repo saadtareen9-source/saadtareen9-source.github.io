@@ -43,3 +43,15 @@ Cost (rough estimates): about $0.05 per image with GPT Image 2 at medium quality
 ## Notes
 - Claude and image-model calls go straight from the browser using the user's own keys (stored in localStorage). For a public launch, move this behind a small server so users don't need a key, and to meter credits.
 - Export is real-time (the video plays once while recording). Chrome/Edge produce MP4 where supported, otherwise WebM.
+
+## Sound effect packs
+
+Built-in sounds are synthesized in `js/sfx.js`. To add real recordings, drop audio files in
+`assets/sfx/` and list them in `assets/sfx/manifest.json`:
+
+```json
+{ "sounds": [ { "id": "boom_real", "name": "Big boom", "cat": "impact", "icon": "burst", "file": "boom.mp3" } ] }
+```
+
+`cat` is one of impact, whoosh, comedy, reveal, real. `icon` is one of the `i-sfx-*` symbols in `index.html`.
+Users can also upload their own sounds and music in the editor's Audio tab (stored in their browser only).

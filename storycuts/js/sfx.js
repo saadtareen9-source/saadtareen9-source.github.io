@@ -1,28 +1,62 @@
 // Sound effects, synthesized in the browser (no audio files to host or
 // license). Each effect is rendered once into an AudioBuffer and cached.
 
-export const SFX = [
-  { id: 'whoosh', name: 'Whoosh', icon: '💨', dur: 0.7 },
-  { id: 'swoosh_up', name: 'Swoosh up', icon: '⤴', dur: 0.55 },
-  { id: 'pop', name: 'Pop', icon: '🫧', dur: 0.2 },
-  { id: 'ding', name: 'Ding', icon: '🔔', dur: 1.6 },
-  { id: 'boing', name: 'Boing', icon: '🌀', dur: 0.8 },
-  { id: 'boom', name: 'Boom', icon: '💥', dur: 1.8 },
-  { id: 'crash', name: 'Crash', icon: '🧨', dur: 1.3 },
-  { id: 'dun_dun', name: 'Dun dun', icon: '🎺', dur: 1.8 },
-  { id: 'record_scratch', name: 'Record scratch', icon: '💿', dur: 0.6 },
-  { id: 'sad_trombone', name: 'Sad trombone', icon: '😔', dur: 2.6 },
-  { id: 'tada', name: 'Ta-da', icon: '✨', dur: 1.5 },
-  { id: 'drumroll', name: 'Drumroll', icon: '🥁', dur: 2.2 },
-  { id: 'heartbeat', name: 'Heartbeat', icon: '💓', dur: 1.3 },
-  { id: 'slide_whistle', name: 'Slide whistle', icon: '🎶', dur: 1.0 },
-  { id: 'phone_buzz', name: 'Phone buzz', icon: '📳', dur: 1.2 },
-  { id: 'camera', name: 'Camera click', icon: '📸', dur: 0.35 },
-  { id: 'typing', name: 'Typing', icon: '⌨', dur: 1.1 },
-  { id: 'glitch', name: 'Glitch', icon: '📺', dur: 0.45 },
+import { getBlob } from './images.js';
+
+// Categories shown as filter chips in the editor.
+export const SFX_CATS = [
+  { id: 'all', name: 'All' },
+  { id: 'impact', name: 'Impacts' },
+  { id: 'whoosh', name: 'Whooshes' },
+  { id: 'comedy', name: 'Comedy' },
+  { id: 'reveal', name: 'Reveals' },
+  { id: 'real', name: 'Everyday' },
+  { id: 'mine', name: 'My sounds' },
 ];
 
-export const sfxInfo = (id) => SFX.find((s) => s.id === id);
+// `icon` names an SVG symbol in index.html (#i-sfx-<icon>).
+export const SFX = [
+  { id: 'whoosh', name: 'Whoosh', cat: 'whoosh', icon: 'wind', dur: 0.7 },
+  { id: 'swoosh_up', name: 'Swoosh up', cat: 'whoosh', icon: 'up', dur: 0.55 },
+  { id: 'glitch', name: 'Glitch', cat: 'whoosh', icon: 'glitch', dur: 0.45 },
+  { id: 'boom', name: 'Boom', cat: 'impact', icon: 'burst', dur: 1.8 },
+  { id: 'crash', name: 'Crash', cat: 'impact', icon: 'crash', dur: 1.3 },
+  { id: 'pop', name: 'Pop', cat: 'impact', icon: 'pop', dur: 0.2 },
+  { id: 'boing', name: 'Boing', cat: 'comedy', icon: 'spring', dur: 0.8 },
+  { id: 'record_scratch', name: 'Record scratch', cat: 'comedy', icon: 'disc', dur: 0.6 },
+  { id: 'sad_trombone', name: 'Sad trombone', cat: 'comedy', icon: 'down', dur: 2.6 },
+  { id: 'slide_whistle', name: 'Slide whistle', cat: 'comedy', icon: 'wave', dur: 1.0 },
+  { id: 'dun_dun', name: 'Dun dun', cat: 'reveal', icon: 'drama', dur: 1.8 },
+  { id: 'ding', name: 'Ding', cat: 'reveal', icon: 'bell', dur: 1.6 },
+  { id: 'tada', name: 'Ta-da', cat: 'reveal', icon: 'star', dur: 1.5 },
+  { id: 'drumroll', name: 'Drumroll', cat: 'reveal', icon: 'drum', dur: 2.2 },
+  { id: 'heartbeat', name: 'Heartbeat', cat: 'reveal', icon: 'heart', dur: 1.3 },
+  { id: 'phone_buzz', name: 'Phone buzz', cat: 'real', icon: 'phone', dur: 1.2 },
+  { id: 'camera', name: 'Camera click', cat: 'real', icon: 'camera', dur: 0.35 },
+  { id: 'typing', name: 'Typing', cat: 'real', icon: 'keys', dur: 1.1 },
+];
+
+/** Sounds that come from audio files: built-in packs and the user's uploads. */
+const extra = new Map();
+export const sfxInfo = (id) => extra.get(id) || SFX.find((s) => s.id === id);
+export const allSfx = () => [...[...extra.values()].filter((x) => x.cat !== 'mine'), ...SFX, ...[...extra.values()].filter((x) => x.cat === 'mine')];
+
+export function registerSfx(info) {
+  if (!info?.id) return;
+  extra.set(info.id, { icon: 'note', cat: 'mine', dur: 1, ...info });
+}
+
+/** Built-in sound files listed in assets/sfx/manifest.json (if any). */
+export async function loadSfxManifest() {
+  try {
+    const r = await fetch('assets/sfx/manifest.json', { cache: 'no-cache' });
+    if (!r.ok) return;
+    const list = await r.json();
+    for (const x of list.sounds || list) {
+      if (x.id && x.file) registerSfx({ id: x.id, name: x.name || x.id, cat: x.cat || 'impact', icon: x.icon || 'note', dur: x.dur || 1, src: `assets/sfx/${x.file}` });
+    }
+  } catch { /* no pack installed */ }
+}
 
 const SR = 44100;
 const cache = new Map();
@@ -302,20 +336,116 @@ const BUILD = {
   },
 };
 
+// a short, soft room so synthesized sounds feel produced rather than raw
+function roomImpulse(ctx, seconds = 0.9) {
+  const len = Math.ceil(SR * seconds);
+  const b = ctx.createBuffer(2, len, SR);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+  }
+  return b;
+}
+
+async function decodeFile(info) {
+  const data = info.src ? await (await fetch(info.src)).arrayBuffer() : await (await getBlob(info.key))?.arrayBuffer();
+  if (!data) return null;
+  const ctx = new OfflineAudioContext(2, SR, SR);
+  const buf = await new Promise((res, rej) => { const pr = ctx.decodeAudioData(data, res, rej); if (pr?.then) pr.then(res, rej); });
+  info.dur = buf.duration;
+  return buf;
+}
+
 /** Render an effect to an AudioBuffer (cached). */
 export function sfxBuffer(id) {
   if (!cache.has(id)) {
     const info = sfxInfo(id);
-    if (!info || !BUILD[id]) return Promise.resolve(null);
-    const ctx = new OfflineAudioContext(2, Math.ceil(SR * info.dur), SR);
+    if (!info) return Promise.resolve(null);
+    if (info.src || info.key) {
+      cache.set(id, decodeFile(info).catch(() => null));
+      return cache.get(id);
+    }
+    if (!BUILD[id]) return Promise.resolve(null);
+    const ctx = new OfflineAudioContext(2, Math.ceil(SR * (info.dur + 0.4)), SR);
     const master = ctx.createGain();
     master.gain.value = 0.9;
     const comp = ctx.createDynamicsCompressor();
-    master.connect(comp).connect(ctx.destination);
+    comp.threshold.value = -16; comp.ratio.value = 3; comp.attack.value = 0.004; comp.release.value = 0.2;
+    const verb = ctx.createConvolver();
+    verb.buffer = roomImpulse(ctx);
+    const wet = ctx.createGain(); wet.gain.value = 0.16;
+    const lowcut = ctx.createBiquadFilter(); lowcut.type = 'highpass'; lowcut.frequency.value = 30;
+    master.connect(lowcut);
+    lowcut.connect(comp);
+    lowcut.connect(verb).connect(wet).connect(comp);
+    comp.connect(ctx.destination);
     BUILD[id](ctx, master);
     cache.set(id, ctx.startRendering());
   }
   return cache.get(id);
+}
+
+/** Loudness envelope for drawing a little waveform (n bars, 0..1). */
+export async function sfxPeaks(id, n = 28) {
+  const buf = await sfxBuffer(id);
+  if (!buf) return [];
+  const d = buf.getChannelData(0);
+  const step = Math.max(1, Math.floor(d.length / n));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    let m = 0;
+    for (let j = i * step; j < Math.min(d.length, (i + 1) * step); j += 16) m = Math.max(m, Math.abs(d[j]));
+    out.push(m);
+  }
+  const top = Math.max(...out, 0.001);
+  return out.map((v) => Math.sqrt(v / top));
+}
+
+/** Background music: one looping track under the whole video. */
+export class MusicPlayer {
+  constructor() { this.buffers = new Map(); }
+
+  async buffer(graph, music) {
+    if (!this.buffers.has(music.key)) {
+      this.buffers.set(music.key, (async () => {
+        const blob = await getBlob(music.key);
+        if (!blob) return null;
+        const data = await blob.arrayBuffer();
+        return new Promise((res, rej) => { const pr = graph.ac.decodeAudioData(data, res, rej); if (pr?.then) pr.then(res, rej); });
+      })().catch(() => null));
+    }
+    return this.buffers.get(music.key);
+  }
+
+  async start(graph, music, from, duration) {
+    this.stop();
+    if (!music?.key) return;
+    const token = (this.token = Symbol('run'));
+    const buf = await this.buffer(graph, music);
+    if (!buf || this.token !== token) return;
+    const ac = graph.ac;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const g = ac.createGain();
+    const now = ac.currentTime;
+    const fadeIn = music.fade !== false ? 1.2 : 0.02;
+    const fadeOut = music.fade !== false ? 2 : 0.05;
+    const level = (t) => Math.min(1, t / fadeIn, Math.max(0, (duration - t) / fadeOut));
+    g.gain.setValueAtTime(level(from), now);
+    if (from < fadeIn) g.gain.linearRampToValueAtTime(1, now + (fadeIn - from));
+    const outAt = duration - fadeOut;
+    if (outAt > from) { g.gain.setValueAtTime(1, now + (outAt - from)); g.gain.linearRampToValueAtTime(0, now + (duration - from)); }
+    src.connect(g).connect(graph.music);
+    src.start(now, ((music.offset || 0) + from) % buf.duration);
+    this.src = src;
+  }
+
+  stop() {
+    this.token = null;
+    try { this.src?.stop(); } catch { /* not started */ }
+    this.src = null;
+  }
 }
 
 /** Schedules sound-effect clips in sync with playback. */
