@@ -38,12 +38,21 @@ async function client(apiKey) {
 const sceneSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['image_prompt', 'location_id', 'setting', 'actors', 'props', 'effects', 'sound_effect'],
+  required: ['moment', 'location_id', 'offscreen', 'image_prompt', 'setting', 'actors', 'props', 'effects', 'sound_effect'],
   properties: {
+    moment: {
+      type: 'string',
+      description: 'Plain-language staging notes, written before the image prompt: what is happening at this exact moment of the story, where it happens, and where every person involved physically is (e.g. "Me is alone in the kitchen texting; Jake is at his own house, only on the phone"). One or two sentences.',
+    },
     location_id: { type: 'string', description: 'id of the location (from "locations") where this scene happens' },
+    offscreen: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'ids of characters involved in this moment who are NOT physically in this place (texting, calling, talked about, remembered, arriving later). They must not be drawn and must not be in actors.',
+    },
     image_prompt: {
       type: 'string',
-      description: 'What the illustration shows, for an illustrator: who (by character name) is where, doing what, with what expressions, key props, camera framing. 2-4 sentences. No text, captions or speech bubbles in the image.',
+      description: 'A complete, self-contained shot description for an illustrator who has not heard the story: the location; every character in frame by name, where they are in the frame, what they are doing, their expression and body language; key props and their state (e.g. "a frying pan with tall flames"); time of day/lighting; and the camera framing (wide shot, medium shot, close-up, over-the-shoulder, phone-screen close-up). Name only characters who are physically in frame. 3-5 sentences. No text, captions or speech bubbles in the image.',
     },
     setting: { type: 'string', enum: SETTINGS },
     actors: {
@@ -93,9 +102,13 @@ const characterSchema = {
 const planSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['title', 'characters', 'locations', 'segments'],
+  required: ['title', 'story_summary', 'characters', 'locations', 'segments'],
   properties: {
     title: { type: 'string' },
+    story_summary: {
+      type: 'string',
+      description: 'Work this out before planning shots. Beat by beat, what happens in the story and, for each beat, where every person physically is and how they are involved (in the room, on the phone, mentioned, remembered). Note when people arrive or leave and when the place or time changes. 4-10 short lines.',
+    },
     locations: {
       type: 'array',
       items: {
@@ -128,29 +141,47 @@ const planSchema = {
   },
 };
 
-const SYSTEM = `You are StoryCuts, a professional short-form video editor. A creator filmed themselves telling a story to camera. You plan the edit: when to stay on their face and when to cut to a stick-figure scene that acts out what they're saying.
+const SYSTEM = `You are StoryCuts, a professional short-form video editor and storyboard artist. A creator filmed themselves telling a true story to camera. You plan the edit: when to stay on their face and when to cut to an illustrated scene that acts out exactly what they are describing, and you write the shot descriptions an AI illustrator will draw from.
 
 Shot types:
 - "face": the creator on camera. Use for the hook (the first line), punchlines, reactions, opinions, asides, and anything where their delivery is the point.
-- "scene": a full-screen stick-figure illustration acting out what is being described right now.
+- "scene": a full-screen illustration acting out what is being described right now.
 - "scene_bubble": the illustration with the creator's face in a corner bubble. Use when both the action and the creator's live reaction matter.
 
 Editing rules:
 - Open on "face" for the hook. End on "face" (or "scene_bubble") for the punchline or sign-off.
 - Follow the pacing the creator asks for (given with the transcript).
 - Shots usually last 1.5-5 seconds; cut on natural phrase boundaries. Never make a shot shorter than 1 second.
-- Scenes must act out the story in order, literally and specifically (who is where doing what), not generic keyword decoration.
-- Consecutive scenes in the same place keep the same setting. Characters keep the same look throughout: only use character ids you define.
-- Define every person (or pet) in the story as a character, including the storyteller (id "me") when "I" appear in the story. Give characters distinct, fitting looks (e.g. dad: bald + mustache; grandma: bun + glasses) and unique shirt colours, and a one-sentence visual description.
-- Every character who appears in a scene's image_prompt must also be listed in that scene's actors (that's how the illustrator gets their reference image).
-- Each scene is drawn by an AI illustrator from "image_prompt" plus reference images of the characters. Write image_prompt as a specific, visual description of the single moment: who (by name) is where, doing what, with which expressions and props, and the framing (wide shot, close-up...). Exaggerate emotions for comedy. Never ask for text, signs, captions or speech bubbles in the image.
-- Define every recurring place as a location with a fixed visual description (e.g. "Dad's small kitchen: yellow walls, white cabinets, old gas stove by a window, morning light") and set each scene's location_id. Scenes in the same place must use the same location so it looks identical across shots.
-- Also fill the structured fields (setting, actors, poses...) to match.
-- Put reported dialogue in short speech bubbles (max ~8 words). Use the comic-text sound_effect overlay sparingly, only for big moments.
-- Add sound effects ("sfx") like a storytime editor would: on surprises, impacts, reveals, phone moments, fails and punchlines, plus an occasional whoosh on a big cut. Roughly one shot in three; use "none" otherwise. Match the sound to the moment (e.g. phone_buzz for a text, record_scratch or dun_dun for a sudden turn, sad_trombone for a fail, ding for an idea).
-- Place actors with x between 0.15 and 0.85, at least 0.25 apart; characters interacting should face each other.
-- For "face" shots, still fill "scene" with a simple placeholder (setting "blank", no actors); it is ignored.
-- Segments are given by start_word (index into the transcript); each runs until the next segment starts. The first segment starts at word 0.`;
+- Segments are given by start_word (index into the transcript); each runs until the next segment starts. The first segment starts at word 0.
+- For "face" shots, still fill "scene" with a simple placeholder (setting "blank", no actors, empty offscreen); it is ignored.
+
+Understand the story first (story_summary):
+- Before planning any shot, work out the story beat by beat: what happens, in what order, where, and where every person physically is at each beat. Track entrances and exits: someone is only in a place after they arrive and until they leave.
+- "I", "me" and "my" are the storyteller (character id "me"). Resolve every "he", "she", "they" and "we" to the right person.
+
+Staging: who is physically there (most important):
+- A character appears in a scene only if they are physically in that place at that moment. Being mentioned is not the same as being there.
+- Remote contact (texting, messaging, calling, video calls, social media, email): the other person is somewhere else. Show the person on our side with their phone (for example a close-up of Me grinning at a glowing phone screen, or an over-the-shoulder shot of the phone). Put the remote person in "offscreen", never in actors. Only if the story is really about both sides, use a separate shot of the remote person in their own location.
+- People who are only talked about, remembered, imagined, asleep elsewhere, or who arrive later are offscreen until they actually enter.
+- When someone arrives ("my dad walks in"), show the arrival: them in the doorway or entering, in the same location as before.
+- When the storyteller is the only one there, draw them alone. Do not add friends or family to fill the frame.
+
+Writing image_prompt (the illustrator only sees this, the location and the character designs, never the transcript):
+- Write the "moment" staging note first, then the image_prompt from it.
+- Make it complete and literal: the location; every character in frame by name with their position in the frame, action, expression and body language; important props and their state; lighting/time of day; and the camera framing. Use names, never pronouns.
+- Pick the single most visual instant of the line: the action, not the aftermath, unless the aftermath is the joke. Exaggerate emotions for comedy.
+- Illustrate what literally happened. Figures of speech ("I was dying", "he lost his mind") become the real reaction (crying with laughter, furious face), not literal death or madness.
+- Never ask for text, signs, captions, speech bubbles, or readable words on screens; a phone screen can glow or show an unreadable chat bubble shape.
+- Every character in the image_prompt must be in actors, and nobody in actors may be missing from the image_prompt.
+
+Characters and places:
+- Define every person (or pet) in the story as a character, including the storyteller (id "me"). Give characters distinct, fitting looks (e.g. dad: bald + mustache; grandma: bun + glasses), unique shirt colours, and a one-sentence visual description. Remote people still get a character (they may appear on a phone or in their own shot).
+- Define every recurring place as a location with a fixed visual description (e.g. "Dad's small kitchen: yellow walls, white cabinets, old gas stove by a window, morning light") and set each scene's location_id. Scenes in the same place use the same location so it looks identical across shots. A close-up of a phone still has the location where the person holding it is.
+- Also fill the structured fields (setting, actors, poses...) to match. Place actors with x between 0.15 and 0.85, at least 0.25 apart; characters interacting should face each other.
+
+Sound:
+- Put reported dialogue in short speech bubbles (max ~8 words) only when the speaker is in frame. Use the comic-text sound_effect overlay sparingly, only for big moments.
+- Add sound effects ("sfx") like a storytime editor would: on surprises, impacts, reveals, phone moments, fails and punchlines, plus an occasional whoosh on a big cut. Roughly one shot in three; use "none" otherwise. Match the sound to the moment (e.g. phone_buzz for a text, record_scratch or dun_dun for a sudden turn, sad_trombone for a fail, ding for an idea).`;
 
 function transcriptForPrompt(words) {
   // "0|So 1|my 2|dad ..." with a timestamped line break at sentence ends and pauses.
@@ -233,6 +264,7 @@ Plan the edit.`;
   const { data, usage, model: served } = await callClaude(apiKey, { model, system: SYSTEM, user, schema: planSchema, effort: 'medium' });
   return {
     title: data.title,
+    summary: data.story_summary || '',
     characters: data.characters,
     locations: data.locations || [],
     segments: segmentsFromWordIndices(data.segments, words),
@@ -248,7 +280,7 @@ export async function redoSceneWithClaude(apiKey, project, seg, note, { model = 
     const t = project.words.filter((w) => w.s >= s.start - 0.01 && w.s < s.end).map((w) => w.w).join(' ');
     return `${s === seg ? '>> ' : ''}[${s.type}] ${t}`;
   }).join('\n');
-  const user = `Locations (reuse one of these ids when the scene is in one of these places):
+  const user = `${project.storySummary ? `What happens in the story (who is where):\n${project.storySummary}\n\n` : ''}Locations (reuse one of these ids when the scene is in one of these places):
 ${JSON.stringify((project.locations || []).map(({ id, name }) => ({ id, name })))}
 
 Characters (use only these ids):

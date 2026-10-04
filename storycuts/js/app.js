@@ -909,6 +909,7 @@ async function createVideo() {
         const raw = await planWithClaude(s.key, p.words, p.duration, { model: s.model, notes, pacing: p.settings.pacing, cast: p.settings.castHints || [] });
         snapshot();
         p.title = raw.title || p.title;
+        p.storySummary = raw.summary || '';
         p.characters = raw.characters;
         p.locations = (raw.locations || []).map((l) => ({ ...l, id: slug(l.id) }));
         p.segments = raw.segments;
