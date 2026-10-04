@@ -53,7 +53,26 @@ const STEP_NAMES = { start: 'starting the animation', poll: 'checking on the ani
 /** Network failures (no response at all) get retried, then explained by step. */
 /** Optional relay (see server/video-relay.js) for browsers OpenAI's video API won't talk to. */
 let relayBase = '';
-export function setVideoRelay(url) { relayBase = (url || '').trim().replace(/\/+$/, ''); }
+export function setVideoRelay(url) { relayBase = normalizeRelay(url); }
+const normalizeRelay = (url) => {
+  let u = (url || '').trim();
+  if (u && !/^https?:\/\//i.test(u)) u = `https://${u}`;
+  return u.replace(/\/+$/, '').replace(/\/v1(\/videos)?$/i, '');
+};
+
+/** Check a relay address: is it the StoryCuts relay, and is it up to date? */
+export async function testRelay(url) {
+  const base = normalizeRelay(url);
+  if (!base) return { ok: false, message: 'Paste your relay address first.' };
+  try {
+    const r = await fetch(`${base}/health`);
+    const body = await r.json().catch(() => null);
+    if (body?.relay === 'storycuts') return { ok: true, message: body.version >= 2 ? 'Relay connected. Animation will go through it.' : 'Relay connected, but it\'s an older version. Re-paste the latest relay code in Cloudflare and deploy again.' };
+    return { ok: false, message: `That address answered, but it isn't the StoryCuts relay (HTTP ${r.status}). In Cloudflare, open the worker → Edit code, replace everything with the relay code, and press Deploy.` };
+  } catch (e) {
+    return { ok: false, message: `Couldn't reach that address (${e.message}). Check it's the worker address ending in .workers.dev.` };
+  }
+}
 
 async function api(apiKey, path, init = {}, step = 'start') {
   let res;
@@ -80,8 +99,15 @@ async function api(apiKey, path, init = {}, step = 'start') {
 }
 
 async function apiError(res) {
-  const json = await res.json().catch(() => ({}));
+  const text = await res.text().catch(() => '');
+  let json = {};
+  try { json = JSON.parse(text); } catch { /* not JSON */ }
   const msg = json?.error?.message || `HTTP ${res.status}`;
+  // an answer that isn't OpenAI's JSON came from the relay address, not OpenAI
+  if (!json?.error && relayBase && !res.headers.get('x-storycuts-relay')) {
+    return new Error(`The video relay address answered with HTTP ${res.status}${text ? ` ("${text.slice(0, 60).trim()}")` : ''} instead of passing the request to OpenAI. Open API keys → More options → Test to check it, and make sure the worker has the latest relay code.`);
+  }
+  if (/^StoryCuts relay:/.test(msg)) return new Error(msg);
   if (res.status === 401) return new Error('Your OpenAI API key was rejected. Check it in Settings.');
   if (res.status === 404 || /model/i.test(msg) && /access|exist|found/i.test(msg)) return new Error(`OpenAI says: ${msg} (your account may not have Sora video access yet).`);
   if (/verif/i.test(msg)) return new Error(`OpenAI says: ${msg} (video models may require verifying your organization at platform.openai.com → Settings → Organization).`);

@@ -1719,3 +1719,14 @@ img.missing { display: none; }
 .loader.compact .ld-visual { grid-row: span 1; align-self: start; }
 .loader.compact .ld-meta { flex-wrap: wrap; row-gap: 2px; }
 .ld-body > * { min-width: 0; }
+.storage-warn { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; padding: 14px 16px; border-radius: 16px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.4); color: var(--text-2); font-size: 0.9rem; line-height: 1.45; }
+.storage-warn[hidden] { display: none; }
+.storage-warn svg { width: 20px; height: 20px; color: #fbbf24; flex: none; margin-top: 1px; }
+.storage-warn b { color: #fde68a; }
+.relay-row { display: flex; gap: 8px; align-items: center; }
+.relay-row input { flex: 1; }
+.relay-result { font-size: 0.82rem; font-weight: 500; line-height: 1.4; }
+.relay-result:empty { display: none; }
+.relay-result.ok { color: var(--ok); }
+.relay-result.err { color: #fca5a5; }
+.relay-result.busy { color: var(--muted); }

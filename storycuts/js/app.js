@@ -8,7 +8,7 @@ import {
   BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
 } from './billing.js';
 import {
-  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay,
+  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay, testRelay,
 } from './animate.js';
 import { showLoader } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
@@ -1170,6 +1170,27 @@ function qcBadge(img) {
   return `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">${icon('alert')}Needs a look</span>`;
 }
 
+/** Can this browser actually keep pictures? Warn clearly if not. */
+async function checkStorage() {
+  const key = 'storycuts:healthcheck';
+  let ok = false;
+  try {
+    await putBlob(key, new Blob(['ok'], { type: 'text/plain' }));
+    ok = await hasBlob(key) && !storageProblem;
+    await deleteBlobs(key);
+  } catch { ok = false; }
+  let persisted = true;
+  try { persisted = (await navigator.storage?.persisted?.()) ?? true; } catch { /* unknown */ }
+  const bar = $('#storage-warn');
+  if (!ok) {
+    bar.innerHTML = `${icon('alert')}<span><b>This browser isn't saving your pictures.</b> Private or incognito windows (and some browser settings) delete them when you close the tab. Use a normal Chrome or Edge window so your characters and scenes stay saved.</span>`;
+    bar.hidden = false;
+  } else if (!persisted) {
+    // not fatal: the browser may clear data if the device runs low on space
+    try { await navigator.storage?.persist?.(); } catch { /* ignore */ }
+  }
+}
+
 /** Scene pictures or animations that can't be loaded need drawing again. */
 async function checkScenePictures() {
   const p = state.project;
@@ -1450,7 +1471,13 @@ async function animateScenes(list) {
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
   failed.forEach((f) => console.error('StoryCuts animation failed', f.error));
   const skipped = results.filter((r) => !r.ok && r.error.message === 'stopped').length;
-  if (failed.length) setStatus('#scenes-status', `${list.length - failed.length - skipped} animated, ${failed.length + skipped} kept as still pictures. ${errText(failed[0].error)}`, 'err');
+  if (failed.length) {
+    const e = failed[0].error;
+    const why = e.network && e.step === 'start'
+      ? 'Your browser couldn\'t reach OpenAI\'s video service. Add the free video relay under API keys → More options, then try again.'
+      : errText(e);
+    setStatus('#scenes-status', `${list.length - failed.length - skipped} animated, ${failed.length + skipped} kept as still pictures. ${why}`, 'err');
+  }
   else setStatus('#scenes-status', ac.stop ? 'Stopped.' : '');
   updateCosts(); renderInspector();
 }
@@ -1880,6 +1907,13 @@ function closeSheet() {
   else showTab(state.tab || 'shot', { open: false });
 }
 $('#sheet-done').addEventListener('click', closeSheet);
+$('#btn-test-relay').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const out = $('#relay-result');
+  out.className = 'relay-result busy'; out.textContent = 'Checking…';
+  const r = await testRelay($('#video-relay').value);
+  out.className = `relay-result ${r.ok ? 'ok' : 'err'}`; out.textContent = r.message;
+});
 $('#ed-close').addEventListener('click', () => goStep(4));
 $('#ed-export').addEventListener('click', () => showTab('export'));
 window.addEventListener('resize', () => { if (state.step === 5) setFullEditor(true); });
@@ -2215,7 +2249,7 @@ function renderInspector() {
       </div>
       ${seg.image?.qc && !seg.image.qc.pass ? `<p class="warn-text">Quality check: ${esc(seg.image.qc.issues.join('; '))}</p>` : ''}
       ${seg.image?.stale ? '<p class="warn-text">You changed this scene since it was drawn. Redraw to update it.</p>' : ''}
-      ${animatedOn(p) && seg.image?.key && !sceneSegs().some(needsImage) ? (() => {
+      ${animatedOn(p) && seg.image?.key && !seg.image.stale ? (() => {
         const busy = state.cache.animating?.has(seg.id);
         const ok = animReady(seg);
         const label = seg.still ? 'Using the still picture' : busy ? 'Animating…' : ok ? 'Animated' : 'Not animated yet';
@@ -2689,6 +2723,7 @@ document.fonts?.ready.then(() => $$('.period').forEach(movePeriodThumb));
 
 goStep(1, { scroll: false });
 renderProjects();
+checkStorage();
 renderStyles();
 loadStyleManifest().then(() => { renderStyles(); renderMarquee(); });
 loadSfxManifest();
