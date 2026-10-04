@@ -37,6 +37,10 @@
     <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="16" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3.5 8l4.5 4 4-7 4 7 4.5-4-2 11h-13z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2-.5-2.5-1.2M12 6.5v11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -47,13 +51,27 @@
       <span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>
       StoryCuts
     </a>
-    <nav class="nav-links">
+    <nav class="nav-links" id="nav-links">
       <a href="#how">How it works</a>
+      <a href="#styles">Styles</a>
       <a href="#studio">Studio</a>
+      <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
-    <button class="btn ghost sm" id="btn-keys" data-tip="Connect your AI accounts"><svg><use href="#i-key"/></svg><span>API keys</span><i class="dot" id="keys-dot"></i></button>
+    <div class="nav-right">
+      <button class="icon-btn nav-keys" id="btn-keys" aria-label="Connect your AI accounts" data-tip="AI accounts"><svg><use href="#i-key"/></svg><i class="dot" id="keys-dot"></i></button>
+      <a class="btn primary sm nav-cta" id="nav-plan" href="#pricing"><span>Get started</span></a>
+      <button class="icon-btn nav-menu" id="btn-menu" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
+    </div>
   </header>
+  <div class="menu-sheet" id="menu-sheet" hidden>
+    <a href="#how">How it works</a>
+    <a href="#styles">Styles</a>
+    <a href="#studio">Studio</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#faq">FAQ</a>
+    <a class="btn primary lg" href="#pricing">See plans</a>
+  </div>
 
   <main id="top">
     <!-- HERO -->
@@ -63,12 +81,12 @@
         <h1>Tell your story on camera.<br><span class="grad">We'll illustrate it.</span></h1>
         <p class="lead">Upload a video of yourself telling a story. StoryCuts keeps your face for the hook and the punchlines, and cuts to scenes that act out what you're describing, with the same characters in every shot.</p>
         <div class="hero-ctas">
-          <a class="btn primary lg" href="#studio"><svg><use href="#i-upload"/></svg>Upload your video</a>
+          <a class="btn primary lg" href="#studio"><svg><use href="#i-spark"/></svg>Start creating</a>
           <button class="btn glass lg" id="cta-demo"><svg><use href="#i-play"/></svg>Try the demo story</button>
         </div>
         <ul class="trust">
           <li><svg><use href="#i-shield"/></svg>Your video stays on your device</li>
-          <li><svg><use href="#i-coin"/></svg>Pay only for what you generate</li>
+          <li><svg><use href="#i-coin"/></svg>Cancel anytime</li>
           <li><svg><use href="#i-user"/></svg>You stay the star</li>
         </ul>
       </div>
@@ -91,20 +109,27 @@
       </div>
     </section>
 
+    <!-- STYLES STRIP -->
+    <section class="strip reveal" id="styles" aria-label="Art styles">
+      <p class="kicker">8 art styles, one consistent cast</p>
+      <div class="marquee" id="marquee"><div class="marquee-row" id="marquee-row"></div></div>
+    </section>
+
     <!-- HOW -->
     <section class="how reveal" id="how">
+      <span class="kicker">How it works</span>
       <h2 class="section-title">From talking head to illustrated story in three steps</h2>
-      <div class="how-grid">
-        <article class="how-card spot"><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Upload</h3><p>Film yourself telling a story on your phone and drop the video in.</p></article>
-        <article class="how-card spot"><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Pick a style</h3><p>Stick figures, anime, 3D, realistic and more. Your cast is designed once and stays consistent.</p></article>
-        <article class="how-card spot"><span class="how-ico"><svg><use href="#i-film"/></svg></span><h3>Review &amp; export</h3><p>An AI editor plans every cut. Tweak anything, then export for TikTok, Reels, Shorts or YouTube.</p></article>
+      <div class="how-grid stagger">
+        <article class="how-card spot"><span class="how-n">01</span><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Upload</h3><p>Film yourself telling a story on your phone and drop the video in.</p></article>
+        <article class="how-card spot"><span class="how-n">02</span><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Pick a style</h3><p>Stick figures, anime, 3D, realistic and more. Your cast is designed once and stays consistent.</p></article>
+        <article class="how-card spot"><span class="how-n">03</span><span class="how-ico"><svg><use href="#i-film"/></svg></span><h3>Review &amp; export</h3><p>An AI editor plans every cut. Tweak anything, then export for TikTok, Reels, Shorts or YouTube.</p></article>
       </div>
     </section>
 
     <!-- STUDIO -->
     <section class="studio" id="studio">
       <div class="studio-head">
-        <h2 class="section-title">Studio</h2>
+        <div><span class="kicker">Studio</span><h2 class="section-title">Make your video</h2></div>
         <ol class="stepper" id="stepper">
           <li data-s="1"><button><span>1</span><em>Upload</em></button></li>
           <li data-s="2"><button><span>2</span><em>Style</em></button></li>
@@ -255,8 +280,8 @@
           <div class="cast-head">
             <div><h4>Meet your cast</h4><p>Edit a description and redraw anyone you don't love. Then we'll draw the scenes.</p></div>
             <div class="cast-actions">
-              <button class="btn glass sm" id="btn-add-char" data-tip="Add a person or pet">+ Character</button>
-              <button class="btn glass sm" id="btn-gen-chars" data-tip="Draw anyone missing a design"><svg><use href="#i-redo"/></svg>Draw all</button>
+              <button class="btn glass sm" id="btn-add-char" title="Add a person or pet">+ Character</button>
+              <button class="btn glass sm" id="btn-gen-chars" title="Draw anyone missing a design"><svg><use href="#i-redo"/></svg>Draw all</button>
             </div>
           </div>
           <div class="status" id="chars-status"></div>
@@ -355,20 +380,69 @@
       </div>
     </section>
 
+    <!-- PRICING -->
+    <section class="pricing reveal" id="pricing">
+      <div class="pricing-head">
+        <span class="kicker">Pricing</span>
+        <h2 class="section-title">Simple plans. Cancel anytime.</h2>
+        <p class="muted">Every plan includes all the AI drawing, quality checks and exports. Try the demo story free before you subscribe.</p>
+        <div class="period" id="period" role="tablist" aria-label="Billing period">
+          <button data-period="monthly" class="on" role="tab">Monthly</button>
+          <button data-period="yearly" role="tab">Yearly <em>Save 20%</em></button>
+          <i class="period-thumb"></i>
+        </div>
+      </div>
+      <div class="plans stagger" id="plans"></div>
+      <p class="plans-foot muted small"><svg><use href="#i-shield"/></svg>Secure checkout by Stripe. Change or cancel your plan anytime. <a href="#" id="manage-sub" hidden>Manage subscription</a></p>
+    </section>
+
     <!-- FAQ -->
     <section class="faq reveal" id="faq">
+      <span class="kicker">FAQ</span>
       <h2 class="section-title">Questions</h2>
       <details><summary>Is my video uploaded anywhere?</summary><p>No. Your video is played and edited inside your browser. Only the words you say are sent to the AI editor, and only the scene descriptions (plus your character designs) are sent to the image model.</p></details>
-      <details><summary>What does it cost?</summary><p>StoryCuts uses your own AI accounts, so you pay the providers directly: about a few cents per drawn image and a few cents to plan the edit. A 1-minute story typically costs well under a dollar. You see an estimate before anything is generated.</p></details>
+      <details><summary>What does it cost?</summary><p>StoryCuts is a monthly subscription. Pick the plan that matches how many videos you make, or save 20% by paying yearly. You can try the demo story for free first.</p></details>
+      <details><summary>Can I cancel anytime?</summary><p>Yes. Cancel or switch plans whenever you like and you keep access until the end of the period you've paid for.</p></details>
       <details><summary>Will my characters look the same in every scene?</summary><p>Yes, that's the point. Each character is designed once, you approve the look, and every scene is drawn with those designs as reference. Every image is also checked automatically and redrawn if a character doesn't match.</p></details>
       <details><summary>Which apps can I post to?</summary><p>Export vertical 9:16 for TikTok, Instagram Reels and YouTube Shorts, or horizontal 16:9 for YouTube, with captions burned in.</p></details>
     </section>
   </main>
 
+  <section class="cta-band reveal">
+    <h2>Your next storytime deserves better than a talking head.</h2>
+    <div class="hero-ctas"><a class="btn primary lg" href="#pricing"><svg><use href="#i-crown"/></svg>Choose a plan</a><a class="btn glass lg" href="#studio">Try the demo</a></div>
+  </section>
+
   <footer class="foot">
-    <div class="brand small"><span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>StoryCuts</div>
-    <p>Tell your story, and we'll bring it to life around you.</p>
+    <div class="foot-grid">
+      <div>
+        <div class="brand small"><span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>StoryCuts</div>
+        <p>Tell your story, and we'll bring it to life around you.</p>
+      </div>
+      <nav><b>Product</b><a href="#how">How it works</a><a href="#styles">Styles</a><a href="#studio">Studio</a></nav>
+      <nav><b>Account</b><a href="#pricing">Pricing</a><a href="#" class="manage-link" hidden>Manage subscription</a><a href="#faq">FAQ</a></nav>
+    </div>
+    <p class="copy">© <span id="year">2026</span> StoryCuts</p>
   </footer>
+
+  <!-- Paywall -->
+  <dialog id="paywall">
+    <div class="modal pay-modal">
+      <button class="icon-btn pay-x" id="pay-close" aria-label="Close"><svg><use href="#i-close"/></svg></button>
+      <div class="pay-badge"><svg><use href="#i-crown"/></svg></div>
+      <div class="modal-head">
+        <h3>Choose a plan to create your video</h3>
+        <p>Your video and settings are saved. Pick a plan and you'll come right back here.</p>
+      </div>
+      <div class="period small" id="pay-period" role="tablist" aria-label="Billing period">
+        <button data-period="monthly" class="on" role="tab">Monthly</button>
+        <button data-period="yearly" role="tab">Yearly <em>−20%</em></button>
+        <i class="period-thumb"></i>
+      </div>
+      <div class="pay-plans" id="pay-plans"></div>
+      <button class="btn link sm" id="pay-demo">Not yet? Try the free demo story instead</button>
+    </div>
+  </dialog>
 
   <!-- API keys -->
   <dialog id="settings">
