@@ -1,5 +1,8 @@
 import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType } from './render.js';
 import { SFX, sfxInfo, SfxPlayer } from './sfx.js';
+import {
+  BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
+} from './billing.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
@@ -430,47 +433,80 @@ function renderStyles() {
     </button>`;
   $('#style-dots').innerHTML = styleIds().map((id, i) => `<button class="dot" data-i="${i}" aria-label="${esc(id === 'custom' ? 'Create your own' : STYLES[id].label)}"></button>`).join('');
   state.styleIndex = Math.max(0, styleIds().indexOf(cur));
-  layoutStyles(true);
+  cfSet(state.styleIndex);
   syncStyleExtras();
 }
 
-/** Position every card relative to the centred one (wrapping around). */
-function layoutStyles(instant = false, drag = 0) {
+// The carousel is driven by one continuous number, CF.pos (which card is in
+// the middle, fractional while moving). Dragging, trackpad swipes and the
+// arrows all move it, and a spring settles it on a whole card.
+const CF = { pos: 0, target: 0, vel: 0, raf: 0, last: 0, held: false };
+const wrapIndex = (i, n = styleIds().length) => ((Math.round(i) % n) + n) % n;
+const cfUnit = () => {
+  const track = $('#style-track');
+  return Math.max(60, Math.min(($('#style-track .style-card')?.offsetWidth || 300) * 0.62, track.clientWidth * 0.3));
+};
+
+/** Position every card relative to CF.pos (wrapping around). */
+function layoutStyles() {
   const ids = styleIds();
   const n = ids.length;
   const cards = $$('#style-track .style-card');
-  const track = $('#style-track');
-  track.classList.toggle('instant', instant || drag !== 0);
-  const w = cards[0]?.offsetWidth || 300;
-  const step = Math.min(w * 0.62, track.clientWidth * 0.3);
+  const step = cfUnit();
+  const near = wrapIndex(CF.pos, n);
   cards.forEach((card, i) => {
-    let d = i - state.styleIndex;
+    let d = (i - CF.pos) % n;
     if (d > n / 2) d -= n;
     if (d < -n / 2) d += n;
-    const pos = d + drag;
-    const a = Math.abs(pos);
-    card.style.transform = `translateX(calc(-50% + ${pos * step}px)) translateZ(${-a * 120}px) rotateY(${Math.max(-1, Math.min(1, -pos)) * 18}deg) scale(${Math.max(0.6, 1 - a * 0.16)})`;
+    const a = Math.abs(d);
+    const fade = Math.max(0, Math.min(1, (2.9 - a) / 0.6));
+    card.style.transform = `translate3d(calc(-50% + ${(d * step).toFixed(2)}px), 0, ${(-a * 120).toFixed(1)}px) rotateY(${(Math.max(-1, Math.min(1, -d)) * 18).toFixed(2)}deg) scale(${Math.max(0.6, 1 - a * 0.16).toFixed(4)})`;
     card.style.zIndex = String(100 - Math.round(a * 10));
-    card.style.opacity = a > 2.6 ? '0' : '1';
-    card.style.pointerEvents = a > 2.6 ? 'none' : '';
-    card.style.setProperty('--dim', String(Math.min(0.62, a * 0.32)));
-    const center = Math.round(a * 100) === 0;
-    card.classList.toggle('on', center);
-    card.setAttribute('aria-selected', center);
-    card.tabIndex = center ? 0 : -1;
+    card.style.opacity = fade.toFixed(3);
+    card.style.visibility = fade ? '' : 'hidden';
+    card.style.setProperty('--dim', Math.min(0.62, a * 0.32).toFixed(3));
+    const center = i === near;
+    if (card.classList.contains('on') !== center) {
+      card.classList.toggle('on', center);
+      card.setAttribute('aria-selected', center);
+      card.tabIndex = center ? 0 : -1;
+    }
   });
-  $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === state.styleIndex));
-  const id = ids[state.styleIndex];
+  $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === near));
+  const id = ids[near];
   const btn = $('#btn-style-next');
   if (btn) btn.firstChild.textContent = `Continue with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`;
-  if (instant) requestAnimationFrame(() => track.classList.remove('instant'));
 }
+
+function cfTick(now) {
+  const dt = Math.min(0.032, (now - (CF.last || now)) / 1000) || 0.016;
+  CF.last = now;
+  if (!CF.held) {
+    // critically damped spring: quick, no wobble
+    const k = 210, c = 2 * Math.sqrt(k);
+    CF.vel += (k * (CF.target - CF.pos) - c * CF.vel) * dt;
+    CF.pos += CF.vel * dt;
+    if (Math.abs(CF.target - CF.pos) < 0.0005 && Math.abs(CF.vel) < 0.005) { CF.pos = CF.target; CF.vel = 0; }
+  }
+  layoutStyles();
+  if (CF.held || CF.pos !== CF.target) CF.raf = requestAnimationFrame(cfTick);
+  else { CF.raf = 0; CF.last = 0; }
+}
+const cfKick = () => { if (!CF.raf) { CF.last = 0; CF.raf = requestAnimationFrame(cfTick); } };
+
+/** Jump the carousel to an absolute position (no animation). */
+function cfSet(i) { CF.pos = CF.target = i; CF.vel = 0; layoutStyles(); }
 
 function selectStyleIndex(i) {
   const ids = styleIds();
   const n = ids.length;
-  state.styleIndex = ((i % n) + n) % n;
-  layoutStyles();
+  // aim for the closest copy of card i so wrapping never spins the long way
+  let delta = (wrapIndex(i, n) - wrapIndex(CF.target, n)) % n;
+  if (delta > n / 2) delta -= n;
+  if (delta < -n / 2) delta += n;
+  CF.target = Math.round(CF.target) + delta;
+  cfKick();
+  state.styleIndex = wrapIndex(i, n);
   const id = ids[state.styleIndex];
   if (!state.project) { store.set('storycuts:style', id); return; }
   if (id === state.project.settings.style) return;
@@ -499,31 +535,79 @@ $('#style-track').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.preventDefault(); selectStyleIndex(state.styleIndex + 1); $('#style-track .style-card.on')?.focus(); }
 });
 
-// drag / swipe
+// drag / swipe / flick with momentum
 (function coverflowDrag() {
   const track = $('#style-track');
-  let down = false, x0 = 0, dx = 0, raf = 0;
-  const unit = () => Math.min(($('#style-track .style-card')?.offsetWidth || 300) * 0.62, track.clientWidth * 0.3);
-  track.addEventListener('pointerdown', (e) => { down = true; x0 = e.clientX; dx = 0; state.styleDragged = false; });
+  let down = false, x0 = 0, p0 = 0, samples = [];
+  track.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    down = true; x0 = e.clientX; p0 = CF.pos; samples = [[performance.now(), e.clientX]];
+    state.styleDragged = false;
+  });
   window.addEventListener('pointermove', (e) => {
     if (!down) return;
-    dx = e.clientX - x0;
-    if (Math.abs(dx) > 6) { state.styleDragged = true; track.classList.add('dragging'); }
-    if (state.styleDragged && !raf) raf = requestAnimationFrame(() => { raf = 0; if (down) layoutStyles(false, dx / unit()); });
+    const dx = e.clientX - x0;
+    if (!state.styleDragged && Math.abs(dx) > 6) {
+      state.styleDragged = true; CF.held = true; CF.vel = 0;
+      track.classList.add('dragging');
+      try { track.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      cfKick();
+    }
+    if (!state.styleDragged) return;
+    CF.pos = p0 - dx / cfUnit();
+    samples.push([performance.now(), e.clientX]);
+    if (samples.length > 6) samples.shift();
   });
   const end = () => {
     if (!down) return;
     down = false;
+    if (!state.styleDragged) return;
     track.classList.remove('dragging');
-    if (state.styleDragged) {
-      const moveBy = Math.round(-dx / unit());
-      if (moveBy) selectStyleIndex(state.styleIndex + Math.max(-3, Math.min(3, moveBy))); else layoutStyles();
-      setTimeout(() => { state.styleDragged = false; }, 0);
+    // release velocity in cards per second, from the last ~100ms of movement
+    const now = performance.now();
+    const recent = samples.filter(([t]) => now - t < 120);
+    let v = 0;
+    if (recent.length > 1) {
+      const [t1, x1] = recent[0];
+      const [t2, x2] = recent[recent.length - 1];
+      if (t2 > t1) v = -((x2 - x1) / (t2 - t1)) * 1000 / cfUnit();
     }
+    const projected = CF.pos + v * 0.22;
+    const target = Math.round(Math.max(CF.pos - 3, Math.min(CF.pos + 3, projected)));
+    CF.held = false;
+    CF.vel = v;
+    CF.target = target;
+    selectStyleIndex(wrapIndex(target));
+    CF.target = target;
+    cfKick();
+    setTimeout(() => { state.styleDragged = false; }, 0);
   };
   window.addEventListener('pointerup', end);
   window.addEventListener('pointercancel', end);
-  window.addEventListener('resize', () => layoutStyles(true));
+
+  // two-finger trackpad swipe (and shift + mouse wheel)
+  let wheelTimer = 0;
+  track.addEventListener('wheel', (e) => {
+    const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.8;
+    let d = horizontal ? e.deltaX : e.shiftKey ? e.deltaY : 0;
+    if (!d) return;
+    e.preventDefault();
+    if (e.deltaMode === 1) d *= 16;
+    CF.held = true; CF.vel = 0;
+    CF.pos += d / (cfUnit() * 1.15);
+    CF.target = CF.pos;
+    cfKick();
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      CF.held = false;
+      const target = Math.round(CF.pos);
+      selectStyleIndex(wrapIndex(target));
+      CF.target = target;
+      cfKick();
+    }, 90);
+  }, { passive: false });
+
+  window.addEventListener('resize', () => layoutStyles());
   // the stage never scrolls; cards are positioned with transforms
   track.addEventListener('scroll', () => { if (track.scrollLeft) track.scrollLeft = 0; });
 }());
@@ -764,6 +848,7 @@ async function createVideo() {
   const p = state.project;
   if (!p) { toast('Upload a video first (or try the demo).'); goStep(1); return; }
   if (p.approved) { goStep(5); return; }
+  if (state.file && !hasAccess()) { openPaywall(); return; }
   if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
   state.busy = true;
   state.stages = {};
@@ -1542,7 +1627,7 @@ function renderInspector() {
       </label>
       <div class="tool-row">
         <button class="btn primary sm" data-act="redraw" ${pending ? 'disabled' : ''}>${icon('redo')}${seg.image?.key ? 'Redraw image' : 'Draw this scene'}</button>
-        <button class="btn glass sm" data-act="redo-ai" data-tip="Let the AI rethink this scene, then redraw">${icon('wand')}Rethink scene</button>
+        <button class="btn glass sm" data-act="redo-ai" title="Let the AI rethink this scene, then redraw">${icon('wand')}Rethink scene</button>
       </div>
       <div class="status" id="redo-status"></div>`}
     <details>
@@ -1552,8 +1637,8 @@ function renderInspector() {
         <label class="field">Ends (s)<input type="number" step="0.1" data-f="end" value="${seg.end.toFixed(2)}" ${i === p.segments.length - 1 ? 'disabled' : ''}></label>
       </div>
       <div class="tool-row" style="margin-top:10px">
-        <button class="btn glass sm" data-act="split" data-tip="Split this shot where the playhead is">${icon('scissors')}Split</button>
-        <button class="btn glass sm" data-act="merge" ${i === p.segments.length - 1 ? 'disabled' : ''} data-tip="Join with the next shot">${icon('merge')}Merge</button>
+        <button class="btn glass sm" data-act="split" title="Split this shot where the playhead is">${icon('scissors')}Split</button>
+        <button class="btn glass sm" data-act="merge" ${i === p.segments.length - 1 ? 'disabled' : ''} title="Join with the next shot">${icon('merge')}Merge</button>
       </div>
     </details>`;
   const img = el.querySelector('.shot-img img');
@@ -1801,9 +1886,159 @@ const io = new IntersectionObserver((entries) => entries.forEach((en) => {
 }), { threshold: 0.12 });
 $$('.reveal').forEach((el) => io.observe(el));
 
+// ---------- subscriptions ----------
+
+let billingPeriod = store.get('storycuts:period', 'monthly');
+
+function planCard(plan, { compact = false } = {}) {
+  const mine = currentPlan()?.id === plan.id;
+  const price = monthlyPrice(plan, billingPeriod);
+  const sub = billingPeriod === 'yearly' ? `$${yearlyTotal(plan)} billed yearly` : 'billed monthly';
+  const cta = mine ? 'Your plan' : `Get ${plan.name}`;
+  if (compact) {
+    return `<button class="pay-plan${plan.popular ? ' popular' : ''}" data-plan="${plan.id}" ${mine ? 'disabled' : ''}>
+      <span class="pp-name"><b>${esc(plan.name)}</b>${plan.popular ? '<em>Most popular</em>' : ''}<small>${plan.videos} videos a month</small></span>
+      <span class="pp-price"><b>$${price}</b><small>/mo</small></span>
+    </button>`;
+  }
+  return `<article class="plan spot${plan.popular ? ' popular' : ''}${mine ? ' mine' : ''}">
+    ${plan.popular ? '<span class="plan-flag">Most popular</span>' : ''}
+    <h3>${esc(plan.name)}</h3>
+    <p class="plan-blurb">${esc(plan.blurb)}</p>
+    <div class="plan-price"><span class="cur">$</span><b class="amt">${price}</b><span class="per">/month</span></div>
+    <p class="plan-sub">${sub}</p>
+    <button class="btn ${plan.popular ? 'primary' : 'glass'} lg wide" data-plan="${plan.id}" ${mine ? 'disabled' : ''}>${mine ? icon('check') : ''}${cta}</button>
+    <ul>${plan.features.map((f) => `<li>${icon('check')}${esc(f)}</li>`).join('')}</ul>
+  </article>`;
+}
+
+function renderPlans() {
+  $('#plans').innerHTML = BILLING.plans.map((p) => planCard(p)).join('');
+  $('#pay-plans').innerHTML = BILLING.plans.map((p) => planCard(p, { compact: true })).join('');
+  $$('.period').forEach((g) => {
+    g.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.period === billingPeriod));
+    movePeriodThumb(g);
+  });
+  const mine = currentPlan();
+  const nav = $('#nav-plan');
+  nav.innerHTML = mine ? `${icon('crown')}<span>${esc(mine.plan.name)}</span>` : '<span>Get started</span>';
+  nav.classList.toggle('primary', !mine);
+  nav.classList.toggle('glass', !!mine);
+  const portal = BILLING.portalUrl;
+  $$('#manage-sub, .manage-link').forEach((a) => { a.hidden = !(mine && portal); if (portal) a.href = portal; });
+}
+
+function movePeriodThumb(g) {
+  const on = g.querySelector('button.on');
+  const thumb = g.querySelector('.period-thumb');
+  if (!on || !thumb || !on.offsetWidth) return;
+  thumb.style.width = `${on.offsetWidth}px`;
+  thumb.style.transform = `translateX(${on.offsetLeft - 4}px)`;
+}
+
+$$('.period').forEach((g) => g.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-period]');
+  if (!b || b.dataset.period === billingPeriod) return;
+  billingPeriod = b.dataset.period;
+  store.set('storycuts:period', billingPeriod);
+  renderPlans();
+  $$('.plan .amt, .pp-price b').forEach((el) => { el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick'); });
+}));
+
+function startCheckout(planId) {
+  const url = checkoutUrl(planId, billingPeriod);
+  if (!url) {
+    console.info('[StoryCuts] Add Stripe Payment Links in js/billing.js to open checkout.');
+    toast('Checkout opens very soon. Check back shortly!', 4000);
+    return;
+  }
+  location.href = url;
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-plan]');
+  if (b && !b.disabled) startCheckout(b.dataset.plan);
+});
+
+function openPaywall() {
+  renderPlans();
+  const d = $('#paywall');
+  if (!d.open) d.showModal();
+  requestAnimationFrame(() => movePeriodThumb($('#pay-period')));
+}
+$('#pay-close').addEventListener('click', () => $('#paywall').close());
+$('#paywall').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+$('#pay-demo').addEventListener('click', () => { $('#paywall').close(); loadDemo(); goStep(2); });
+
+// ---------- site chrome ----------
+
+// mobile menu
+(function menu() {
+  const btn = $('#btn-menu');
+  const sheet = $('#menu-sheet');
+  const set = (open) => {
+    btn.setAttribute('aria-expanded', open);
+    btn.innerHTML = icon(open ? 'close' : 'menu');
+    document.body.classList.toggle('menu-open', open);
+    if (open) { sheet.style.top = `${$('.nav').getBoundingClientRect().bottom}px`; sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open')); } else {
+      sheet.classList.remove('open');
+      setTimeout(() => { if (!sheet.classList.contains('open')) sheet.hidden = true; }, 300);
+    }
+  };
+  btn.addEventListener('click', () => set(btn.getAttribute('aria-expanded') !== 'true'));
+  sheet.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
+  window.addEventListener('resize', () => { if (innerWidth > 860) set(false); });
+}());
+
+// nav gets a solid edge once you scroll, and highlights the section you're in
+(function navState() {
+  const nav = $('.nav');
+  const onScroll = () => nav.classList.toggle('scrolled', scrollY > 8);
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+  const links = $$('#nav-links a');
+  const spy = new IntersectionObserver((entries) => entries.forEach((en) => {
+    if (en.isIntersecting) links.forEach((a) => a.classList.toggle('on', a.getAttribute('href') === `#${en.target.id}`));
+  }), { rootMargin: '-45% 0px -50% 0px' });
+  links.forEach((a) => { const t = $(a.getAttribute('href')); if (t) spy.observe(t); });
+}());
+
+// tactile ripple on every button
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('.btn:not(.link), .play, .choices button, .pay-plan');
+  if (!b || b.disabled) return;
+  const r = b.getBoundingClientRect();
+  const size = Math.max(r.width, r.height) * 2.2;
+  const dot = document.createElement('span');
+  dot.className = 'ripple';
+  dot.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px`;
+  b.appendChild(dot);
+  setTimeout(() => dot.remove(), 650);
+}, { passive: true });
+
+// style strip under the hero
+function renderMarquee() {
+  const items = Object.values(STYLES).filter((s) => s.thumb);
+  if (!items.length) return;
+  const row = items.map((s) => `<figure class="mq-item"><img src="${esc(s.thumb)}" alt="" loading="lazy" decoding="async"><figcaption>${esc(s.label)}</figcaption></figure>`).join('');
+  $('#marquee-row').innerHTML = row + row;
+  $('#marquee-row').style.setProperty('--mq-count', items.length);
+}
+
+// staggered reveal for grids
+$$('.stagger').forEach((g) => [...g.children].forEach((c, i) => c.style.setProperty('--i', i)));
+$('#year').textContent = new Date().getFullYear();
+
+{
+  const msg = handleReturn();
+  if (msg) setTimeout(() => toast(msg, 5000), 400);
+}
+renderPlans();
+document.fonts?.ready.then(() => $$('.period').forEach(movePeriodThumb));
+
 goStep(1, { scroll: false });
 renderStyles();
-loadStyleManifest().then(() => renderStyles());
+loadStyleManifest().then(() => { renderStyles(); renderMarquee(); });
 requestAnimationFrame(updateSegThumbs);
 updateKeysDot();
 sizePreview();
