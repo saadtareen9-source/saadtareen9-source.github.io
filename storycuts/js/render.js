@@ -48,41 +48,111 @@ export function captionPages(words) {
   }));
 }
 
+export const CAPTION_STYLES = [
+  { id: 'bold', name: 'Bold' },
+  { id: 'pop', name: 'Pop' },
+  { id: 'boxed', name: 'Boxed' },
+  { id: 'clean', name: 'Clean' },
+  { id: 'neon', name: 'Neon' },
+];
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 function drawCaptions(ctx, W, H, pages, t, style) {
   const page = pages.find((p) => t >= p.start && t < p.end);
   if (!page) return;
+  const preset = style.preset || 'bold';
   const portrait = H > W;
-  const fs = Math.round((portrait ? W * 0.082 : H * 0.075) * (style.size || 1));
+  const fs = Math.round((portrait ? W * 0.078 : H * 0.072) * (style.size || 1));
+  const hl = style.highlight || '#ffd60a';
   ctx.save();
-  ctx.font = `900 ${fs}px "Arial Black", Impact, system-ui, sans-serif`;
+  ctx.font = preset === 'clean' ? `700 ${fs}px Inter, "Helvetica Neue", Arial, sans-serif` : `900 ${fs}px "Arial Black", Impact, system-ui, sans-serif`;
   ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
   const fmt = (s) => (style.upper ? s.toUpperCase() : s).replace(/[,.]$/, '');
   const parts = page.words.map((w) => fmt(w.w));
   const space = ctx.measureText(' ').width;
   const widths = parts.map((p) => ctx.measureText(p).width);
   const total = widths.reduce((a, b) => a + b, 0) + space * (parts.length - 1);
-  const scale = Math.min(1, (W * 0.9) / total);
-  const y = H * (portrait ? 0.8 : 0.9);
-  ctx.translate(W / 2, y);
-  ctx.scale(scale, scale);
+  const scale = Math.min(1, (W * 0.88) / total);
+  const pos = { low: portrait ? 0.78 : 0.86, mid: 0.55, high: portrait ? 0.2 : 0.16 }[style.pos || 'low'];
+  // entrance: each caption page pops in
+  const age = t - page.start;
+  const pop = age < 0.12 ? 0.88 + (age / 0.12) * 0.12 : 1;
+  ctx.translate(W / 2, H * pos);
+  ctx.scale(scale * pop, scale * pop);
+  if (preset === 'boxed') {
+    const padX = fs * 0.45, h = fs * 1.35;
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    roundRect(ctx, -total / 2 - padX, -h / 2, total + padX * 2, h, fs * 0.28);
+    ctx.fill();
+  }
   let x = -total / 2;
   parts.forEach((p, i) => {
     const w = page.words[i];
     const active = t >= w.s && t < (page.words[i + 1]?.s ?? page.end);
     ctx.save();
     ctx.translate(x + widths[i] / 2, 0);
-    if (active) ctx.scale(1.08, 1.08);
+    if (active && preset !== 'clean') ctx.scale(1.08, 1.08);
+    if (preset === 'pop' && active) {
+      ctx.fillStyle = hl;
+      roundRect(ctx, -widths[i] / 2 - fs * 0.16, -fs * 0.62, widths[i] + fs * 0.32, fs * 1.24, fs * 0.2);
+      ctx.fill();
+    }
     ctx.lineJoin = 'round';
-    ctx.lineWidth = fs * 0.2; ctx.strokeStyle = '#000';
-    ctx.textAlign = 'center';
-    ctx.strokeText(p, 0, 0);
-    ctx.fillStyle = active ? (style.highlight || '#ffd60a') : '#fff';
+    if (preset === 'bold' || preset === 'pop') {
+      ctx.lineWidth = fs * 0.2; ctx.strokeStyle = '#000';
+      ctx.strokeText(p, 0, 0);
+      ctx.fillStyle = preset === 'pop' ? (active ? '#000' : '#fff') : active ? hl : '#fff';
+    } else if (preset === 'boxed') {
+      ctx.fillStyle = active ? hl : '#fff';
+    } else if (preset === 'clean') {
+      ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = fs * 0.35; ctx.shadowOffsetY = fs * 0.05;
+      ctx.fillStyle = active ? hl : '#fff';
+    } else if (preset === 'neon') {
+      ctx.shadowColor = active ? hl : '#ff4fd8'; ctx.shadowBlur = fs * 0.5;
+      ctx.lineWidth = fs * 0.08; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(p, 0, 0);
+      ctx.fillStyle = active ? '#fff' : '#ffd1f4';
+    }
     ctx.fillText(p, 0, 0);
     ctx.restore();
     x += widths[i] + space;
   });
   ctx.restore();
 }
+
+// ---------- looks: filters and transitions ----------
+
+export const FILTERS = [
+  { id: 'none', name: 'Original', css: () => 'none' },
+  { id: 'vivid', name: 'Vivid', css: (a) => `saturate(${1 + 0.4 * a}) contrast(${1 + 0.1 * a})` },
+  { id: 'warm', name: 'Warm', css: (a) => `sepia(${0.28 * a}) saturate(${1 + 0.2 * a}) brightness(${1 + 0.03 * a})` },
+  { id: 'cool', name: 'Cool', css: (a) => `hue-rotate(${-12 * a}deg) saturate(${1 + 0.05 * a}) brightness(${1 + 0.03 * a})` },
+  { id: 'film', name: 'Film', css: (a) => `sepia(${0.18 * a}) contrast(${1 - 0.08 * a}) brightness(${1 + 0.05 * a}) saturate(${1 - 0.12 * a})` },
+  { id: 'drama', name: 'Drama', css: (a) => `contrast(${1 + 0.3 * a}) saturate(${1 + 0.1 * a}) brightness(${1 - 0.08 * a})` },
+  { id: 'soft', name: 'Soft', css: (a) => `brightness(${1 + 0.08 * a}) contrast(${1 - 0.12 * a}) saturate(${1 + 0.1 * a})` },
+  { id: 'mono', name: 'Mono', css: (a) => `grayscale(${a}) contrast(${1 + 0.12 * a})` },
+];
+export const filterCss = (id, amt = 1) => (FILTERS.find((f) => f.id === id) || FILTERS[0]).css(Math.max(0, Math.min(1, amt)));
+
+export const TRANSITIONS = [
+  { id: 'cut', name: 'Cut', dur: 0 },
+  { id: 'fade', name: 'Fade', dur: 0.4 },
+  { id: 'flash', name: 'Flash', dur: 0.3 },
+  { id: 'zoom', name: 'Zoom', dur: 0.4 },
+  { id: 'slide', name: 'Slide', dur: 0.4 },
+  { id: 'whip', name: 'Whip', dur: 0.3 },
+  { id: 'blur', name: 'Blur', dur: 0.45 },
+];
+const transInfo = (id) => TRANSITIONS.find((x) => x.id === id) || TRANSITIONS[0];
+/** The transition into segment i (from i-1). */
+export const transitionInto = (segments, i, settings) => (i > 0 ? (segments[i].transIn || settings.transition || 'cut') : 'cut');
 
 // ---------- frame ----------
 
@@ -146,9 +216,9 @@ function drawKenBurns(ctx, img, W, H, local, dur, idx) {
   ctx.drawImage(img, x, y, dw, dh);
 }
 
-export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
-  const { segments, characters, settings } = project;
-  const seg = segmentAt(segments, t);
+/** Draw one shot (no captions) at time t. */
+function drawShot(ctx, W, H, t, project, seg, video, cache) {
+  const { segments, settings } = project;
   const type = shotType(seg, settings);
   const idx = segments.indexOf(seg);
   const local = t - seg.start;
@@ -187,6 +257,94 @@ export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
       ctx.restore();
     }
   }
+}
+
+function offscreen(cache, W, H) {
+  let c = cache.off;
+  if (!c || c.width !== W || c.height !== H) {
+    c = cache.off = document.createElement('canvas');
+    c.width = W; c.height = H;
+  }
+  return c;
+}
+
+const smooth = (x) => { const v = Math.max(0, Math.min(1, x)); return v * v * (3 - 2 * v); };
+
+/** Draw the picture at t, blending across a cut when a transition is set. */
+function drawPicture(ctx, W, H, t, project, video, cache) {
+  const { segments, settings } = project;
+  const seg = segmentAt(segments, t);
+  const i = segments.indexOf(seg);
+  // are we inside the transition window of the cut before or after this shot?
+  let cut = -1;
+  const tIn = transInfo(transitionInto(segments, i, settings));
+  if (tIn.dur && t - seg.start < tIn.dur / 2) cut = i;
+  const next = segments[i + 1];
+  if (cut < 0 && next) {
+    const tOut = transInfo(transitionInto(segments, i + 1, settings));
+    if (tOut.dur && seg.end - t < tOut.dur / 2) cut = i + 1;
+  }
+  if (cut < 0) { drawShot(ctx, W, H, t, project, seg, video, cache); return seg; }
+
+  const A = segments[cut - 1], B = segments[cut];
+  const tr = transInfo(transitionInto(segments, cut, settings));
+  const p = smooth((t - (B.start - tr.dur / 2)) / tr.dur);
+  const off = offscreen(cache, W, H);
+  const o = off.getContext('2d');
+  if (tr.id === 'flash') {
+    drawShot(ctx, W, H, t, project, t < B.start ? A : B, video, cache);
+    ctx.save(); ctx.globalAlpha = 1 - Math.abs(p - 0.5) * 2; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore();
+    return seg;
+  }
+  drawShot(o, W, H, t, project, B, video, cache);
+  if (tr.id === 'fade') {
+    drawShot(ctx, W, H, t, project, A, video, cache);
+    ctx.save(); ctx.globalAlpha = p; ctx.drawImage(off, 0, 0); ctx.restore();
+  } else if (tr.id === 'zoom') {
+    ctx.save();
+    const sA = 1 + 0.35 * p;
+    ctx.translate(W / 2, H / 2); ctx.scale(sA, sA); ctx.translate(-W / 2, -H / 2);
+    drawShot(ctx, W, H, t, project, A, video, cache);
+    ctx.restore();
+    ctx.save();
+    const sB = 1.35 - 0.35 * p;
+    ctx.globalAlpha = p;
+    ctx.translate(W / 2, H / 2); ctx.scale(sB, sB); ctx.translate(-W / 2, -H / 2);
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+  } else if (tr.id === 'slide' || tr.id === 'whip') {
+    const dx = W * p;
+    ctx.save();
+    if (tr.id === 'whip' && 'filter' in ctx) ctx.filter = `blur(${Math.round(Math.sin(p * Math.PI) * W * 0.012)}px)`;
+    ctx.translate(-dx, 0);
+    drawShot(ctx, W, H, t, project, A, video, cache);
+    ctx.translate(W, 0);
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+  } else if (tr.id === 'blur') {
+    const b = Math.sin(p * Math.PI) * Math.min(W, H) * 0.025;
+    ctx.save();
+    if ('filter' in ctx) ctx.filter = `blur(${b.toFixed(1)}px)`;
+    drawShot(ctx, W, H, t, project, A, video, cache);
+    ctx.globalAlpha = p;
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+  }
+  return seg;
+}
+
+export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
+  const { settings } = project;
+  const look = settings.filter && settings.filter !== 'none' ? filterCss(settings.filter, settings.filterAmt ?? 1) : '';
+  let seg;
+  if (look && 'filter' in ctx) {
+    // render the picture, then copy it through the colour filter
+    const pic = cache.pic && cache.pic.width === W && cache.pic.height === H ? cache.pic : (cache.pic = Object.assign(document.createElement('canvas'), { width: W, height: H }));
+    seg = drawPicture(pic.getContext('2d'), W, H, t, project, video, cache);
+    ctx.save(); ctx.filter = look; ctx.drawImage(pic, 0, 0); ctx.restore();
+  } else {
+    seg = drawPicture(ctx, W, H, t, project, video, cache);
+  }
   if (settings.captions) {
     if (!cache.pages || cache.pagesFor !== project.words) { cache.pages = captionPages(project.words); cache.pagesFor = project.words; }
     drawCaptions(ctx, W, H, cache.pages, t, settings.captionStyle || { upper: true });
@@ -208,8 +366,8 @@ const graphs = new WeakMap();
 const NO_VIDEO = {};
 /**
  * Audio mix shared by preview and export:
- *   voice (the video's own audio) ─┐
- *   sound effects ─────────────────┼─> speakers + a recordable stream
+ *   voice (the video's own audio), sound effects and music
+ *   all go to the speakers and to a recordable stream.
  * `video` may be null (the demo has no audio track).
  */
 export function audioGraph(video) {
@@ -222,6 +380,8 @@ export function audioGraph(video) {
     master.connect(ac.destination);
     const sfx = ac.createGain();
     sfx.connect(master); sfx.connect(dest);
+    const music = ac.createGain();
+    music.connect(master); music.connect(dest);
     let voice = null;
     if (video) {
       const src = ac.createMediaElementSource(video);
@@ -229,7 +389,7 @@ export function audioGraph(video) {
       src.connect(voice);
       voice.connect(master); voice.connect(dest);
     }
-    g = { ac, dest, master, sfx, voice };
+    g = { ac, dest, master, sfx, music, voice };
     graphs.set(keyObj, g);
   }
   if (g.ac.state === 'suspended') g.ac.resume();
@@ -239,6 +399,7 @@ export function audioGraph(video) {
 export function setMix(graph, settings) {
   if (graph.voice) graph.voice.gain.value = settings.voiceVol ?? 1;
   graph.sfx.gain.value = settings.sfxVol ?? 0.8;
+  graph.music.gain.value = settings.music ? (settings.music.vol ?? 0.35) : 0;
 }
 
 function pickMime() {
@@ -258,7 +419,7 @@ function pickMime() {
  * composited canvas (plus the original audio) is recorded.
  * `media` is the app's media wrapper (see app.js): { el, video?, time, seek, play, pause, onEnded }.
  */
-export async function exportVideo(project, media, { aspect = 'vertical', onProgress = () => {}, signal, sfxPlayer } = {}) {
+export async function exportVideo(project, media, { aspect = 'vertical', onProgress = () => {}, signal, sfxPlayer, musicPlayer } = {}) {
   const { w: W, h: H } = ASPECTS[aspect];
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -289,6 +450,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
     stopped = true;
     media.pause();
     sfxPlayer?.stop();
+    musicPlayer?.stop();
     setTimeout(() => rec.state !== 'inactive' && rec.stop(), 200);
   };
   signal?.addEventListener('abort', stop);
@@ -303,6 +465,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
   };
   await media.play();
   sfxPlayer?.start(graph, project.sfx || [], 0);
+  musicPlayer?.start(graph, project.settings.music, 0, project.duration);
   // a timer (not requestAnimationFrame) so a briefly hidden tab keeps rendering
   const iv = setInterval(draw, 1000 / 30);
   const blob = await done;

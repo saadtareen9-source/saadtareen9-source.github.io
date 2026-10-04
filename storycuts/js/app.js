@@ -1,5 +1,9 @@
-import { drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType } from './render.js';
-import { SFX, sfxInfo, SfxPlayer } from './sfx.js';
+import {
+  drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType, FILTERS, filterCss, TRANSITIONS, CAPTION_STYLES,
+} from './render.js';
+import {
+  SFX_CATS, allSfx, sfxInfo, registerSfx, loadSfxManifest, sfxPeaks, SfxPlayer, MusicPlayer,
+} from './sfx.js';
 import {
   BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
 } from './billing.js';
@@ -35,6 +39,9 @@ const state = {
   cache: {},
   busy: false,
   sfxPlayer: new SfxPlayer(),
+  musicPlayer: new MusicPlayer(),
+  sfxCat: 'all',
+  transScope: 'all',
 };
 
 function toast(msg, ms = 3400) {
@@ -121,9 +128,10 @@ class DemoMedia {
     const open = talking ? 14 + Math.abs(Math.sin(t * 17)) * 30 : 4;
     c.fillStyle = '#7a1f1f'; c.beginPath(); c.ellipse(0, 700, 55, open, 0, 0, Math.PI * 2); c.fill();
     c.restore();
-    c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 60, W, 70);
-    c.fillStyle = '#fff'; c.font = '700 34px Inter, system-ui, sans-serif'; c.textAlign = 'center';
-    c.fillText('DEMO · your face goes here', W / 2, 108);
+    c.fillStyle = 'rgba(0,0,0,0.38)';
+    c.beginPath(); c.roundRect ? c.roundRect(W / 2 - 62, 70, 124, 44, 22) : c.rect(W / 2 - 62, 70, 124, 44); c.fill();
+    c.fillStyle = '#fff'; c.font = '700 24px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('DEMO', W / 2, 93);
   }
 }
 
@@ -229,7 +237,8 @@ function defaultSettings() {
     faceMode: 'full',
     pacing: 'balanced',
     castHints: [],
-    captions: true, captionStyle: { upper: true }, punchIn: true, faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
+    captions: true, captionStyle: { upper: true, preset: 'bold', pos: 'low', size: 1, highlight: '#ffd60a' }, punchIn: true,
+    filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
 }
 
@@ -246,6 +255,7 @@ function loadProject(duration) {
     if (saved.segments?.length) toast('Picked up where you left off with this video.');
   }
   state.aspect = state.project.settings.aspect || 'vertical';
+  (state.project.settings.customSfx || []).forEach(registerSfx);
   syncOptionsUI();
   refresh();
 }
@@ -303,7 +313,7 @@ function goStep(n, { scroll = true } = {}) {
   if (n === 5 && state.project?.approved) {
     requestAnimationFrame(() => { sizePreview(); renderTimeline(); renderInspector(); drawPreview(); ensurePeaks(); });
   }
-  if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); state.sfxPlayer.stop(); }
+  if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
   requestAnimationFrame(updateSegThumbs);
   if (scroll) {
     const top = $('#studio').getBoundingClientRect().top;
@@ -728,7 +738,7 @@ function renderPrep() {
     <div class="row" data-i="${i}">
       <input data-k="name" placeholder="Name (e.g. Dad)" value="${esc(h.name)}" maxlength="30">
       <input data-k="description" placeholder="Look (e.g. tall, bald, big mustache, red polo)" value="${esc(h.description)}" maxlength="160">
-      <button class="x" data-del="${i}" aria-label="Remove">✕</button>
+      <button class="x" data-del="${i}" aria-label="Remove">${icon('close')}</button>
     </div>`).join('');
   $('#prep-cast').classList.toggle('ready', hints.some((h) => h.name?.trim()));
 }
@@ -967,11 +977,9 @@ function resetPlan() {
 // ---------- cast ----------
 
 function qcBadge(img) {
-  if (!img?.qc) return '';
-  const q = img.qc;
-  return q.pass
-    ? `<span class="qc-badge ok" title="${esc(q.issues.join('; '))}">✓ Checked${q.score ? ` ${q.score}/10` : ''}</span>`
-    : `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">⚠ ${esc(q.issues[0] || 'Needs a look')}</span>`;
+  const q = img?.qc;
+  if (!q || q.pass) return '';
+  return `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">${icon('alert')}Needs a look</span>`;
 }
 
 async function fillImg(el, key) {
@@ -1259,7 +1267,7 @@ function graph() { return audioGraph(state.media?.video || null); }
 function loop() {
   drawPreview();
   if (state.media && !state.media.paused) requestAnimationFrame(loop);
-  else { $('#btn-play').innerHTML = icon('play'); state.sfxPlayer.stop(); }
+  else { $('#btn-play').innerHTML = icon('play'); stopAudio(); }
 }
 
 async function togglePlay() {
@@ -1268,23 +1276,31 @@ async function togglePlay() {
   if (m.paused) {
     if (m.time >= state.project.duration - 0.05) await m.seek(0);
     await m.play();
-    const g = graph();
-    setMix(g, state.project.settings);
-    state.sfxPlayer.start(g, state.project.sfx || [], m.time);
+    startAudio(m.time);
     $('#btn-play').innerHTML = icon('pause');
     loop();
   } else {
     m.pause();
-    state.sfxPlayer.stop();
+    stopAudio();
   }
 }
+
+function startAudio(from) {
+  const g = graph();
+  const p = state.project;
+  setMix(g, p.settings);
+  state.sfxPlayer.start(g, p.sfx || [], from);
+  state.musicPlayer.start(g, p.settings.music, from, p.duration);
+}
+function stopAudio() { state.sfxPlayer.stop(); state.musicPlayer.stop(); }
+function restartAudio() { if (state.media && !state.media.paused) startAudio(state.media.time); }
 
 async function seekTo(t, { follow = true } = {}) {
   const m = state.media;
   if (!m) return;
   const playing = !m.paused;
   await m.seek(Math.max(0, Math.min(state.project.duration - 0.01, t)));
-  if (playing) state.sfxPlayer.start(graph(), state.project.sfx || [], m.time);
+  if (playing) startAudio(m.time);
   if (follow) scrollTimelineTo(m.time);
   drawPreview();
 }
@@ -1392,9 +1408,13 @@ function renderFxTrack() {
   const p = state.project;
   const fx = (p.sfx || []).slice().sort((a, b) => a.t - b.t);
   $('#tl-fx').innerHTML = fx.map((c) => {
-    const info = sfxInfo(c.type) || { name: c.type, icon: '♪', dur: 0.5 };
-    return `<div class="fxclip ${c.id === state.selectedFx ? 'sel' : ''}" data-id="${c.id}" style="left:${TL.pad + c.t * TL.pps}px;width:${Math.max(34, info.dur * TL.pps)}px"><span>${info.icon}</span><em>${esc(info.name)}</em></div>`;
-  }).join('') || `<span class="fx-empty" style="left:${TL.pad + 8}px">No sound effects yet. Add some in the Sound tab.</span>`;
+    const info = sfxInfo(c.type) || { name: c.type, icon: 'note', dur: 0.5 };
+    return `<div class="fxclip ${c.id === state.selectedFx ? 'sel' : ''}" data-id="${c.id}" style="left:${TL.pad + c.t * TL.pps}px;width:${Math.max(34, info.dur * TL.pps)}px"><svg><use href="#i-sfx-${info.icon}"/></svg><em>${esc(info.name)}</em></div>`;
+  }).join('') || `<span class="fx-empty" style="left:${TL.pad + 8}px">No sound effects yet. Add some in the Audio tab.</span>`;
+  const m = p.settings.music;
+  $('#tl-music').innerHTML = m
+    ? `<div class="musicclip" data-music="1" style="left:${TL.pad}px;width:${Math.max(40, p.duration * TL.pps)}px">${icon('music')}<em>${esc(m.name)}</em></div>`
+    : `<button class="music-empty" data-music="add" style="left:${TL.pad + 8}px">${icon('plus')}Add music</button>`;
 }
 
 // voice waveform (from the video's own audio)
@@ -1458,7 +1478,7 @@ $('#tl-scroll').addEventListener('scroll', () => {
   state.userScrolling = true;
   clearTimeout(state.userScrollTimer);
   state.userScrollTimer = setTimeout(() => { state.userScrolling = false; }, 150);
-  if (!state.media.paused) { state.media.pause(); state.sfxPlayer.stop(); }
+  if (!state.media.paused) { state.media.pause(); stopAudio(); }
   cancelAnimationFrame(state.scrubRaf);
   state.scrubRaf = requestAnimationFrame(() => seekTo(sc.scrollLeft / TL.pps, { follow: false }));
 }, { passive: true });
@@ -1529,7 +1549,8 @@ async function select(id, seek) {
   const seg = state.project.segments.find((s) => s.id === id);
   renderTimeline();
   renderInspector();
-  showTab('shot');
+  const tab = $('#ed-tabs button.on')?.dataset.tab;
+  showTab(tab === 'trans' ? 'trans' : 'shot');
   if (seek && seg && state.media) await seekTo(seg.start + Math.min(0.2, (seg.end - seg.start) / 3));
 }
 
@@ -1538,6 +1559,9 @@ function showTab(name) {
   $$('#ed-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   $$('.ed-panel').forEach((p) => { p.hidden = p.dataset.pane !== name; });
   if (name === 'sound') renderSoundPane();
+  if (name === 'captions') renderTextPane();
+  if (name === 'filters') renderFilterPane();
+  if (name === 'trans') renderTransPane();
   requestAnimationFrame(updateSegThumbs);
 }
 $('#ed-tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
@@ -1554,56 +1578,233 @@ function selectFx(id) {
 function renderSoundPane() {
   const p = state.project;
   if (!p) return;
-  $('#vol-voice').value = p.settings.voiceVol ?? 1;
-  $('#vol-sfx').value = p.settings.sfxVol ?? 0.8;
-  $('#vol-voice').closest('label').hidden = !state.file;
+  const st = p.settings;
+  $('#vol-voice').value = st.voiceVol ?? 1;
+  $('#vol-sfx').value = st.sfxVol ?? 0.8;
+  $('#vol-music').value = st.music?.vol ?? 0.35;
+  $('#mix-voice').hidden = !state.file;
+  $('#mix-music').hidden = !st.music;
+  $('#music-card').innerHTML = st.music ? `
+    <div class="mc-row">
+      <span class="mc-ico">${icon('music')}</span>
+      <div class="mc-txt"><b>${esc(st.music.name)}</b><small>Loops under the whole video</small></div>
+      <button class="icon-btn" data-m="replace" title="Replace">${icon('redo')}</button>
+      <button class="icon-btn" data-m="del" title="Remove">${icon('trash')}</button>
+    </div>
+    <label class="switch"><input type="checkbox" data-m="fade" ${st.music.fade !== false ? 'checked' : ''}><span></span>Fade in and out</label>`
+    : `<button class="add-tile" data-m="add">${icon('plus')}<span><b>Add music</b><small>MP3, M4A or WAV from your device</small></span></button>`;
   const c = (p.sfx || []).find((x) => x.id === state.selectedFx);
+  const ci = c && (sfxInfo(c.type) || { name: c.type, icon: 'note' });
   $('#sfx-selected').innerHTML = c ? `
     <div class="fx-card">
-      <div class="fx-card-head"><span class="fx-ico">${sfxInfo(c.type)?.icon || '♪'}</span><div><b>${esc(sfxInfo(c.type)?.name || c.type)}</b><small class="muted">at ${fmtTC(c.t)} · drag it on the timeline to move</small></div></div>
-      <label class="range-field">Volume <input type="range" data-fx="vol" min="0" max="1.5" step="0.05" value="${c.vol ?? 1}"></label>
+      <div class="fx-card-head"><span class="fx-ico"><svg><use href="#i-sfx-${ci.icon}"/></svg></span><div><b>${esc(ci.name)}</b><small class="muted">at ${fmtTC(c.t)} · drag it on the timeline to move</small></div><button class="icon-btn sm" data-fx="close" aria-label="Close">${icon('close')}</button></div>
+      <label class="range-field"><span>Volume</span><input type="range" data-fx="vol" min="0" max="1.5" step="0.05" value="${c.vol ?? 1}"></label>
       <div class="tool-row">
         <button class="btn glass sm" data-fx="play">${icon('play')}Play</button>
         <button class="btn glass sm" data-fx="here">Move to playhead</button>
         <button class="btn glass sm danger" data-fx="del">${icon('trash')}Delete</button>
       </div>
     </div>` : '';
-  $('#sfx-lib').innerHTML = SFX.map((x) => `
-    <button class="sfx-tile" data-add="${x.id}"><span>${x.icon}</span><b>${esc(x.name)}</b><i class="pv" data-pv="${x.id}" title="Preview">${icon('play')}</i></button>`).join('');
+  const mine = (st.customSfx || []).length;
+  $('#sfx-cats').innerHTML = SFX_CATS.filter((x) => x.id !== 'mine' || mine).map((x) => `<button data-cat="${x.id}" class="${state.sfxCat === x.id ? 'on' : ''}">${esc(x.name)}</button>`).join('');
+  const list = allSfx().filter((x) => state.sfxCat === 'all' || x.cat === state.sfxCat);
+  $('#sfx-lib').innerHTML = list.map((x) => `
+    <button class="sfx-tile" data-add="${esc(x.id)}">
+      <span class="st-ico"><svg><use href="#i-sfx-${x.icon}"/></svg></span>
+      <span class="st-txt"><b>${esc(x.name)}</b><canvas class="st-wave" data-wave="${esc(x.id)}" width="96" height="18"></canvas></span>
+      <i class="pv" data-pv="${esc(x.id)}" title="Preview">${icon('play')}</i>
+    </button>`).join('') + `
+    <button class="sfx-tile upload" data-upload="1"><span class="st-ico">${icon('upload')}</span><span class="st-txt"><b>Upload a sound</b><small>Use your own audio</small></span></button>`;
+  $$('#sfx-lib canvas[data-wave]').forEach(drawMiniWave);
 }
 
-$('#sfx-lib').addEventListener('click', (e) => {
-  const pv = e.target.closest('[data-pv]');
-  if (pv) { e.stopPropagation(); state.sfxPlayer.preview(graph(), pv.dataset.pv, state.project.settings.sfxVol ?? 0.8); return; }
-  const add = e.target.closest('[data-add]');
-  if (!add || !state.project) return;
+async function drawMiniWave(cv) {
+  const peaks = await sfxPeaks(cv.dataset.wave, 24).catch(() => []);
+  if (!cv.isConnected || !peaks.length) return;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  const bw = cv.width / peaks.length;
+  g.fillStyle = 'rgba(240, 171, 252, 0.75)';
+  peaks.forEach((v, i) => { const h = Math.max(2, v * cv.height); g.fillRect(i * bw + 1, (cv.height - h) / 2, bw - 2, h); });
+}
+
+function addSfxAt(type) {
   snapshot();
-  const c = { id: newId(), type: add.dataset.add, t: +(state.media?.time || 0).toFixed(2), vol: 1 };
+  const c = { id: newId(), type, t: +(state.media?.time || 0).toFixed(2), vol: 1 };
   state.project.sfx = [...(state.project.sfx || []), c];
   save();
   state.selectedFx = c.id;
   renderFxTrack(); renderSoundPane();
   state.sfxPlayer.preview(graph(), c.type, (state.project.settings.sfxVol ?? 0.8));
-  toast(`${sfxInfo(c.type).name} added at ${fmtTC(c.t)}`);
+  toast(`${sfxInfo(c.type)?.name || 'Sound'} added at ${fmtTC(c.t)}`);
+}
+
+$('#sfx-cats').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cat]');
+  if (b) { state.sfxCat = b.dataset.cat; renderSoundPane(); }
 });
-$('#sfx-selected').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-fx]');
-  const c = state.project?.sfx?.find((x) => x.id === state.selectedFx);
-  if (!b || !c) return;
-  if (b.dataset.fx === 'play') state.sfxPlayer.preview(graph(), c.type, c.vol ?? 1);
-  if (b.dataset.fx === 'here') { snapshot(); c.t = +(state.media?.time || 0).toFixed(2); save(); renderFxTrack(); renderSoundPane(); }
-  if (b.dataset.fx === 'del') { snapshot(); state.project.sfx = state.project.sfx.filter((x) => x !== c); state.selectedFx = null; save(); renderFxTrack(); renderSoundPane(); }
+$('#sfx-lib').addEventListener('click', (e) => {
+  const pv = e.target.closest('[data-pv]');
+  if (pv) { e.stopPropagation(); state.sfxPlayer.preview(graph(), pv.dataset.pv, state.project.settings.sfxVol ?? 0.8); return; }
+  if (e.target.closest('[data-upload]')) { $('#sfx-file').click(); return; }
+  const add = e.target.closest('[data-add]');
+  if (add && state.project) addSfxAt(add.dataset.add);
 });
-$('#sfx-selected').addEventListener('change', (e) => {
-  const c = state.project?.sfx?.find((x) => x.id === state.selectedFx);
-  if (c && e.target.dataset.fx === 'vol') { snapshot(); c.vol = +e.target.value; save(); state.sfxPlayer.preview(graph(), c.type, c.vol); }
+$('#sfx-file').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  const p = state.project;
+  if (!p) return;
+  let added = 0;
+  for (const f of files) {
+    if (!f.type.startsWith('audio/') && !/\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(f.name)) continue;
+    if (f.size > 15e6) { toast(`${f.name} is too big (max 15 MB).`); continue; }
+    const id = `u_${newId()}`;
+    const key = `${storageKey()}/sfx/${id}`;
+    await putBlob(key, f);
+    const info = { id, key, name: f.name.replace(/\.[^.]+$/, '').slice(0, 28), cat: 'mine', icon: 'note', dur: 1 };
+    p.settings.customSfx = [...(p.settings.customSfx || []), info];
+    registerSfx(info);
+    added++;
+  }
+  if (!added) return;
+  save();
+  state.sfxCat = 'mine';
+  renderSoundPane();
+  toast(`${added} sound${added > 1 ? 's' : ''} added to My sounds. Tap one to place it.`);
 });
-['#vol-voice', '#vol-sfx'].forEach((sel) => $(sel).addEventListener('input', (e) => {
-  if (!state.project) return;
-  state.project.settings[sel === '#vol-voice' ? 'voiceVol' : 'sfxVol'] = +e.target.value;
+
+$('#music-card').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-m]');
+  if (!b || !state.project) return;
+  if (b.dataset.m === 'add' || b.dataset.m === 'replace') $('#music-file').click();
+  if (b.dataset.m === 'del') { snapshot(); state.project.settings.music = null; save(); stopAudio(); renderSoundPane(); renderFxTrack(); setMix(graph(), state.project.settings); }
+});
+$('#music-card').addEventListener('change', (e) => {
+  if (e.target.dataset.m === 'fade' && state.project?.settings.music) { state.project.settings.music.fade = e.target.checked; save(); restartAudio(); }
+});
+$('#music-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !state.project) return;
+  if (f.size > 40e6) { toast('That file is too big (max 40 MB).'); return; }
+  const key = `${storageKey()}/music/${Date.now().toString(36)}`;
+  await putBlob(key, f);
+  snapshot();
+  state.project.settings.music = { key, name: f.name.replace(/\.[^.]+$/, '').slice(0, 40), vol: state.project.settings.music?.vol ?? 0.35, fade: true };
+  save();
   setMix(graph(), state.project.settings);
+  renderSoundPane(); renderFxTrack(); restartAudio();
+  toast('Music added. Press play to hear it under your story.');
+});
+$('#tl-music').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-music]');
+  if (!b) return;
+  showTab('sound');
+  if (b.dataset.music === 'add') $('#music-file').click();
+});
+['#vol-voice', '#vol-sfx', '#vol-music'].forEach((sel) => $(sel).addEventListener('input', (e) => {
+  const st = state.project?.settings;
+  if (!st) return;
+  if (sel === '#vol-music') { if (st.music) st.music.vol = +e.target.value; } else st[sel === '#vol-voice' ? 'voiceVol' : 'sfxVol'] = +e.target.value;
+  setMix(graph(), st);
   save();
 }));
+
+// ---------- text, filters, transitions panes ----------
+
+const HIGHLIGHTS = ['#ffd60a', '#ff4fd8', '#38bdf8', '#4ade80', '#fb923c', '#ffffff'];
+
+function renderTextPane() {
+  const st = state.project?.settings;
+  if (!st) return;
+  const cs = st.captionStyle || {};
+  $('#opt-captions').checked = !!st.captions;
+  $('#opt-upper').checked = !!cs.upper;
+  $('#cap-styles').innerHTML = CAPTION_STYLES.map((x) => `<button class="cap-tile cs-${x.id} ${(cs.preset || 'bold') === x.id ? 'on' : ''}" data-preset="${x.id}" style="--hl:${cs.highlight || '#ffd60a'}"><span class="cs-demo">${cs.upper ? 'THE <i>BEST</i>' : 'The <i>best</i>'}</span><small>${esc(x.name)}</small></button>`).join('');
+  $$('#cap-pos button').forEach((b) => b.classList.toggle('on', b.dataset.v === (cs.pos || 'low')));
+  $$('#cap-size button').forEach((b) => b.classList.toggle('on', +b.dataset.v === (cs.size || 1)));
+  $('#cap-colors').innerHTML = HIGHLIGHTS.map((c) => `<button data-c="${c}" class="${(cs.highlight || '#ffd60a') === c ? 'on' : ''}" style="--c:${c}" aria-label="Highlight ${c}"></button>`).join('');
+  $('#cap-styles').closest('.ed-panel').classList.toggle('caps-off', !st.captions);
+}
+function setCaption(patch) {
+  const st = state.project.settings;
+  st.captionStyle = { ...(st.captionStyle || {}), ...patch };
+  save(); renderTextPane(); drawPreview();
+}
+$('#cap-styles').addEventListener('click', (e) => { const b = e.target.closest('[data-preset]'); if (b) setCaption({ preset: b.dataset.preset }); });
+$('#cap-pos').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setCaption({ pos: b.dataset.v }); });
+$('#cap-size').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setCaption({ size: +b.dataset.v }); });
+$('#cap-colors').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (b) setCaption({ highlight: b.dataset.c }); });
+
+const p0Ready = () => !!(state.project?.approved && state.project.segments.length);
+
+function renderFilterPane() {
+  const st = state.project?.settings;
+  if (!st) return;
+  // thumbnails start from the unfiltered frame
+  const src = document.createElement('canvas');
+  src.width = 128; src.height = state.aspect === 'vertical' ? 192 : 80;
+  if (state.media && p0Ready()) drawFrame(src.getContext('2d'), src.width, src.height, state.media.time, { ...state.project, settings: { ...st, filter: 'none', captions: false, watermark: false } }, state.media.el, state.cache);
+  $('#filter-grid').innerHTML = FILTERS.map((f) => `<button class="filter-tile ${(st.filter || 'none') === f.id ? 'on' : ''}" data-filter="${f.id}"><canvas width="64" height="${state.aspect === 'vertical' ? 96 : 40}"></canvas><small>${esc(f.name)}</small></button>`).join('');
+  $$('#filter-grid .filter-tile').forEach((b) => {
+    const cv = b.querySelector('canvas');
+    const g = cv.getContext('2d');
+    if ('filter' in g) g.filter = filterCss(b.dataset.filter, 1);
+    try { g.drawImage(src, 0, 0, cv.width, cv.height); } catch { /* preview not ready */ }
+  });
+  $('#filter-amt').value = st.filterAmt ?? 1;
+  $('#filter-amt-row').hidden = !st.filter || st.filter === 'none';
+  $('#opt-punch').checked = !!st.punchIn;
+  $('#face-x').value = st.faceX ?? 0.5;
+}
+$('#filter-grid').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-filter]');
+  if (!b) return;
+  state.project.settings.filter = b.dataset.filter;
+  save(); drawPreview(); renderFilterPane();
+});
+$('#filter-amt').addEventListener('input', (e) => { state.project.settings.filterAmt = +e.target.value; save(); drawPreview(); });
+
+function renderTransPane() {
+  const p = state.project;
+  if (!p) return;
+  const i = p.segments.findIndex((sg) => sg.id === state.selected);
+  const one = state.transScope === 'one';
+  $$('#trans-scope button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.transScope));
+  const cur = one ? (i > 0 ? (p.segments[i].transIn || p.settings.transition || 'cut') : null) : (p.settings.transition || 'cut');
+  $('#trans-hint').textContent = one
+    ? (i > 0 ? `The cut into shot ${i + 1}. Pick a clip on the timeline to change another cut.` : 'Pick a clip on the timeline (not the first one) to style the cut into it.')
+    : 'Used on every cut, unless you set a different one on a specific cut.';
+  $('#trans-grid').innerHTML = TRANSITIONS.map((x) => `<button class="trans-tile tr-${x.id} ${cur === x.id ? 'on' : ''}" data-tr="${x.id}" ${one && i <= 0 ? 'disabled' : ''}><span class="tr-demo"><i></i><i></i></span><small>${esc(x.name)}</small></button>`).join('');
+}
+$('#trans-scope').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) { state.transScope = b.dataset.v; renderTransPane(); } });
+$('#trans-grid').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-tr]');
+  const p = state.project;
+  if (!b || !p) return;
+  snapshot();
+  let at = null;
+  if (state.transScope === 'one') {
+    const seg = p.segments.find((sg) => sg.id === state.selected);
+    if (!seg) return;
+    seg.transIn = b.dataset.tr;
+    at = seg.start;
+  } else {
+    p.settings.transition = b.dataset.tr;
+    p.segments.forEach((sg) => { delete sg.transIn; });
+    at = p.segments.find((sg, k) => k > 0 && sg.start > (state.media?.time || 0))?.start ?? p.segments[1]?.start;
+  }
+  save(); renderTransPane();
+  // show it: jump just before the cut and play through it
+  if (at != null && b.dataset.tr !== 'cut' && state.media?.paused) {
+    await seekTo(Math.max(0, at - 0.9));
+    togglePlay();
+    setTimeout(() => { if (!state.media.paused) togglePlay(); }, 1900);
+  } else drawPreview();
+});
+
+
 
 function splitAtPlayhead() {
   const p = state.project;
@@ -1660,7 +1861,7 @@ function renderInspector() {
         <textarea data-s="image_prompt" rows="3" placeholder="Who is where, doing what, with which expressions">${esc(sc.image_prompt || '')}</textarea>
       </label>
       <div class="field">Characters in this shot
-        <div class="chips">${sc.actors.map((a, k) => `<span class="chip">${esc(p.characters.find((c) => c.id === a.character_id)?.name || a.character_id)}<button data-a="remove" data-k="${k}" aria-label="Remove">✕</button></span>`).join('')}
+        <div class="chips">${sc.actors.map((a, k) => `<span class="chip">${esc(p.characters.find((c) => c.id === a.character_id)?.name || a.character_id)}<button data-a="remove" data-k="${k}" aria-label="Remove">${icon('close')}</button></span>`).join('')}
           ${sc.actors.length < 4 && p.characters.some((c) => !sc.actors.some((a) => a.character_id === c.id)) ? `<select data-act="add-cast"><option value="">+ Add</option>${p.characters.filter((c) => !sc.actors.some((a) => a.character_id === c.id)).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
         </div>
       </div>
@@ -1775,6 +1976,7 @@ function readExportUI() {
   const s = state.project.settings;
   s.captions = $('#opt-captions').checked;
   s.captionStyle = { ...(s.captionStyle || {}), upper: $('#opt-upper').checked };
+  renderTextPane();
   s.punchIn = $('#opt-punch').checked;
   s.watermark = $('#opt-watermark').checked;
   s.faceX = +$('#face-x').value;
@@ -1807,7 +2009,7 @@ async function doExport() {
   try {
     if (!state.media.paused) state.media.pause();
     const { blob, ext } = await exportVideo(state.project, state.media, {
-      aspect: state.aspect, signal: ac.signal, sfxPlayer: state.sfxPlayer, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
+      aspect: state.aspect, signal: ac.signal, sfxPlayer: state.sfxPlayer, musicPlayer: state.musicPlayer, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
     });
     if (ac.signal.aborted) { setStatus('#ex-status', 'Export cancelled.'); return; }
     download(blob, `${baseName()}-storycuts-${state.aspect}.${ext}`);
@@ -2104,6 +2306,7 @@ document.fonts?.ready.then(() => $$('.period').forEach(movePeriodThumb));
 goStep(1, { scroll: false });
 renderStyles();
 loadStyleManifest().then(() => { renderStyles(); renderMarquee(); });
+loadSfxManifest();
 requestAnimationFrame(updateSegThumbs);
 updateKeysDot();
 sizePreview();
