@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <!-- icon sprite -->
@@ -281,15 +281,21 @@
 
         <div class="cast hidden" id="cast">
           <div class="cast-head">
-            <div><h4>Meet your cast</h4><p>Edit a description and redraw anyone you don't love. Then we'll draw the scenes.</p></div>
+            <div><h4>Meet your cast</h4><p>Every scene is drawn from these designs. Edit a description and redraw anyone you don't love.</p></div>
             <div class="cast-actions">
-              <button class="btn glass sm" id="btn-add-char" title="Add a person or pet">+ Character</button>
-              <button class="btn glass sm" id="btn-gen-chars" title="Draw anyone missing a design"><svg><use href="#i-redo"/></svg>Draw all</button>
+              <button class="btn glass sm" id="btn-add-char" title="Add a person or pet">+ Add character</button>
             </div>
           </div>
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
-          <button class="btn primary lg" id="btn-approve"><svg><use href="#i-check"/></svg>Looks good, draw the scenes</button>
+          <div class="cast-bar" id="cast-bar">
+            <div class="cb-steps"><span class="cb-step" id="cb-step1"><i>1</i>Draw characters</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Draw scenes</span></div>
+            <div class="cb-main">
+              <div class="cb-txt"><b id="cb-title"></b><small id="cb-sub"></small></div>
+              <button class="btn primary lg" id="btn-gen-chars"><svg><use href="#i-spark"/></svg><span>Draw characters</span></button>
+              <button class="btn primary lg" id="btn-approve"><svg><use href="#i-check"/></svg><span>Looks good, draw the scenes</span></button>
+            </div>
+          </div>
         </div>
         <div class="wiz-nav"><button class="btn ghost lg" data-back="3"><svg><use href="#i-left"/></svg>Back</button><button class="btn glass lg" data-next="5" id="btn-to-editor" hidden>Open the editor<svg><use href="#i-right"/></svg></button></div>
       </div>
@@ -320,12 +326,15 @@
               <button data-tab="export"><svg><use href="#i-download"/></svg>Export</button>
             </nav>
             <div class="ed-panel" data-pane="shot">
-              <div class="pane-bar">
-                <span class="muted small" id="scenes-cost"></span>
-                <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
+              <div class="draw-card" id="draw-card">
+                <div class="dc-row">
+                  <span class="dc-ico"><svg><use href="#i-spark"/></svg></span>
+                  <div class="dc-txt"><b id="dc-title">Scenes</b><span id="scenes-cost"></span></div>
+                  <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
+                </div>
+                <div class="progress hidden" id="gen-progress"><div></div></div>
+                <div class="status" id="scenes-status"></div>
               </div>
-              <div class="progress hidden" id="gen-progress"><div></div></div>
-              <div class="status" id="scenes-status"></div>
               <div class="inspector" id="inspector"><p class="muted">Tap a clip on the timeline.</p></div>
             </div>
             <div class="ed-panel" data-pane="sound" hidden>
@@ -487,6 +496,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=18"></script>
 </body>
 </html>

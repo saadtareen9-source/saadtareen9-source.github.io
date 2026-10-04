@@ -216,8 +216,8 @@ function segmentsFromWordIndices(raw, words) {
 }
 
 export const PACING = {
-  mostly: 'PACING: mostly story. Open on "face" for the hook (one shot, about 2-5 seconds). After that, illustrate most of the story: about 75-85% of the runtime should be scenes. Cut back to the face only briefly (about 1-3 seconds) for lines that do not need a visual: asides, opinions, reactions, punchlines. Avoid face shots longer than about 4 seconds after the opening. End on a short face shot if the last line is a punchline or sign-off.',
-  balanced: 'PACING: balanced. Open on "face" for the hook. Cut to scenes when the creator describes events, places, people doing things or dialogue; stay on the face for commentary, reactions and punchlines. Aim for roughly 50-60% of runtime illustrated.',
+  mostly: 'PACING: mostly story. Open on "face" for the hook (one shot, about 2-5 seconds). After that, illustrate most of the story: about 75-85% of the runtime should be scenes. In the middle of the story, cut back to the face briefly (about 1.5-3 seconds) every 3 or so scenes (roughly every 8-11 seconds), choosing lines that do not need a visual: asides, opinions, reactions, punchlines. Never go more than about 11 seconds without a face cut. Avoid face shots longer than about 4 seconds after the opening. End on a short face shot if the last line is a punchline or sign-off.',
+  balanced: 'PACING: balanced. Open on "face" for the hook. Cut to scenes when the creator describes events, places, people doing things or dialogue; stay on the face for commentary, reactions and punchlines. Alternate throughout: after every 1-2 scenes, cut back to the face for at least 2 seconds, so the face keeps coming back in the middle of the story, not only at the start and end. Never go more than about 6 seconds without a face shot. Aim for roughly 50% of runtime illustrated.',
   story: 'PACING: story only. Every shot must be a "scene" (no "face" shots at all, not even the opening): illustrate everything, including the hook, commentary and reactions (show the storyteller "me" reacting when there is no action).',
 };
 
