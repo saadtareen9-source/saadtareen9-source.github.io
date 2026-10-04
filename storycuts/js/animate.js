@@ -115,6 +115,7 @@ async function apiError(res) {
     return new Error(`The video relay address answered instead of passing the request to OpenAI. Open API keys → More options → Check animation setup, and make sure the worker has the latest relay code.${detail}`);
   }
   if (/^StoryCuts relay:/.test(msg)) return new Error(msg + detail);
+  if (res.status === 404 && !text) return new Error(`OpenAI's video service isn't switched on for your account yet. Open API keys → More options → Check animation setup for what to do (usually: verify your organization at platform.openai.com).${detail}`);
   if (res.status === 401) return new Error(`Your OpenAI API key was rejected. Check it in Settings.${detail}`);
   if (/verif/i.test(msg)) return new Error(`OpenAI says: ${msg} (video models may require verifying your organization at platform.openai.com → Settings → Organization → Verify).${detail}`);
   if (/billing|quota|insufficient/i.test(msg)) return new Error(`OpenAI says: ${msg} (add credit at platform.openai.com → Billing).${detail}`);
@@ -215,20 +216,42 @@ export function pauseAnimsExcept(used) {
  * OpenAI's video service (directly or via the relay), and does this account
  * have access? Returns { ok, message }.
  */
-export async function checkAnimationSetup(apiKey, relayUrl) {
+export async function checkAnimationSetup(apiKey, relayUrl, model = 'sora-2') {
   setVideoRelay(relayUrl);
   if (!apiKey) return { ok: false, message: 'Add your OpenAI key first.' };
+  // 1. does this OpenAI account have the video model at all? (normal endpoint, works from the browser)
+  try {
+    const r = await fetch(`https://api.openai.com/v1/models/${model}`, { headers: { authorization: `Bearer ${apiKey}` } });
+    if (r.status === 401) return { ok: false, message: 'Your OpenAI key was rejected. Check it above.' };
+    if (!r.ok) {
+      const list = await fetch('https://api.openai.com/v1/models', { headers: { authorization: `Bearer ${apiKey}` } }).then((x) => x.json()).catch(() => null);
+      const video = (list?.data || []).map((m) => m.id).filter((id) => /sora/i.test(id));
+      return {
+        ok: false,
+        noAccess: true,
+        message: video.length
+          ? `Your account can't use ${model}, but it has: ${video.join(', ')}. Pick that under Animation model.`
+          : `Your OpenAI account doesn't have access to the Sora video model yet, so animation can't run. Open platform.openai.com → Settings → Organization → General and press "Verify Organization". If it's already verified, add at least $5 of credit under Billing (OpenAI unlocks some models only for paid usage tiers), then check again.`,
+      };
+    }
+  } catch { /* couldn't check the model list; carry on to the video check */ }
+  // 2. the relay, if one is set
   if (relayBase) {
     const t = await testRelay(relayBase);
     if (!t.ok) return t;
   }
+  // 3. the video service itself
   let res;
   try {
     res = await fetch(`${relayBase || 'https://api.openai.com'}/v1/videos?limit=1`, { headers: { authorization: `Bearer ${apiKey}` } });
   } catch (e) {
-    return { ok: false, message: relayBase ? `Couldn't reach the relay (${e.message}).` : 'Your browser can\'t talk to OpenAI\'s video service directly. Set up the free video relay (instructions in the StoryCuts README) and paste its address above.' };
+    return { ok: false, message: relayBase ? `Couldn't reach the relay (${e.message}).` : 'Your account has the video model, but your browser can\'t talk to OpenAI\'s video service directly. Set up the free video relay and paste its address above.' };
   }
-  if (res.ok) return { ok: true, message: `Animation is ready: your OpenAI account can use the video service${relayBase ? ' through your relay' : ''}.` };
+  if (res.ok) return { ok: true, message: `Animation is ready: your OpenAI account can use ${model}${relayBase ? ' through your relay' : ''}.` };
+  const text = await res.clone().text().catch(() => '');
+  if (res.status === 404 && !text) {
+    return { ok: false, noAccess: true, message: 'Your account has the model, but OpenAI\'s video service still answers "not found" for it. Video access is usually switched on after organization verification (platform.openai.com → Settings → Organization → Verify). It can take a few minutes after verifying.' };
+  }
   const err = await apiError(res);
   return { ok: false, message: err.message };
 }
