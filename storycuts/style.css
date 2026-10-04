@@ -1512,3 +1512,79 @@ body.ed-app .ed-side { grid-template-columns: 80px minmax(0, 1fr); }
 body.ed-app .ed-tabs button { font-size: 0.66rem; letter-spacing: 0; }
 body.ed-app .dc-row { flex-wrap: wrap; }
 body.ed-app .dc-txt { min-width: 140px; }
+
+/* ======================================================================
+   Your projects
+   ====================================================================== */
+.projects { display: grid; gap: 12px; margin-bottom: 18px; animation: rise 0.5s var(--ease) both; }
+.projects-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.projects-head b { font-family: var(--display); font-size: 1rem; }
+.proj-row { display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.15) transparent; }
+.proj-card { position: relative; scroll-snap-align: start; border-radius: 16px; overflow: hidden; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); cursor: pointer; transition: transform 0.35s var(--spring), border-color 0.25s, box-shadow 0.3s; -webkit-tap-highlight-color: transparent; }
+.proj-card:hover { transform: translateY(-4px); border-color: rgba(240, 171, 252, 0.5); box-shadow: 0 18px 40px -20px rgba(236, 72, 153, 0.6); }
+.proj-card:active { transform: scale(0.97); }
+.proj-card.opening { opacity: 0.6; pointer-events: none; }
+.proj-card.opening::after { content: ''; position: absolute; top: 40%; left: 50%; width: 26px; height: 26px; margin: -13px; border-radius: 50%; border: 3px solid #fff; border-right-color: transparent; animation: spin 0.8s linear infinite; }
+.proj-thumb { position: relative; aspect-ratio: 4 / 5; background: linear-gradient(150deg, var(--t1), var(--t2)); overflow: hidden; }
+.proj-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--ease); }
+.proj-thumb img.style-fallback { opacity: 0.55; filter: saturate(0.7); }
+.proj-card:hover .proj-thumb img { transform: scale(1.05); }
+.proj-thumb::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 40%); }
+.proj-badge { position: absolute; top: 8px; left: 8px; z-index: 1; padding: 3px 8px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; background: rgba(0, 0, 0, 0.55); color: #fde68a; }
+.proj-badge.ed { color: #6ee7b7; }
+.proj-dur { position: absolute; bottom: 8px; right: 8px; z-index: 1; font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; }
+.proj-meta { display: grid; gap: 2px; padding: 10px 12px 12px; }
+.proj-meta b { font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proj-meta small { color: var(--muted); font-size: 0.74rem; }
+.proj-del { position: absolute; top: 6px; right: 6px; z-index: 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: none; background: rgba(0, 0, 0, 0.55); color: #fff; cursor: pointer; opacity: 0; transition: opacity 0.2s, background 0.2s, transform 0.3s var(--spring); }
+.proj-del svg { width: 15px; height: 15px; }
+.proj-card:hover .proj-del, .proj-del:focus-visible { opacity: 1; }
+.proj-del:hover { background: #dc2626; transform: scale(1.08); }
+@media (hover: none) { .proj-del { opacity: 1; } }
+.or-line { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+/* ======================================================================
+   Editor buttons: labelled, easy to follow
+   ====================================================================== */
+.tbtn { position: relative; display: inline-grid; justify-items: center; gap: 3px; min-width: 52px; padding: 6px 8px 5px; border: none; border-radius: 12px; background: none; color: var(--text-2); font: inherit; font-size: 0.68rem; font-weight: 600; cursor: pointer; transition: background 0.2s, color 0.2s, transform 0.3s var(--spring); -webkit-tap-highlight-color: transparent; }
+.tbtn svg { width: 20px; height: 20px; transition: transform 0.3s var(--spring); }
+.tbtn.flip svg { transform: scaleX(-1); }
+.tbtn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); color: #fff; }
+.tbtn:hover:not(:disabled) svg { transform: translateY(-1px); }
+.tbtn.flip:hover:not(:disabled) svg { transform: scaleX(-1) translateY(-1px); }
+.tbtn:active:not(:disabled) { transform: scale(0.9); }
+.tbtn:disabled { opacity: 0.32; cursor: default; }
+#btn-split { color: #f5d0fe; }
+.transport-mid { gap: 6px; }
+.transport [data-tip]::before { bottom: calc(100% + 6px); }
+@media (hover: none) { .transport [data-tip]::before { display: none; } }
+body.ed-full .transport { grid-template-columns: auto 1fr auto; padding: 2px 8px; }
+body.ed-full .transport-mid { gap: 0; justify-content: center; }
+body.ed-full .tbtn { min-width: 46px; padding: 5px 4px 4px; font-size: 0.62rem; }
+body.ed-full .tbtn svg { width: 19px; height: 19px; }
+body.ed-full .transport .tc { font-size: 0.72rem; }
+@media (max-width: 380px) { body.ed-full #btn-snap { display: none; } }
+
+/* ======================================================================
+   Smoothness
+   ====================================================================== */
+/* the site's background effects stop while you edit, so the editor gets the GPU */
+body.ed-app .aurora, body.ed-full .aurora { display: none; }
+body.ed-app main > section:not(.studio), body.ed-full main > section:not(.studio), body.ed-app .foot, body.ed-full .foot, body.ed-app .cta-band, body.ed-full .cta-band { visibility: hidden; }
+body.ed-app .marquee-row, body.ed-full .marquee-row, body.ed-app .phone, body.ed-full .phone { animation-play-state: paused; }
+/* tool panels fade in as you switch */
+body.ed-app .ed-panel:not([hidden]) { animation: paneIn 0.28s var(--ease) both; }
+@keyframes paneIn { from { opacity: 0; transform: translateY(6px); } }
+body.ed-full .ed-sheet { transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1); will-change: transform; }
+body.ed-full .ed-sheet.open .ed-panel:not([hidden]) { animation: paneIn 0.3s 0.08s var(--ease) both; }
+.tl-scroll { -webkit-overflow-scrolling: touch; }
+.clip, .fxclip, .musicclip { transition: box-shadow 0.25s, filter 0.2s, transform 0.25s var(--spring); }
+.clip.sel { transform: translateY(-1px); }
+.ed-tabs button { transition: color 0.2s, background 0.25s, transform 0.25s var(--spring); }
+.ed-tabs button:active { transform: scale(0.92); }
+.stage canvas { transform: translateZ(0); }
+body.ed-full .zoom { display: none; }
+body.ed-full .transport { grid-template-columns: auto 1fr; }
+body.ed-full .transport-mid { justify-content: flex-end; }
+body.ed-full .tbtn span { white-space: nowrap; }

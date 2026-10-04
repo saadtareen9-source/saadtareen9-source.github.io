@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <!-- icon sprite -->
@@ -92,6 +92,7 @@
     <a href="#how">How it works</a>
     <a href="#styles">Styles</a>
     <a href="#studio">Studio</a>
+    <a href="#studio" data-projects="1">My projects</a>
     <a href="#pricing">Pricing</a>
     <a href="#faq">FAQ</a>
     <a class="btn primary lg" href="#pricing">See plans</a>
@@ -170,6 +171,11 @@
       <!-- 1 UPLOAD -->
       <div class="panel" id="panel-upload" data-step="1">
         <div class="panel-head"><span class="num">1</span><div><h3>Upload your video</h3><p>A vertical phone video of you telling a story works best. 30 seconds to 5 minutes.</p></div></div>
+        <div class="projects" id="projects" hidden>
+          <div class="projects-head"><b>Your projects</b><span class="muted small">Saved on this device</span></div>
+          <div class="proj-row" id="proj-row"></div>
+          <div class="or-line"><span>or start a new video</span></div>
+        </div>
         <label class="drop" id="drop">
           <input type="file" id="file" accept="video/*" hidden>
           <span class="drop-ico"><svg><use href="#i-upload"/></svg></span>
@@ -339,9 +345,11 @@
             <div class="transport">
               <span id="time" class="tc">0:00.0</span>
               <div class="transport-mid">
-                <button class="icon-btn" id="btn-undo" data-tip="Undo" disabled><svg><use href="#i-undo"/></svg></button>
+                <button class="tbtn" id="btn-undo" data-tip="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg><span>Undo</span></button>
+                <button class="tbtn flip" id="btn-redo" data-tip="Redo (Ctrl+Shift+Z)" disabled><svg><use href="#i-undo"/></svg><span>Redo</span></button>
                 <button class="play" id="btn-play" aria-label="Play"><svg><use href="#i-play"/></svg></button>
-                <button class="icon-btn" id="btn-split" data-tip="Split at playhead"><svg><use href="#i-scissors"/></svg></button>
+                <button class="tbtn" id="btn-split" data-tip="Split the shot at the playhead (S)"><svg><use href="#i-scissors"/></svg><span>Split</span></button>
+                <button class="tbtn" id="btn-snap" data-tip="Jump to the next cut (→)"><svg><use href="#i-right"/></svg><span>Next</span></button>
               </div>
               <div class="zoom"><button class="icon-btn sm" id="zoom-out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="icon-btn sm" id="zoom-in" aria-label="Zoom in"><svg><use href="#i-plus"/></svg></button></div>
             </div>
@@ -559,6 +567,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=22"></script>
+  <script type="module" src="js/app.js?v=23"></script>
 </body>
 </html>
