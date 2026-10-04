@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <!-- icon sprite -->
@@ -234,9 +234,9 @@
         <div class="opt-group">
           <span class="opt-label">Edit pacing</span>
           <div class="choices three" id="seg-pacing">
-            <button data-pacing="mostly"><span class="ct"><b>Mostly story</b><small>Your intro, then mostly illustrations with quick cuts back to you</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-pacing="balanced" class="on"><span class="ct"><b>Balanced <em class="rec">Recommended</em></b><small>About half you on camera, half illustrations</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-pacing="story"><span class="ct"><b>Story only</b><small>Illustrations the whole way, your voice over them</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="mostly" class="on"><span class="ct"><b>Normal <em class="rec">Recommended</em></b><small>Mostly scenes, with quick cuts back to your face during the story</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="bookends"><span class="ct"><b>Intro &amp; outro</b><small>Your face only at the start and the end, scenes everywhere in between</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="story"><span class="ct"><b>Voice-over</b><small>Scenes the whole way through, with your voice over them</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
@@ -313,9 +313,16 @@
             <li data-stage="scenes"><i></i><b>Drawing the scenes</b></li>
           </ol>
           <div class="status" id="create-status"></div>
-          <button class="btn link sm" id="btn-reset" hidden>Start over with new settings</button>
         </div>
 
+        <div class="ready-card hidden" id="ready-card">
+          <span class="rc-ico"><svg><use href="#i-check"/></svg></span>
+          <div class="rc-txt"><h4>Your video is ready to edit</h4><p>Your characters and scenes are drawn. Open the editor to watch it, change any shot, add music and export.</p></div>
+          <div class="rc-actions">
+            <button class="btn primary xl" id="btn-open-editor"><span>Open the editor</span><svg><use href="#i-right"/></svg></button>
+            <button class="btn link sm" id="btn-show-cast">See or change your characters</button>
+          </div>
+        </div>
         <div class="cast hidden" id="cast">
           <div class="cast-head">
             <div><h4>Meet your cast</h4><p>Every scene is drawn from these designs. Edit a description and redraw anyone you don't love.</p></div>
@@ -326,7 +333,7 @@
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
           <div class="cast-bar" id="cast-bar">
-            <div class="cb-steps"><span class="cb-step" id="cb-step1"><i>1</i>Draw characters</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Draw scenes</span></div>
+            <div class="cb-steps"><span class="cb-step" id="cb-step1"><i>1</i>Draw characters</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Check them</span><span class="cb-line"></span><span class="cb-step" id="cb-step3"><i>3</i>Draw scenes</span></div>
             <div class="cb-main">
               <div class="cb-txt"><b id="cb-title"></b><small id="cb-sub"></small></div>
               <button class="btn primary lg" id="btn-gen-chars"><svg><use href="#i-spark"/></svg><span>Draw characters</span></button>
@@ -334,7 +341,7 @@
             </div>
           </div>
         </div>
-        <div class="wiz-nav"><button class="btn ghost lg" data-back="3"><svg><use href="#i-left"/></svg>Back</button><button class="btn glass lg" data-next="5" id="btn-to-editor" hidden>Open the editor<svg><use href="#i-right"/></svg></button></div>
+        <div class="wiz-nav"><button class="btn ghost lg" data-back="3"><svg><use href="#i-left"/></svg>Back</button><button class="btn link sm" id="btn-reset" hidden>Start over with new settings</button><button class="btn glass lg" data-next="5" id="btn-to-editor" hidden>Open the editor<svg><use href="#i-right"/></svg></button></div>
       </div>
 
       <!-- 4 EDITOR -->
@@ -577,6 +584,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=25"></script>
+  <script type="module" src="js/app.js?v=26"></script>
 </body>
 </html>

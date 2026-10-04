@@ -184,12 +184,19 @@ export function normalizeSegments(segments, characters, duration, report = [], {
   }
   // the ending/punchline: land on the face
   const last = segs[segs.length - 1];
-  if (segs.length > 1 && last.type === 'scene') {
+  if (pacing === 'bookends' && segs.length > 1 && last.type !== 'face') {
+    if (last.end - last.start > 4) {
+      const outro = { id: newId(), start: last.end - 2.2, end: last.end, type: 'face', reason: 'Outro: end on your face.', scene: null };
+      last.end = outro.start;
+      segs.push(outro);
+    } else Object.assign(last, { type: 'face', reason: 'Outro: end on your face.', scene: null });
+    report.push({ seg: segs.length - 1, check: 'ending', fix: 'Video now ends on your face.' });
+  } else if (pacing !== 'story' && segs.length > 1 && last.type === 'scene') {
     last.type = 'scene_bubble';
     report.push({ seg: segs.length - 1, check: 'ending', fix: 'Last shot now keeps your face in a bubble for the reaction.' });
   }
   // cut back to the creator during the story, not just at the start and end
-  const MAX_RUN = { mostly: 11, balanced: 6 }[pacing];
+  const MAX_RUN = { mostly: 10, balanced: 6 }[pacing];
   if (cutbacks && MAX_RUN) {
     for (let guard = 0; guard < 40; guard++) {
       // find the first run of illustrations longer than the limit
