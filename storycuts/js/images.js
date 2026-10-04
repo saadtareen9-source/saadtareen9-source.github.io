@@ -164,7 +164,22 @@ function db() {
 const memBlobs = new Map();
 export let storageProblem = null;
 
-export async function putBlob(key, blob) {
+export async function putBlob(key, blob, { quiet = false } = {}) {
+  if (quiet) {
+    // big files (the source video): don't hold a second copy in memory or warn
+    try {
+      const record = { type: blob.type, buf: await blob.arrayBuffer() };
+      const d = await db();
+      await new Promise((resolve, reject) => {
+        const tx = d.transaction('images', 'readwrite');
+        tx.objectStore('images').put(record, key);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('Saving was cancelled'));
+      });
+      return true;
+    } catch (e) { console.warn('StoryCuts: could not keep a copy of the video on this device', e); return false; }
+  }
   memBlobs.set(key, blob);
   try {
     // Stored as raw bytes: some browsers fail to save Blob objects in IndexedDB.
@@ -182,6 +197,33 @@ export async function putBlob(key, blob) {
     console.warn('StoryCuts: could not save image to browser storage, keeping it for this session only', e);
     storageProblem = e;
   }
+}
+
+/** Remove everything stored under a key prefix (a whole project). */
+export async function deleteBlobs(prefix) {
+  [...memBlobs.keys()].filter((k) => k.startsWith(prefix)).forEach((k) => memBlobs.delete(k));
+  try {
+    const d = await db();
+    await new Promise((resolve, reject) => {
+      const tx = d.transaction('images', 'readwrite');
+      tx.objectStore('images').delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch { /* nothing stored */ }
+}
+
+/** Does a key exist in storage? */
+export async function hasBlob(key) {
+  if (memBlobs.has(key)) return true;
+  try {
+    const d = await db();
+    return await new Promise((resolve) => {
+      const req = d.transaction('images').objectStore('images').count(key);
+      req.onsuccess = () => resolve(req.result > 0);
+      req.onerror = () => resolve(false);
+    });
+  } catch { return false; }
 }
 
 export async function getBlob(key) {

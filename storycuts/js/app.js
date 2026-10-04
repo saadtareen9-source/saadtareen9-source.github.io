@@ -11,7 +11,7 @@ import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, s
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
 import {
-  IMAGE_MODELS, STYLES, modelInfo, storageProblem, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
+  IMAGE_MODELS, STYLES, modelInfo, storageProblem, deleteBlobs, hasBlob, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
@@ -201,26 +201,50 @@ function storageKey() {
 function save() {
   const p = state.project;
   if (!p) return;
+  indexProject();
   store.set(storageKey(), {
     v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx,
     segments: p.segments, settings: p.settings, approved: p.approved,
   });
 }
 
+const editState = (p) => JSON.stringify({ words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx, segments: p.segments, approved: p.approved, settings: p.settings });
+
+function syncUndoButtons() {
+  $('#btn-undo').disabled = !state.history.length;
+  $('#btn-redo').disabled = !state.future?.length;
+}
+
 function snapshot() {
-  const p = state.project;
-  state.history.push(JSON.stringify({ words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx, segments: p.segments, approved: p.approved }));
+  state.history.push(editState(state.project));
   if (state.history.length > 60) state.history.shift();
-  $('#btn-undo').disabled = false;
+  state.future = [];
+  syncUndoButtons();
+}
+
+function restore(snap) {
+  Object.assign(state.project, JSON.parse(snap));
+  save();
+  refresh();
+  if (state.step === 5) { renderSoundPane(); renderTextPane(); drawPreview(); }
 }
 
 function undo() {
   const snap = state.history.pop();
   if (!snap) return;
-  Object.assign(state.project, JSON.parse(snap));
-  $('#btn-undo').disabled = !state.history.length;
-  refresh();
+  (state.future ||= []).push(editState(state.project));
+  restore(snap);
+  syncUndoButtons();
   toast('Undone');
+}
+
+function redo() {
+  const snap = state.future?.pop();
+  if (!snap) return;
+  state.history.push(editState(state.project));
+  restore(snap);
+  syncUndoButtons();
+  toast('Redone');
 }
 
 function edit(fn) {
@@ -229,6 +253,124 @@ function edit(fn) {
   save();
   refresh();
 }
+
+// ---------- your projects (saved on this device) ----------
+const PROJ_INDEX = 'storycuts:projects';
+const projectList = () => store.get(PROJ_INDEX, []).filter((x) => x && x.key);
+
+function indexProject() {
+  const p = state.project;
+  if (!p || !state.file) return;
+  const key = storageKey();
+  const list = projectList().filter((x) => x.key !== key);
+  const first = p.segments.find((sg) => sg.image?.key) || p.characters.find((c) => c.image?.key);
+  const prev = projectList().find((x) => x.key === key) || {};
+  list.unshift({
+    ...prev, key, name: state.file.name, size: state.file.size, title: p.title !== 'My story' ? p.title : state.file.name.replace(/\.[^.]+$/, ''),
+    duration: p.duration, updated: Date.now(), approved: !!p.approved, style: p.settings.style,
+    thumb: first?.image?.key || null, shots: p.segments.length,
+  });
+  store.set(PROJ_INDEX, list.slice(0, 40));
+  clearTimeout(indexProject.t);
+  indexProject.t = setTimeout(renderProjects, 300);
+}
+
+/** Keep a copy of the source video so the project can be reopened later. */
+async function keepVideo(file) {
+  const key = `${storageKey()}/video`;
+  if (file.size > 1.5e9 || await hasBlob(key)) return;
+  try {
+    const est = await navigator.storage?.estimate?.();
+    if (est && est.quota - est.usage < file.size * 1.3) return;
+    await navigator.storage?.persist?.();
+  } catch { /* estimate not supported */ }
+  if (await putBlob(key, file, { quiet: true })) renderProjects();
+}
+
+/** A small cover frame for the project card. */
+async function grabPoster(video) {
+  const key = storageKey();
+  if (projectList().find((x) => x.key === key)?.poster) return;
+  try {
+    const t0 = video.currentTime;
+    await new Promise((r) => { video.addEventListener('seeked', r, { once: true }); video.currentTime = Math.min(1, video.duration / 3); setTimeout(r, 1500); });
+    const c = document.createElement('canvas');
+    c.width = 180; c.height = 225;
+    const sc = Math.max(c.width / video.videoWidth, c.height / video.videoHeight);
+    c.getContext('2d').drawImage(video, (c.width - video.videoWidth * sc) / 2, (c.height - video.videoHeight * sc) / 2, video.videoWidth * sc, video.videoHeight * sc);
+    const poster = c.toDataURL('image/jpeg', 0.7);
+    video.currentTime = t0;
+    store.set(PROJ_INDEX, projectList().map((x) => (x.key === key ? { ...x, poster } : x)));
+    renderProjects();
+  } catch { /* cosmetic */ }
+}
+
+const ago = (ts) => {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
+  return new Date(ts).toLocaleDateString();
+};
+
+async function renderProjects() {
+  const list = projectList();
+  $('#projects').hidden = !list.length;
+  if (!list.length) return;
+  const saved = await Promise.all(list.map((x) => hasBlob(`${x.key}/video`)));
+  $('#proj-row').innerHTML = list.map((x, i) => `
+    <div class="proj-card" data-key="${esc(x.key)}" role="button" tabindex="0">
+      <div class="proj-thumb" style="--t1:${STYLES[x.style]?.tint?.[0] || '#2a2140'};--t2:${STYLES[x.style]?.tint?.[1] || '#1a1428'}">
+        ${x.thumb ? '<img alt="">' : x.poster ? `<img class="poster" src="${x.poster}" alt="">` : ''}
+        <span class="proj-badge ${x.approved ? 'ed' : ''}">${x.approved ? 'In editor' : 'Draft'}</span>
+        <span class="proj-dur">${fmtTime(x.duration || 0)}</span>
+      </div>
+      <div class="proj-meta">
+        <b>${esc(x.title || x.name)}</b>
+        <small>${ago(x.updated)}${saved[i] ? '' : ' · video not saved'}</small>
+      </div>
+      <button class="proj-del" data-del="${esc(x.key)}" aria-label="Delete project" title="Delete">${icon('trash')}</button>
+    </div>`).join('');
+  $$('#proj-row .proj-card').forEach((card, i) => {
+    const img = card.querySelector('img:not(.poster)');
+    if (img && list[i].thumb) fillImg(img, list[i].thumb);
+  });
+}
+
+async function openProject(key) {
+  const x = projectList().find((p) => p.key === key);
+  if (!x) return;
+  const blob = await getBlob(`${key}/video`);
+  if (!blob) {
+    toast(`This project's video isn't saved on this device. Choose "${x.name}" again to reopen it.`, 6000);
+    $('#rights').checked = true;
+    $('#file').click();
+    return;
+  }
+  await loadFile(new File([blob], x.name, { type: blob.type || 'video/mp4' }), { reopen: true });
+}
+
+$('#proj-row').addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    e.stopPropagation();
+    const key = del.dataset.del;
+    const x = projectList().find((p) => p.key === key);
+    if (!confirm(`Delete "${x?.title || x?.name}" and its pictures from this device?`)) return;
+    store.set(PROJ_INDEX, projectList().filter((p) => p.key !== key));
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+    await deleteBlobs(`${key}/`);
+    if (state.file && key === storageKey()) { location.reload(); return; }
+    renderProjects();
+    toast('Project deleted.');
+    return;
+  }
+  const card = e.target.closest('.proj-card');
+  if (card) { card.classList.add('opening'); await openProject(card.dataset.key); card.classList.remove('opening'); }
+});
+$('#proj-row').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.closest('.proj-card')?.click(); });
+$$('[data-projects]').forEach((a) => a.addEventListener('click', () => { if (!editorOpen()) goStep(1, { scroll: false }); }));
 
 function defaultSettings() {
   return {
@@ -248,6 +390,7 @@ function loadProject(duration) {
   state.peaks = undefined;
   faceThumbs.clear();
   state.history = [];
+  state.future = [];
   state.selected = null;
   state.cache = {};
   if (saved && Math.abs((saved.duration || 0) - duration) < 0.5) {
@@ -375,10 +518,10 @@ function renderPipeline() {
 
 // ---------- step 1: upload ----------
 
-async function loadFile(file) {
+async function loadFile(file, { reopen = false } = {}) {
   if (!file) return;
   if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v|mkv)$/i.test(file.name)) { toast('That doesn\'t look like a video file.'); return; }
-  if (!$('#rights').checked) {
+  if (!reopen && !$('#rights').checked) {
     toast('Please tick the box confirming you have the rights to this video.');
     $('#rights').closest('.check').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 300 });
     $('#file').value = '';
@@ -400,6 +543,9 @@ async function loadFile(file) {
   state.stages = {};
   showFileChip(`${icon('film')} ${esc(file.name)}`, fmtTime(video.duration), `${video.videoWidth}×${video.videoHeight}`);
   loadProject(video.duration);
+  save();
+  keepVideo(file);
+  grabPoster(video);
   if (video.duration > 600) toast('Long video: StoryCuts works best on stories under 5 minutes.', 6000);
   setTimeout(() => goStep(state.project.approved ? 5 : 2), 500);
 }
@@ -1596,8 +1742,14 @@ $('#ed-close').addEventListener('click', () => goStep(4));
 $('#ed-export').addEventListener('click', () => showTab('export'));
 window.addEventListener('resize', () => { if (state.step === 5) setFullEditor(true); });
 document.addEventListener('keydown', (e) => {
-  if (!document.body.classList.contains('ed-app') || e.target.closest('input, textarea, select')) return;
-  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  if (!editorOpen() || e.target.closest('input, textarea, select, [contenteditable]')) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.code === 'Space') { e.preventDefault(); if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur(); togglePlay(); }
+  else if (mod && e.code === 'KeyZ') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+  else if (mod && e.code === 'KeyY') { e.preventDefault(); redo(); }
+  else if (!mod && !e.altKey && e.code === 'KeyS') { e.preventDefault(); splitAtPlayhead(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); nextCut(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); nextCut(-1); }
 });
 
 function showTab(name, { open = true } = {}) {
@@ -1867,8 +2019,24 @@ function splitAtPlayhead() {
     p.segments.splice(i + 1, 0, copy);
     state.selected = copy.id;
   });
+  renderInspector();
+  toast(`Split into two shots at ${fmtTC(now)}. Change either one in Edit.`);
+}
+
+/** Move the playhead to the start of the next shot. */
+function nextCut(dir = 1) {
+  const p = state.project;
+  if (!p?.segments.length || !state.media) return;
+  const t = state.media.time;
+  const seg = dir > 0 ? p.segments.find((sg) => sg.start > t + 0.05) : [...p.segments].reverse().find((sg) => sg.start < t - 0.3);
+  if (!seg) return;
+  state.selected = seg.id;
+  renderTimeline(); renderInspector();
+  seekTo(seg.start + 0.02);
 }
 $('#btn-split').addEventListener('click', splitAtPlayhead);
+$('#btn-snap').addEventListener('click', () => nextCut(1));
+$('#btn-redo').addEventListener('click', redo);
 
 function renderTranscript() {
   const p = state.project;
@@ -2125,8 +2293,6 @@ $('#btn-keys').addEventListener('click', openSettings);
 $('#btn-undo').addEventListener('click', undo);
 document.addEventListener('keydown', (e) => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !typing) { e.preventDefault(); undo(); }
-  if (e.key === ' ' && state.project?.approved && !typing && document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); togglePlay(); }
   if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && state.selectedFx && state.project) {
     e.preventDefault(); snapshot();
     state.project.sfx = state.project.sfx.filter((x) => x.id !== state.selectedFx);
@@ -2352,6 +2518,7 @@ renderPlans();
 document.fonts?.ready.then(() => $$('.period').forEach(movePeriodThumb));
 
 goStep(1, { scroll: false });
+renderProjects();
 renderStyles();
 loadStyleManifest().then(() => { renderStyles(); renderMarquee(); });
 loadSfxManifest();
