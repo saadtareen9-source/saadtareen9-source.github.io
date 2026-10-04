@@ -123,9 +123,18 @@ export function normalizeScene(scene, characters, report = [], segIndex = null) 
   let sfx = String(s.sound_effect || '').trim().replace(/[^\p{L}\p{N}!?' -]/gu, '');
   if (sfx.length > 12) { sfx = sfx.split(/\s+/)[0].slice(0, 12); note('sfx', 'Trimmed a long sound effect.'); }
 
-  const image_prompt = String(s.image_prompt || '').trim().slice(0, 900);
+  const image_prompt = String(s.image_prompt || '').trim().slice(0, 1200);
   const location_id = slug(s.location_id || '') === 'char' ? '' : slug(s.location_id || '');
-  return { image_prompt, location_id, setting, actors, props, effects, sound_effect: sfx };
+  const moment = String(s.moment || '').trim().slice(0, 400);
+  // someone can't be both in the room and somewhere else: being elsewhere wins
+  let offscreen = [...new Set((s.offscreen || []).filter((id) => ids.includes(id)))];
+  if (offscreen.length) {
+    const kept = actors.filter((a) => !offscreen.includes(a.character_id));
+    if (kept.length && kept.length < actors.length) { actors = kept; note('presence', 'Removed someone from a scene they are not physically in.'); }
+    const inFrame = new Set(actors.map((a) => a.character_id));
+    offscreen = offscreen.filter((id) => !inFrame.has(id));
+  }
+  return { moment, image_prompt, location_id, offscreen, setting, actors, props, effects, sound_effect: sfx };
 }
 
 /**

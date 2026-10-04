@@ -421,7 +421,7 @@ Fail the image if any of these are true:
 - wrong finger count: look closely at EVERY visible hand, one at a time, and count the fingers including the thumb. More than five, fewer than four, or fingers that merge or branch is an automatic fail with score 4 or lower, however good the rest is. (A clean four-finger cartoon hand is fine in very simple cartoon styles.)
 - any visible text, letters, numbers, captions, speech bubbles, logos or watermarks
 - a character doesn't match their reference image (hair, clothing colour, accessories, proportions)
-- the wrong cast: a main character missing, or unexplained extra people in focus
+- the wrong cast: a character listed for the picture is missing, someone the brief says is not in this place appears (for example a friend who is only texting shows up in the room), or unexplained extra people are in focus
 - the image doesn't show the moment described in the brief, or the emotion is wrong
 - the art style differs from the style described in the brief or from the reference images (palette, line work, rendering, level of detail)
 - it looks sloppy: smudged or melted details, unfinished areas, muddy colours, warped perspective, garbled background objects
@@ -517,15 +517,24 @@ export async function generateCharacterImage(project, ch, { keys, opts, projectK
  * in the scene description, so nobody is drawn without their reference image.
  */
 export function sceneCast(project, seg, note = '') {
-  const text = `${seg.scene?.image_prompt || ''} ${note}`;
+  // Only people physically in the shot. Names in the scene text can belong to
+  // someone who is only texting or being talked about, so they don't count;
+  // a name in the creator's own change request does.
+  const away = new Set(seg.scene?.offscreen || []);
   const named = project.characters.filter((c) => {
     const n = (c.name || '').trim();
-    if (!n) return false;
+    if (!n || !note) return false;
     const re = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}('s)?\\b`, 'i');
-    return re.test(text);
+    return re.test(note);
   }).map((c) => c.id);
-  const ids = [...new Set([...(seg.scene?.actors || []).map((a) => a.character_id), ...named])];
+  const ids = [...new Set([...(seg.scene?.actors || []).map((a) => a.character_id), ...named])].filter((id) => !away.has(id) || named.includes(id));
   return ids.map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);
+}
+
+/** People involved in the moment who are somewhere else and must not be drawn. */
+export function sceneAbsent(project, seg, cast) {
+  const inShot = new Set(cast.map((c) => c.id));
+  return (seg.scene?.offscreen || []).filter((id) => !inShot.has(id)).map((id) => project.characters.find((c) => c.id === id)).filter(Boolean);
 }
 
 /** The best already-drawn image of the same location, to keep places consistent. */
@@ -547,7 +556,10 @@ export async function generateSceneImage(project, seg, { keys, opts, projectKey,
   const styleRef = await styleRefPart(project.settings);
   const bubbleNote = seg.type === 'scene_bubble' && project.settings.faceMode === 'bubble'
     ? `Keep the ${project.settings.bubbleSide === 'left' ? 'top-left' : 'top-right'} corner free of important detail (a face overlay goes there).` : '';
-  const brief = `${sceneBrief(project, seg)}${loc ? ` Location: ${loc.name}: ${loc.description}` : ''}${note ? ` Creator's request: ${note}` : ''}${cast.length ? ` Characters who must appear and match their reference images exactly: ${cast.map((c) => c.name).join(', ')}.` : ''}`;
+  const absent = sceneAbsent(project, seg, cast);
+  const brief = `${sceneBrief(project, seg)}${loc ? ` Location: ${loc.name}: ${loc.description}` : ''}${note ? ` Creator's request: ${note}` : ''}`
+    + `${cast.length ? ` The only people in this picture: ${cast.map((c) => c.name).join(', ')} (match their reference images exactly). Do not add anyone else.` : ''}`
+    + `${absent.length ? ` Not in this place, do not draw them: ${absent.map((c) => c.name).join(', ')} (they are somewhere else, e.g. only on the phone).` : ''}`;
   const buildParts = (hints) => {
     const parts = [{
       text: `${style.text}\n\nScene: ${brief}\n\nCharacters in this scene: ${cast.map(characterBrief).join(' ')}\n`
