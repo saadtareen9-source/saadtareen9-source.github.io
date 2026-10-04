@@ -1603,3 +1603,7 @@ body.ed-full .tbtn span { white-space: nowrap; }
 .clip.anim::after { background: rgba(0, 0, 0, 0.6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 7v10l8-5z' fill='white'/%3E%3C/svg%3E") center / 12px no-repeat; }
 .clip.animating::after { border: 2px solid #f0abfc; border-right-color: transparent; animation: spin 0.9s linear infinite; }
 .clip.animating .thumbs { animation: pulse 1.6s ease-in-out infinite; }
+.choices button.unavailable { opacity: 0.55; cursor: not-allowed; }
+.choices button.unavailable:hover { transform: none; border-color: var(--line); background: rgba(255, 255, 255, 0.03); }
+.choices button.unavailable .ct small { color: #fcd34d; }
+.style-card .still-tag { position: absolute; top: 12px; right: 12px; z-index: 5; padding: 4px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fde68a; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; }

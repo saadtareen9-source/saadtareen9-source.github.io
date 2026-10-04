@@ -7,6 +7,9 @@
 import { callClaude } from './planner.js';
 
 // Prices are rough estimates per image for the cost preview.
+/** Can scenes in this style be animated? (Photo-real styles get refused by video models.) */
+export const canAnimate = (settings) => !STYLES[settings?.style]?.stillOnly;
+
 export const IMAGE_MODELS = [
   { id: 'gpt-image-2', provider: 'openai', quality: 'medium', label: 'OpenAI GPT Image 2: about $0.05 per image', price: 0.05 },
   { id: 'gpt-image-2@high', provider: 'openai', quality: 'high', label: 'OpenAI GPT Image 2, high quality: about $0.15 per image', price: 0.15 },
@@ -50,6 +53,8 @@ export const STYLES = {
   realistic: {
     label: 'Realistic',
     blurb: 'Cinematic, photo-real scenes',
+    // video models usually refuse to animate photo-real people
+    stillOnly: true,
     tint: ['#cbd5e1', '#fcd34d'],
     avoid: 'cartoon or illustrated look, plastic skin, over-smoothed faces, extra fingers, distorted hands, uncanny eyes, over-saturated HDR',
     prompt: 'Cinematic photorealistic film still, natural lighting, realistic people and places, 35mm lens, shallow depth of field, subtle film grain, emotionally expressive faces.',
