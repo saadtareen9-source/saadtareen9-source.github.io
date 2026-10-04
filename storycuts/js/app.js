@@ -2025,6 +2025,29 @@ function renderMarquee() {
   $('#marquee-row').style.setProperty('--mq-count', items.length);
 }
 
+// hero phone: her clip plays, and the middle of each loop cuts to a drawn scene
+(function heroCuts() {
+  const v = $('#hero-talk');
+  const screen = v?.closest('.phone-screen');
+  if (!v || !screen) return;
+  const inCut = (t) => t > 3.4 && t < 6.2;
+  let usingClock = false;
+  const tick = () => {
+    if (!usingClock) screen.classList.toggle('cut', inCut(v.currentTime));
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  // if the browser won't autoplay (e.g. iPhone low power mode), still show the cut
+  setTimeout(() => {
+    if (!v.paused && v.currentTime > 0) return;
+    usingClock = true;
+    let t = 0;
+    setInterval(() => { t = (t + 0.5) % 7; screen.classList.toggle('cut', inCut(t)); }, 500);
+  }, 2500);
+  // save battery: pause when the hero is off screen
+  new IntersectionObserver(([en]) => { if (en.isIntersecting) v.play().catch(() => {}); else v.pause(); }).observe(v);
+}());
+
 // staggered reveal for grids
 $$('.stagger').forEach((g) => [...g.children].forEach((c, i) => c.style.setProperty('--i', i)));
 $('#year').textContent = new Date().getFullYear();
