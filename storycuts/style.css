@@ -1588,3 +1588,18 @@ body.ed-full .zoom { display: none; }
 body.ed-full .transport { grid-template-columns: auto 1fr; }
 body.ed-full .transport-mid { justify-content: flex-end; }
 body.ed-full .tbtn span { white-space: nowrap; }
+
+/* ======================================================================
+   Animated scenes
+   ====================================================================== */
+.choices .rec.new { background: rgba(236, 72, 153, 0.18); color: #f9a8d4; }
+.anim-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); }
+.anim-row.ok { border-color: rgba(240, 171, 252, 0.4); background: linear-gradient(120deg, rgba(139, 92, 246, 0.12), rgba(236, 72, 153, 0.08)); }
+.anim-state { display: inline-flex; align-items: center; gap: 8px; font-size: 0.86rem; font-weight: 600; color: var(--text-2); }
+.anim-state svg { width: 16px; height: 16px; color: #f0abfc; }
+#anim-status:empty { display: none; }
+/* timeline: animated clips get a small play badge; ones in progress shimmer */
+.clip.anim::after, .clip.animating::after { content: ''; position: absolute; top: 6px; left: 6px; z-index: 3; width: 16px; height: 16px; border-radius: 50%; }
+.clip.anim::after { background: rgba(0, 0, 0, 0.6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 7v10l8-5z' fill='white'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.clip.animating::after { border: 2px solid #f0abfc; border-right-color: transparent; animation: spin 0.9s linear infinite; }
+.clip.animating .thumbs { animation: pulse 1.6s ease-in-out infinite; }

@@ -3,6 +3,7 @@
 
 import { drawSoundEffect } from './draw.js';
 import { bitmapFor, preloadBitmap } from './images.js';
+import { animReady, animVideo, syncAnim, pauseAnimsExcept, preloadAnim } from './animate.js';
 
 export const ASPECTS = {
   vertical: { w: 1080, h: 1920, label: '9:16 (TikTok, Reels, Shorts)' },
@@ -233,7 +234,13 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
   } else {
     const sfxSide = type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
     const bmp = seg.image?.key ? bitmapFor(seg.image.key, cache.onImage) : null;
-    if (bmp) {
+    const anim = settings.sceneMotion === 'animated' && !seg.still && animReady(seg) ? animVideo(seg.anim.key, cache.onImage) : null;
+    if (anim) {
+      (cache.usedAnims ||= new Set()).add(seg.anim.key);
+      syncAnim(anim, local, !!cache.live);
+      drawVideoCover(ctx, anim, 0, 0, W, H, 0.5, 0.5, 1);
+      drawSoundEffect(ctx, seg.scene.sound_effect, W, H, local, Math.min(W, H) / 1000, sfxSide);
+    } else if (bmp) {
       drawKenBurns(ctx, bmp, W, H, local, dur, idx);
       drawSoundEffect(ctx, seg.scene.sound_effect, W, H, local, Math.min(W, H) / 1000, sfxSide);
     } else {
@@ -335,6 +342,7 @@ function drawPicture(ctx, W, H, t, project, video, cache) {
 
 export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
   const { settings } = project;
+  (cache.usedAnims ||= new Set()).clear();
   const look = settings.filter && settings.filter !== 'none' ? filterCss(settings.filter, settings.filterAmt ?? 1) : '';
   let seg;
   if (look && 'filter' in ctx) {
@@ -357,6 +365,7 @@ export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
     ctx.strokeText('made with StoryCuts', W - fs, H - fs); ctx.fillText('made with StoryCuts', W - fs, H - fs);
     ctx.restore();
   }
+  pauseAnimsExcept(cache.usedAnims);
   return seg;
 }
 
@@ -436,6 +445,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
 
   media.pause();
   await Promise.all(project.segments.filter((sg) => sg.image?.key).map((sg) => preloadBitmap(sg.image.key)));
+  if (project.settings.sceneMotion === 'animated') await Promise.all(project.segments.filter((sg) => animReady(sg) && !sg.still).map((sg) => preloadAnim(sg.anim.key)));
   await media.seek(0);
   drawFrame(ctx, W, H, 0, project, media.el, cache);
 
@@ -464,6 +474,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
     if (t >= project.duration - 0.03) stop();
   };
   await media.play();
+  cache.live = true;
   sfxPlayer?.start(graph, project.sfx || [], 0);
   musicPlayer?.start(graph, project.settings.music, 0, project.duration);
   // a timer (not requestAnimationFrame) so a briefly hidden tab keeps rendering

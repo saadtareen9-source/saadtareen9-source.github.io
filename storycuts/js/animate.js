@@ -1,0 +1,159 @@
+// Animated scenes: bring an approved scene illustration to life with OpenAI's
+// Sora video model (image-to-video), so characters and style stay exactly as
+// drawn. The still image is always kept as a fallback.
+
+import { getBlob, putBlob } from './images.js';
+
+// Prices are per second of generated video; check platform.openai.com/docs/pricing.
+export const VIDEO_MODELS = [
+  { id: 'sora-2', label: 'Sora 2 (recommended)', perSec: 0.1 },
+  { id: 'sora-2-pro', label: 'Sora 2 Pro (sharper, slower, 3x price)', perSec: 0.3 },
+];
+export const videoModelInfo = (id) => VIDEO_MODELS.find((m) => m.id === id) || VIDEO_MODELS[0];
+
+/** Clip length to generate for a shot (Sora makes 4, 8 or 12 second clips). */
+export const clipSeconds = (shotLen) => (shotLen > 5.5 ? 8 : 4);
+
+export function estimateAnimCost(segs, modelId) {
+  const m = videoModelInfo(modelId);
+  return segs.reduce((sum, sg) => sum + clipSeconds(sg.end - sg.start) * m.perSec, 0);
+}
+
+/** Is this shot's animation usable (made from the current picture)? */
+export const animReady = (seg) => !!(seg.anim?.key && seg.anim.from === seg.image?.key);
+
+const SIZES = { '9:16': [720, 1280], '16:9': [1280, 720] };
+
+/** Sora wants the first frame at exactly the output size. */
+async function firstFrame(blob, [W, H]) {
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const s = Math.max(W / bmp.width, H / bmp.height);
+  g.drawImage(bmp, (W - bmp.width * s) / 2, (H - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+  bmp.close?.();
+  return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
+}
+
+function motionPrompt(project, seg) {
+  const sc = seg.scene || {};
+  const names = (sc.actors || []).map((a) => project.characters.find((c) => c.id === a.character_id)?.name).filter(Boolean);
+  return [
+    'Animate this exact illustration as one short, continuous cartoon shot. The image is the first frame: keep the same art style, line work, colours, characters, outfits, background and framing throughout.',
+    `What happens: ${sc.image_prompt || 'the characters react to the moment'}`,
+    sc.moment ? `Context: ${sc.moment}` : '',
+    `Motion: ${names.length ? `${names.join(' and ')} move` : 'the characters move'} naturally and expressively to act out this moment: gestures, facial expressions, small body movements, things in the scene reacting (steam, flames, a phone buzzing). A gentle, slow camera push-in at most.`,
+    'Do not add new people, cut to another shot, change anyone\'s design, or show any text, captions or speech bubbles. No talking mouths needed; the creator\'s voice is added later.',
+  ].filter(Boolean).join('\n');
+}
+
+async function api(apiKey, path, init = {}) {
+  let res;
+  for (let attempt = 0; attempt <= 5; attempt++) {
+    res = await fetch(`https://api.openai.com/v1${path}`, { ...init, headers: { authorization: `Bearer ${apiKey}`, ...(init.headers || {}) } });
+    if (res.status !== 429 && res.status < 500) break;
+    const body = await res.clone().json().catch(() => ({}));
+    if (body?.error?.code === 'insufficient_quota' || attempt === 5) break;
+    const wait = Number(res.headers.get('retry-after')) || Math.min(60, 5 * 2 ** attempt);
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
+  return res;
+}
+
+async function apiError(res) {
+  const json = await res.json().catch(() => ({}));
+  const msg = json?.error?.message || `HTTP ${res.status}`;
+  if (res.status === 401) return new Error('Your OpenAI API key was rejected. Check it in Settings.');
+  if (res.status === 404 || /model/i.test(msg) && /access|exist|found/i.test(msg)) return new Error(`OpenAI says: ${msg} (your account may not have Sora video access yet).`);
+  if (/verif/i.test(msg)) return new Error(`OpenAI says: ${msg} (video models may require verifying your organization at platform.openai.com → Settings → Organization).`);
+  if (/billing|quota|insufficient/i.test(msg)) return new Error(`OpenAI says: ${msg} (add credit at platform.openai.com → Billing).`);
+  if (/moderation|safety|policy|face/i.test(msg)) return new Error('OpenAI\'s safety filter declined to animate this picture. The still picture is used instead.');
+  return new Error(`Video model error: ${msg}`);
+}
+
+/**
+ * Animate one scene. Resolves to { key, dur, model, from } stored on the
+ * segment as `seg.anim`. Takes one to a few minutes.
+ */
+export async function animateScene(apiKey, project, seg, { model = 'sora-2', aspect = '9:16', projectKey, onStatus = () => {}, signal } = {}) {
+  if (!seg.image?.key) throw new Error('Draw the picture for this scene first.');
+  const still = await getBlob(seg.image.key);
+  if (!still) throw new Error('The picture for this scene is missing. Redraw it first.');
+  const size = SIZES[aspect] || SIZES['9:16'];
+  const seconds = clipSeconds(seg.end - seg.start);
+  const form = new FormData();
+  form.append('model', model);
+  form.append('prompt', motionPrompt(project, seg));
+  form.append('size', `${size[0]}x${size[1]}`);
+  form.append('seconds', String(seconds));
+  form.append('input_reference', await firstFrame(still, size), 'first-frame.jpg');
+  onStatus('Starting animation…');
+  const created = await api(apiKey, '/videos', { method: 'POST', body: form });
+  if (!created.ok) throw await apiError(created);
+  let job = await created.json();
+  const t0 = Date.now();
+  while (job.status !== 'completed') {
+    if (signal?.stop) throw new Error('stopped');
+    if (job.status === 'failed' || job.status === 'cancelled') throw new Error(`Animation failed: ${job.error?.message || 'the video model could not animate this scene'}`);
+    if (Date.now() - t0 > 15 * 60 * 1000) throw new Error('Animation took too long. Try again later.');
+    onStatus(`Animating… ${Math.round(job.progress || 0)}%`);
+    await new Promise((r) => setTimeout(r, 5000));
+    const r = await api(apiKey, `/videos/${job.id}`);
+    if (!r.ok) throw await apiError(r);
+    job = await r.json();
+  }
+  onStatus('Downloading animation…');
+  const vid = await api(apiKey, `/videos/${job.id}/content`);
+  if (!vid.ok) throw await apiError(vid);
+  const blob = await vid.blob();
+  const key = `${projectKey}/anim/${seg.id}-${Date.now().toString(36)}`;
+  await putBlob(key, blob.type ? blob : new Blob([blob], { type: 'video/mp4' }));
+  return { key, dur: seconds, model, from: seg.image.key };
+}
+
+// ---------- playback ----------
+
+const players = new Map();
+
+/** A muted <video> for an animation, created on first use. Null until it can draw. */
+export function animVideo(key, onReady) {
+  let p = players.get(key);
+  if (!p) {
+    p = { v: null, ready: false };
+    players.set(key, p);
+    getBlob(key).then((blob) => {
+      if (!blob) return;
+      const v = document.createElement('video');
+      Object.assign(v, { muted: true, playsInline: true, preload: 'auto', loop: false });
+      v.src = URL.createObjectURL(blob);
+      v.addEventListener('loadeddata', () => { p.ready = true; onReady?.(); }, { once: true });
+      p.v = v;
+    });
+  }
+  return p.ready ? p.v : null;
+}
+
+export function preloadAnim(key) {
+  return new Promise((resolve) => {
+    if (animVideo(key, resolve)) resolve();
+    setTimeout(resolve, 5000);
+  });
+}
+
+/** Keep an animation in step with the timeline: play along when live, seek when scrubbing. */
+export function syncAnim(v, local, live) {
+  const t = Math.max(0, Math.min(local, (v.duration || 4) - 0.04));
+  if (live) {
+    if (local < v.duration - 0.05 && v.paused) v.play().catch(() => {});
+    if (Math.abs(v.currentTime - t) > 0.25) v.currentTime = t;
+  } else {
+    if (!v.paused) v.pause();
+    if (Math.abs(v.currentTime - t) > 0.03) v.currentTime = t;
+  }
+}
+
+/** Pause every animation not drawn in the current frame. */
+export function pauseAnimsExcept(used) {
+  for (const [key, p] of players) if (p.v && !used.has(key) && !p.v.paused) p.v.pause();
+}

@@ -7,6 +7,9 @@ import {
 import {
   BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
 } from './billing.js';
+import {
+  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady,
+} from './animate.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
@@ -147,6 +150,7 @@ function settingsGet() {
     openai: store.get('storycuts:okey', ''),
     imageModel: store.get('storycuts:imodel', IMAGE_MODELS[0].id),
     qc: store.get('storycuts:qc', true),
+    videoModel: store.get('storycuts:vmodel', VIDEO_MODELS[0].id),
   };
 }
 
@@ -166,6 +170,8 @@ function openSettings() {
   $('#image-model').innerHTML = IMAGE_MODELS.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
   $('#image-model').value = s.imageModel;
   $('#opt-qc').checked = s.qc;
+  $('#video-model').innerHTML = VIDEO_MODELS.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
+  $('#video-model').value = s.videoModel;
   $('#settings').showModal();
   setTimeout(() => (s.key ? (s.openai ? null : $('#openai-key')) : $('#api-key'))?.focus(), 50);
 }
@@ -178,6 +184,7 @@ $('#settings').addEventListener('close', () => {
   store.set('storycuts:okey', $('#openai-key').value.trim());
   store.set('storycuts:imodel', $('#image-model').value);
   store.set('storycuts:qc', $('#opt-qc').checked);
+  store.set('storycuts:vmodel', $('#video-model').value);
   updateKeysDot();
   if (state.project) { updateCosts(); renderChars(); }
   toast(keysReady() ? 'Keys saved. You\'re ready to create.' : 'Saved. You still need both a Claude and an OpenAI key.');
@@ -380,7 +387,7 @@ function defaultSettings() {
     pacing: 'balanced',
     castHints: [],
     captions: true, captionStyle: { upper: true, preset: 'bold', pos: 'low', size: 1, highlight: '#ffd60a' }, punchIn: true,
-    filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
+    filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], sceneMotion: 'still', faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
 }
 
@@ -817,6 +824,7 @@ function syncOptionsUI() {
   $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === state.aspect));
   $$('#seg-face button').forEach((b) => b.classList.toggle('on', b.dataset.face === (s.faceMode || 'full')));
   $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'balanced')));
+  $$('#seg-motion button').forEach((b) => b.classList.toggle('on', b.dataset.motion === (s.sceneMotion || 'still')));
   $('#opt-captions').checked = !!s.captions;
   $('#opt-upper').checked = !!s.captionStyle?.upper;
   $('#opt-punch').checked = !!s.punchIn;
@@ -843,6 +851,15 @@ $$('#seg-face button').forEach((b) => b.addEventListener('click', () => {
   refresh();
 }));
 
+$$('#seg-motion button').forEach((b) => b.addEventListener('click', () => {
+  if (!state.project) return;
+  state.project.settings.sceneMotion = b.dataset.motion;
+  save();
+  $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x === b));
+  updateCosts(); drawPreview();
+  if (b.dataset.motion === 'animated') toast(`Animated scenes: each picture becomes a short clip, about ${fmtUSD(videoModelInfo(settingsGet().videoModel).perSec * 4)} to ${fmtUSD(videoModelInfo(settingsGet().videoModel).perSec * 8)} per scene.`, 5000);
+}));
+
 $$('#seg-pacing button').forEach((b) => b.addEventListener('click', () => {
   if (!state.project) return;
   state.project.settings.pacing = b.dataset.pacing;
@@ -862,7 +879,7 @@ function renderSummary() {
   const row = (ico, label, value, back) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}">Change</button></div>`;
   $('#create-summary').innerHTML = [
     row(st.thumb ? `<img src="${esc(st.thumb)}" alt="">` : icon('palette'), 'Style', st.label + (s.styleNotes?.trim() ? ' + your details' : ''), 2),
-    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}`, 3),
+    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}${s.sceneMotion === 'animated' ? ' · animated' : ''}`, 3),
     row(icon('user'), 'Video', state.file ? state.file.name : 'Demo story', 1),
   ].join('');
 }
@@ -993,19 +1010,27 @@ function updateCosts() {
   const shots = p.segments.length ? p.segments.filter((sg) => sg.type !== 'face').length : Math.max(4, Math.round(p.duration / 5));
   const chars = p.characters.length || 3;
   const imgs = estimateImageCost(shots + chars, s, s.qc && !!s.key);
-  $('#create-cost').textContent = `Estimated cost about ${fmtUSD(plan + imgs)}, paid to your own AI accounts.`;
+  const animated = p.settings.sceneMotion === 'animated';
+  const animEst = animated ? (p.segments.length ? estimateAnimCost(sceneSegs(), s.videoModel) : shots * 5 * videoModelInfo(s.videoModel).perSec) : 0;
+  $('#create-cost').textContent = `Estimated cost about ${fmtUSD(plan + imgs + animEst)}${animated ? ' with animated scenes' : ''}, paid to your own AI accounts.`;
   if (p.approved) {
     const todo = sceneSegs().filter(needsImage).length;
-    const drawing = !!state.genAbort;
-    $('#dc-title').textContent = drawing ? 'Drawing your scenes' : todo ? 'Scenes to draw' : 'All scenes drawn';
-    $('#scenes-cost').textContent = drawing ? `${state.genDone || 0} of ${state.genTotal} done` : todo ? `${todo} scene${todo === 1 ? '' : 's'} · about ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key))}` : `${sceneSegs().length} scenes, ready to watch`;
-    $('#draw-card').classList.toggle('busy', drawing);
-    $('#draw-card').classList.toggle('done', !drawing && !todo);
+    const animTodo = animated && !todo ? animSegs().length : 0;
+    const busy = !!state.genAbort;
+    const animating = busy && state.genMode === 'animate';
+    $('#dc-title').textContent = busy ? (animating ? 'Animating your scenes' : 'Drawing your scenes') : todo ? 'Scenes to draw' : animTodo ? 'Scenes to animate' : animated ? 'All scenes animated' : 'All scenes drawn';
+    $('#scenes-cost').textContent = busy ? `${state.genDone || 0} of ${state.genTotal} done${animating ? ' · about a minute each' : ''}`
+      : todo ? `${todo} scene${todo === 1 ? '' : 's'} · about ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key) + (animated ? estimateAnimCost(sceneSegs().filter(needsImage), s.videoModel) : 0))}${animated ? ' incl. animation' : ''}`
+        : animTodo ? `${animTodo} scene${animTodo === 1 ? '' : 's'} · about ${fmtUSD(estimateAnimCost(animSegs(), s.videoModel))}`
+          : `${sceneSegs().length} scenes, ready to watch`;
+    $('#draw-card').classList.toggle('busy', busy);
+    $('#draw-card').classList.toggle('done', !busy && !todo && !animTodo);
     const btn = $('#btn-gen-scenes');
-    btn.classList.toggle('primary', !drawing && !!todo);
-    btn.classList.toggle('glass', drawing || !todo);
-    btn.querySelector('svg use').setAttribute('href', drawing ? '#i-close' : todo ? '#i-spark' : '#i-redo');
-    btn.querySelector('span').textContent = drawing ? 'Stop' : todo ? `Draw ${todo === 1 ? 'it' : 'all'}` : 'Redraw all';
+    const pending = todo || animTodo;
+    btn.classList.toggle('primary', !busy && !!pending);
+    btn.classList.toggle('glass', busy || !pending);
+    btn.querySelector('svg use').setAttribute('href', busy ? '#i-close' : pending ? '#i-spark' : '#i-redo');
+    btn.querySelector('span').textContent = busy ? 'Stop' : todo ? `Draw ${todo === 1 ? 'it' : 'all'}` : animTodo ? `Animate ${animTodo === 1 ? 'it' : 'all'}` : 'Redraw all';
   }
 }
 
@@ -1322,6 +1347,47 @@ async function approveAndDraw() {
 
 const sceneSegs = () => state.project.segments.filter((sg) => sg.type !== 'face' && sg.scene);
 const needsImage = (sg) => !sg.image?.key || sg.image.stale;
+/** Scenes that still need an animated clip (animated mode only). */
+const animSegs = () => sceneSegs().filter((sg) => sg.image?.key && !sg.image.stale && !sg.still && !animReady(sg));
+
+async function animateScenes(list) {
+  const s = settingsGet();
+  if (!s.openai) { openSettings(); return; }
+  if (!list.length) return;
+  const ac = { stop: false };
+  state.genAbort = ac;
+  state.genMode = 'animate';
+  state.cache.animating = new Set(list.map((sg) => sg.id));
+  state.genDone = 0; state.genTotal = list.length;
+  updateCosts(); renderTimeline();
+  const bar = $('#gen-progress');
+  bar.classList.remove('hidden');
+  bar.firstElementChild.style.width = '3%';
+  setStatus('#scenes-status', 'Animating takes about a minute per scene. You can keep editing; finished scenes switch to animation as they arrive.');
+  const results = await pool(list, 2, async (sg) => {
+    if (ac.stop) throw new Error('stopped');
+    try {
+      sg.anim = await animateScene(s.openai, state.project, sg, {
+        model: s.videoModel, aspect: state.aspect === 'vertical' ? '9:16' : '16:9', projectKey: storageKey(), signal: ac,
+        onStatus: (m) => { if (sg.id === state.selected) setStatus('#anim-status', m, 'busy'); },
+      });
+      save();
+    } finally {
+      state.cache.animating.delete(sg.id);
+      state.genDone++;
+      bar.firstElementChild.style.width = `${(state.genDone / list.length) * 100}%`;
+      updateCosts(); renderTimeline(); drawPreview();
+      if (sg.id === state.selected) renderInspector();
+    }
+  });
+  state.genAbort = null; state.genMode = null;
+  setTimeout(() => bar.classList.add('hidden'), 600);
+  const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
+  failed.forEach((f) => console.error('StoryCuts animation failed', f.error));
+  if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} animated. ${failed.length} kept as still pictures: ${errText(failed[0].error)}`, 'err');
+  else setStatus('#scenes-status', ac.stop ? 'Stopped.' : '');
+  updateCosts(); renderInspector();
+}
 
 async function generateScenes(list, note = '') {
   if (!hasImageKey()) { openSettings(); return; }
@@ -1369,17 +1435,22 @@ async function generateScenes(list, note = '') {
   if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} drawn, ${failed.length} failed: ${errText(failed[0].error)}`, 'err');
   else if (ac.stop) setStatus('#scenes-status', 'Stopped.');
   else {
-    const notes = [storageProblem ? STORAGE_WARN : '', redrawn ? `${redrawn} redrawn automatically after a quality check.` : '', flagged ? `${flagged} flagged with ⚠: take a look.` : ''].filter(Boolean).join(' ');
+    const notes = [storageProblem ? STORAGE_WARN : '', redrawn ? `${redrawn} redrawn automatically after a quality check.` : '', flagged ? `${flagged} marked "Needs a look".` : ''].filter(Boolean).join(' ');
     setStatus('#scenes-status', notes);
   }
   updateCosts();
   renderInspector();
   renderPipeline();
+  if (!ac.stop && !failed.length && state.project.settings.sceneMotion === 'animated') {
+    const todo = animSegs().filter((sg) => list.includes(sg));
+    if (todo.length) animateScenes(todo);
+  }
 }
 
 $('#btn-gen-scenes').addEventListener('click', () => {
-  if (state.genAbort) { state.genAbort.stop = true; toast('Finishing the images already in progress…'); return; }
+  if (state.genAbort) { state.genAbort.stop = true; toast(state.genMode === 'animate' ? 'Finishing the animations already in progress…' : 'Finishing the images already in progress…'); return; }
   const todo = sceneSegs().filter(needsImage);
+  if (!todo.length && state.project.settings.sceneMotion === 'animated' && animSegs().length) { animateScenes(animSegs()); return; }
   const list = todo.length ? todo : sceneSegs();
   const s = settingsGet();
   if (!hasImageKey(s)) { openSettings(); return; }
@@ -1404,6 +1475,7 @@ function drawPreview() {
   const c = $('#preview');
   const t = Math.min(state.media.time, p.duration - 0.001);
   state.cache.preview = true;
+  state.cache.live = !state.media.paused;
   state.cache.onImage = () => requestAnimationFrame(drawPreview);
   const seg = drawFrame(c.getContext('2d'), c.width, c.height, t, p, state.media.el, state.cache);
   $('#time').textContent = window.innerWidth < 640 ? fmtTC(t) : `${fmtTC(t)} / ${fmtTC(p.duration)}`;
@@ -1541,7 +1613,8 @@ function renderTimeline() {
     const st = type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
     const thumb = type === 'face' ? faceThumb(s.start, tlRefreshSoon) : s.image?.key ? sceneThumb(s.image.key, tlRefreshSoon) : null;
     const sel = s.id === state.selected;
-    return `<div class="clip ${type} ${st} ${sel ? 'sel' : ''}" data-id="${s.id}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
+    const moving = type !== 'face' && p.settings.sceneMotion === 'animated' && !s.still && (animReady(s) ? 'anim' : state.cache.animating?.has(s.id) ? 'animating' : '');
+    return `<div class="clip ${type} ${st} ${moving || ''} ${sel ? 'sel' : ''}" data-id="${s.id}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
       <div class="thumbs" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
       <span class="cap">${type === 'face' ? icon('user') : ''}${esc(shotText(s).split(' ').slice(0, 4).join(' '))}</span>
       ${sel ? `${i > 0 ? '<b class="trim l" data-edge="l"></b>' : ''}${i < p.segments.length - 1 ? '<b class="trim r" data-edge="r"></b>' : ''}` : ''}
@@ -2073,6 +2146,17 @@ function renderInspector() {
       </div>
       ${seg.image?.qc && !seg.image.qc.pass ? `<p class="warn-text">Quality check: ${esc(seg.image.qc.issues.join('; '))}</p>` : ''}
       ${seg.image?.stale ? '<p class="warn-text">You changed this scene since it was drawn. Redraw to update it.</p>' : ''}
+      ${p.settings.sceneMotion === 'animated' && seg.image?.key ? (() => {
+        const busy = state.cache.animating?.has(seg.id);
+        const ok = animReady(seg);
+        const label = seg.still ? 'Using the still picture' : busy ? 'Animating…' : ok ? 'Animated' : 'Not animated yet';
+        return `<div class="anim-row ${ok && !seg.still ? 'ok' : ''}">
+          <span class="anim-state">${icon(ok && !seg.still ? 'play' : 'film')}${label}</span>
+          ${seg.still ? '' : `<button class="btn glass sm" data-act="animate" ${busy || state.genAbort ? 'disabled' : ''}>${icon('spark')}${ok ? 'Re-animate' : 'Animate'}</button>`}
+        </div>
+        <label class="switch"><input type="checkbox" data-k="still" ${seg.still ? 'checked' : ''}><span></span>Use the still picture for this shot</label>
+        <div class="status" id="anim-status"></div>`;
+      })() : ''}
       <label class="field">What the scene shows
         <textarea data-s="image_prompt" rows="3" placeholder="Who is where, doing what, with which expressions">${esc(sc.image_prompt || '')}</textarea>
       </label>
@@ -2151,6 +2235,11 @@ $('#inspector').addEventListener('click', async (e) => {
     edit(() => { const next = p.segments[i + 1]; seg.end = next.end; p.segments.splice(i + 1, 1); });
   } else if (act === 'redraw') {
     generateScenes([seg], $('#redo-note')?.value.trim());
+  } else if (act === 'animate') {
+    if (state.genAbort) { toast('Wait for the current drawing or animation to finish.'); return; }
+    const s = settingsGet();
+    if (animReady(seg) && !confirm(`Animate this scene again? About ${fmtUSD(estimateAnimCost([seg], s.videoModel))}.`)) return;
+    animateScenes([seg]);
   } else if (act === 'redo-ai') {
     const { key, model } = settingsGet();
     if (!key) { openSettings(); return; }
@@ -2169,6 +2258,11 @@ $('#inspector').addEventListener('click', async (e) => {
 });
 
 $('#inspector').addEventListener('change', (e) => {
+  if (e.target.dataset.k === 'still') {
+    const seg = currentSeg();
+    if (seg) { edit(() => { seg.still = e.target.checked; }); renderInspector(); drawPreview(); }
+    return;
+  }
   const seg = currentSeg();
   if (!seg) return;
   const p = state.project;

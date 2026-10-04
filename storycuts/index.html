@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
   <!-- icon sprite -->
@@ -237,6 +237,13 @@
             <button data-pacing="mostly"><span class="ct"><b>Mostly story</b><small>Your intro, then mostly illustrations with quick cuts back to you</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
             <button data-pacing="balanced" class="on"><span class="ct"><b>Balanced <em class="rec">Recommended</em></b><small>About half you on camera, half illustrations</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
             <button data-pacing="story"><span class="ct"><b>Story only</b><small>Illustrations the whole way, your voice over them</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+          </div>
+        </div>
+        <div class="opt-group">
+          <span class="opt-label">Scenes</span>
+          <div class="choices two" id="seg-motion">
+            <button data-motion="still" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Illustrations with a gentle camera move. Fast and included.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="animated"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><span class="ct"><b>Animated scenes <em class="rec new">New</em></b><small>Each picture comes to life as a short animated clip. Slower, costs more.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
@@ -556,6 +563,9 @@
             <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
           </select>
         </label>
+        <label class="field">Animation model <span class="hint">for animated scenes (uses your OpenAI key)</span>
+          <select id="video-model"></select>
+        </label>
         <label class="check"><input type="checkbox" id="opt-qc" checked><span class="box"><svg><use href="#i-check"/></svg></span>Check every image with Claude and redraw bad ones</label>
       </details>
       <div class="modal-foot">
@@ -567,6 +577,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=23"></script>
+  <script type="module" src="js/app.js?v=24"></script>
 </body>
 </html>
