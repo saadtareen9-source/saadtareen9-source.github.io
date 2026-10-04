@@ -14,7 +14,7 @@ import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, s
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
 import {
-  IMAGE_MODELS, STYLES, modelInfo, storageProblem, deleteBlobs, hasBlob, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
+  IMAGE_MODELS, STYLES, canAnimate, modelInfo, storageProblem, deleteBlobs, hasBlob, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
 
 const $ = (s) => document.querySelector(s);
@@ -589,6 +589,7 @@ function renderStyles() {
         ${s.thumb ? `<img src="${esc(s.thumb)}" alt="" onerror="this.remove()">` : ''}
       </span>
       <span class="sel-pill">${icon('check')}Selected</span>
+      ${s.stillOnly ? '<span class="still-tag">Still only</span>' : ''}
       <span class="meta"><b>${esc(s.label)}</b><small>${esc(s.blurb)}</small></span>
     </button>`).join('') + `
     <button class="style-card custom" data-style="custom" role="option" aria-label="Create your own style">
@@ -680,6 +681,8 @@ function selectStyleIndex(i) {
   store.set('storycuts:style', id);
   save();
   syncStyleExtras();
+  syncMotionUI({ announce: true });
+  updateCosts();
   clearTimeout(selectStyleIndex.t);
   if (hadArt) selectStyleIndex.t = setTimeout(() => toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500), 700);
 }
@@ -824,7 +827,7 @@ function syncOptionsUI() {
   $$('#seg-format button, #seg-aspect button').forEach((b) => b.classList.toggle('on', b.dataset.aspect === state.aspect));
   $$('#seg-face button').forEach((b) => b.classList.toggle('on', b.dataset.face === (s.faceMode || 'full')));
   $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'balanced')));
-  $$('#seg-motion button').forEach((b) => b.classList.toggle('on', b.dataset.motion === (s.sceneMotion || 'still')));
+  syncMotionUI();
   $('#opt-captions').checked = !!s.captions;
   $('#opt-upper').checked = !!s.captionStyle?.upper;
   $('#opt-punch').checked = !!s.punchIn;
@@ -851,8 +854,27 @@ $$('#seg-face button').forEach((b) => b.addEventListener('click', () => {
   refresh();
 }));
 
+/** Animated scenes are only offered for styles that video models can animate. */
+function syncMotionUI({ announce = false } = {}) {
+  const st = state.project?.settings;
+  if (!st) return;
+  const ok = canAnimate(st);
+  const btn = $('#seg-motion [data-motion=animated]');
+  const small = btn.querySelector('small');
+  small.dataset.text ||= small.textContent;
+  btn.disabled = !ok;
+  btn.classList.toggle('unavailable', !ok);
+  small.textContent = ok ? small.dataset.text : `Not available for ${STYLES[st.style]?.label || 'this'} style: video models can't animate photo-real people reliably.`;
+  if (!ok && st.sceneMotion === 'animated') {
+    st.sceneMotion = 'still';
+    save();
+    if (announce) toast(`${STYLES[st.style]?.label || 'This'} style uses still pictures, so animated scenes were turned off.`, 5000);
+  }
+  $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x.dataset.motion === (st.sceneMotion || 'still')));
+}
+
 $$('#seg-motion button').forEach((b) => b.addEventListener('click', () => {
-  if (!state.project) return;
+  if (!state.project || b.disabled) return;
   state.project.settings.sceneMotion = b.dataset.motion;
   save();
   $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x === b));
@@ -879,7 +901,7 @@ function renderSummary() {
   const row = (ico, label, value, back) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}">Change</button></div>`;
   $('#create-summary').innerHTML = [
     row(st.thumb ? `<img src="${esc(st.thumb)}" alt="">` : icon('palette'), 'Style', st.label + (s.styleNotes?.trim() ? ' + your details' : ''), 2),
-    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}${s.sceneMotion === 'animated' ? ' · animated' : ''}`, 3),
+    row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}${animatedOn(p) ? ' · animated' : ''}`, 3),
     row(icon('user'), 'Video', state.file ? state.file.name : 'Demo story', 1),
   ].join('');
 }
@@ -1010,7 +1032,7 @@ function updateCosts() {
   const shots = p.segments.length ? p.segments.filter((sg) => sg.type !== 'face').length : Math.max(4, Math.round(p.duration / 5));
   const chars = p.characters.length || 3;
   const imgs = estimateImageCost(shots + chars, s, s.qc && !!s.key);
-  const animated = p.settings.sceneMotion === 'animated';
+  const animated = animatedOn(p);
   const animEst = animated ? (p.segments.length ? estimateAnimCost(sceneSegs(), s.videoModel) : shots * 5 * videoModelInfo(s.videoModel).perSec) : 0;
   $('#create-cost').textContent = `Estimated cost about ${fmtUSD(plan + imgs + animEst)}${animated ? ' with animated scenes' : ''}, paid to your own AI accounts.`;
   if (p.approved) {
@@ -1348,6 +1370,7 @@ async function approveAndDraw() {
 const sceneSegs = () => state.project.segments.filter((sg) => sg.type !== 'face' && sg.scene);
 const needsImage = (sg) => !sg.image?.key || sg.image.stale;
 /** Scenes that still need an animated clip (animated mode only). */
+const animatedOn = (p) => p?.settings.sceneMotion === 'animated' && canAnimate(p.settings);
 const animSegs = () => sceneSegs().filter((sg) => sg.image?.key && !sg.image.stale && !sg.still && !animReady(sg));
 
 async function animateScenes(list) {
@@ -1441,7 +1464,7 @@ async function generateScenes(list, note = '') {
   updateCosts();
   renderInspector();
   renderPipeline();
-  if (!ac.stop && !failed.length && state.project.settings.sceneMotion === 'animated') {
+  if (!ac.stop && !failed.length && animatedOn(state.project)) {
     const todo = animSegs().filter((sg) => list.includes(sg));
     if (todo.length) animateScenes(todo);
   }
@@ -1450,7 +1473,7 @@ async function generateScenes(list, note = '') {
 $('#btn-gen-scenes').addEventListener('click', () => {
   if (state.genAbort) { state.genAbort.stop = true; toast(state.genMode === 'animate' ? 'Finishing the animations already in progress…' : 'Finishing the images already in progress…'); return; }
   const todo = sceneSegs().filter(needsImage);
-  if (!todo.length && state.project.settings.sceneMotion === 'animated' && animSegs().length) { animateScenes(animSegs()); return; }
+  if (!todo.length && animatedOn(state.project) && animSegs().length) { animateScenes(animSegs()); return; }
   const list = todo.length ? todo : sceneSegs();
   const s = settingsGet();
   if (!hasImageKey(s)) { openSettings(); return; }
@@ -1613,7 +1636,7 @@ function renderTimeline() {
     const st = type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
     const thumb = type === 'face' ? faceThumb(s.start, tlRefreshSoon) : s.image?.key ? sceneThumb(s.image.key, tlRefreshSoon) : null;
     const sel = s.id === state.selected;
-    const moving = type !== 'face' && p.settings.sceneMotion === 'animated' && !s.still && (animReady(s) ? 'anim' : state.cache.animating?.has(s.id) ? 'animating' : '');
+    const moving = type !== 'face' && animatedOn(p) && !s.still && (animReady(s) ? 'anim' : state.cache.animating?.has(s.id) ? 'animating' : '');
     return `<div class="clip ${type} ${st} ${moving || ''} ${sel ? 'sel' : ''}" data-id="${s.id}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
       <div class="thumbs" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
       <span class="cap">${type === 'face' ? icon('user') : ''}${esc(shotText(s).split(' ').slice(0, 4).join(' '))}</span>
@@ -2146,7 +2169,7 @@ function renderInspector() {
       </div>
       ${seg.image?.qc && !seg.image.qc.pass ? `<p class="warn-text">Quality check: ${esc(seg.image.qc.issues.join('; '))}</p>` : ''}
       ${seg.image?.stale ? '<p class="warn-text">You changed this scene since it was drawn. Redraw to update it.</p>' : ''}
-      ${p.settings.sceneMotion === 'animated' && seg.image?.key ? (() => {
+      ${animatedOn(p) && seg.image?.key ? (() => {
         const busy = state.cache.animating?.has(seg.id);
         const ok = animReady(seg);
         const label = seg.still ? 'Using the still picture' : busy ? 'Animating…' : ok ? 'Animated' : 'Not animated yet';

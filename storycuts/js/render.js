@@ -2,7 +2,7 @@
 // the live preview and the export, so what you review is what you get.
 
 import { drawSoundEffect } from './draw.js';
-import { bitmapFor, preloadBitmap } from './images.js';
+import { bitmapFor, preloadBitmap, canAnimate } from './images.js';
 import { animReady, animVideo, syncAnim, pauseAnimsExcept, preloadAnim } from './animate.js';
 
 export const ASPECTS = {
@@ -234,7 +234,7 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
   } else {
     const sfxSide = type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
     const bmp = seg.image?.key ? bitmapFor(seg.image.key, cache.onImage) : null;
-    const anim = settings.sceneMotion === 'animated' && !seg.still && animReady(seg) ? animVideo(seg.anim.key, cache.onImage) : null;
+    const anim = settings.sceneMotion === 'animated' && canAnimate(settings) && !seg.still && animReady(seg) ? animVideo(seg.anim.key, cache.onImage) : null;
     if (anim) {
       (cache.usedAnims ||= new Set()).add(seg.anim.key);
       syncAnim(anim, local, !!cache.live);
@@ -445,7 +445,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
 
   media.pause();
   await Promise.all(project.segments.filter((sg) => sg.image?.key).map((sg) => preloadBitmap(sg.image.key)));
-  if (project.settings.sceneMotion === 'animated') await Promise.all(project.segments.filter((sg) => animReady(sg) && !sg.still).map((sg) => preloadAnim(sg.anim.key)));
+  if (project.settings.sceneMotion === 'animated' && canAnimate(project.settings)) await Promise.all(project.segments.filter((sg) => animReady(sg) && !sg.still).map((sg) => preloadAnim(sg.anim.key)));
   await media.seek(0);
   drawFrame(ctx, W, H, 0, project, media.el, cache);
 
