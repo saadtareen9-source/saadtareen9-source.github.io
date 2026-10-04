@@ -186,9 +186,8 @@ export async function putBlob(key, blob, { quiet = false } = {}) {
     } catch (e) { console.warn('StoryCuts: could not keep a copy of the video on this device', e); return false; }
   }
   memBlobs.set(key, blob);
-  try {
-    // Stored as raw bytes: some browsers fail to save Blob objects in IndexedDB.
-    const record = { type: blob.type, buf: await blob.arrayBuffer() };
+  askPersist();
+  const write = async (record) => {
     const d = await db();
     await new Promise((resolve, reject) => {
       const tx = d.transaction('images', 'readwrite');
@@ -197,11 +196,29 @@ export async function putBlob(key, blob, { quiet = false } = {}) {
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error || new Error('Saving was cancelled'));
     });
+  };
+  try {
+    // Stored as raw bytes: some browsers fail to save Blob objects in IndexedDB...
+    await write({ type: blob.type, buf: await blob.arrayBuffer() });
     memBlobs.delete(key);
   } catch (e) {
-    console.warn('StoryCuts: could not save image to browser storage, keeping it for this session only', e);
-    storageProblem = e;
+    // ...and others prefer real Blobs, so try that before giving up.
+    try {
+      await write(blob);
+      memBlobs.delete(key);
+    } catch (e2) {
+      console.warn('StoryCuts: could not save image to browser storage, keeping it for this session only', e, e2);
+      storageProblem = e2 || e;
+    }
   }
+}
+
+/** Ask the browser not to clear StoryCuts' saved pictures when space runs low. */
+let persistAsked = false;
+function askPersist() {
+  if (persistAsked) return;
+  persistAsked = true;
+  try { navigator.storage?.persist?.(); } catch { /* not supported */ }
 }
 
 /** Remove everything stored under a key prefix (a whole project). */

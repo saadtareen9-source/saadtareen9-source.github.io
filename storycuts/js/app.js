@@ -10,6 +10,7 @@ import {
 import {
   VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady,
 } from './animate.js';
+import { showLoader } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
@@ -463,6 +464,7 @@ function goStep(n, { scroll = true } = {}) {
   setFullEditor(n === 5);
   if (n === 5 && state.project?.approved && !state.project.segments.some((sg) => sg.id === state.selected)) state.selected = state.project.segments[0]?.id;
   if (n === 5 && state.project?.approved) {
+    checkScenePictures();
     requestAnimationFrame(() => { sizePreview(); renderTimeline(); renderInspector(); drawPreview(); ensurePeaks(); });
   }
   if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
@@ -1002,31 +1004,18 @@ const TIPS = {
   scenes: ['Drawing your scenes…', 'Keeping every character on-model…', 'Checking each frame and redrawing any that slip…'],
 };
 
+const LOADER_KIND = { transcribe: 'listen', plan: 'plan', cast: 'draw', scenes: 'draw' };
+
 function liveStart(stage, title) {
-  const el = $('#create-live');
-  el.classList.remove('hidden');
-  $('#live-title').textContent = title;
-  clearInterval(state.liveTimer);
-  const t0 = state.liveT0 || (state.liveT0 = performance.now());
-  let k = 0;
-  const tips = TIPS[stage] || [];
-  const tick = () => {
-    const s = Math.floor((performance.now() - t0) / 1000);
-    $('#live-time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  };
-  const tip = () => {
-    const p = $('#live-tip');
-    p.style.opacity = 0;
-    setTimeout(() => { p.textContent = tips[k++ % Math.max(1, tips.length)] || ''; p.style.opacity = 1; }, 250);
-  };
-  tip(); tick();
-  state.liveTimer = setInterval(() => { tick(); if (Math.floor((performance.now() - t0) / 1000) % 4 === 0) tip(); }, 1000);
+  state.live?.stop();
+  const p = state.project;
+  const eta = stage === 'transcribe' ? Math.max(20, (p?.duration || 60) * 0.5) : stage === 'plan' ? 40 : 30;
+  state.live = showLoader($('#create-live'), { kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], eta });
 }
 
 function liveStop() {
-  clearInterval(state.liveTimer);
-  state.liveT0 = null;
-  $('#create-live').classList.add('hidden');
+  state.live?.stop();
+  state.live = null;
 }
 
 // ---------- step 3: create ----------
@@ -1077,11 +1066,11 @@ async function createVideo() {
     // 1. transcript
     if (!p.words.length) {
       setStage('transcribe', 'active');
-      liveStart('transcribe', 'Transcribing your story');
+      liveStart('transcribe', 'Listening to your story');
       try {
         const words = await transcribeInBrowser(state.file, {
           quality: $('#asr-quality').value,
-          onStatus: (m) => { $('#live-title').textContent = m.replace(/…$/, ''); },
+          onStatus: (m) => state.live?.update({ title: m.replace(/…$/, '') }),
         });
         if (!words.length) throw new Error('no speech found');
         p.words = words; p.transcriptSource = 'auto'; save(); renderTranscript(); renderPrep();
@@ -1100,7 +1089,7 @@ async function createVideo() {
     // 2. plan
     if (!p.segments.length) {
       setStage('plan', 'active');
-      liveStart('plan', 'Planning your edit');
+      liveStart('plan', 'Planning your edit and characters');
       const s = settingsGet();
       const notes = [
         $('#plan-notes').value.trim(),
@@ -1130,19 +1119,11 @@ async function createVideo() {
     $('#cast').classList.remove('hidden');
     renderChars();
 
-    // 3. cast
-    const missing = p.characters.filter((c) => !c.image?.key);
-    setStage('cast', 'active');
-    if (missing.length) {
-      setStatus('#create-status', '');
-      liveStart('cast', `Designing your cast (${missing.length})`);
-      scrollTo('#cast');
-      const ok = await drawCharacters(missing);
-      if (!ok) { setStage('cast', 'error'); liveStop(); return; }
-    }
+    // 3. cast: the creator checks each character's details, then draws them
     liveStop();
     setStage('cast', 'wait');
-    setStatus('#create-status', 'Your cast is ready. Take a look, then draw the scenes.', 'ok');
+    setStatus('#create-status', '');
+    toast(`Your story has ${p.characters.length} character${p.characters.length === 1 ? '' : 's'}. Check their details, then draw them.`, 5000);
     scrollTo('#cast');
   } finally {
     state.busy = false;
@@ -1185,6 +1166,21 @@ function qcBadge(img) {
   return `<span class="qc-badge warn" title="${esc(q.issues.join('; '))}">${icon('alert')}Needs a look</span>`;
 }
 
+/** Scene pictures or animations that can't be loaded need drawing again. */
+async function checkScenePictures() {
+  const p = state.project;
+  if (!p?.approved) return;
+  let lost = 0;
+  for (const sg of p.segments) {
+    if (sg.image?.key && !(await hasBlob(sg.image.key))) { delete sg.image; delete sg.anim; lost++; }
+    else if (sg.anim?.key && !(await hasBlob(sg.anim.key))) delete sg.anim;
+  }
+  if (!lost || state.project !== p) return;
+  save();
+  updateCosts(); renderTimeline(); renderInspector(); drawPreview();
+  toast(`${lost} scene picture${lost > 1 ? 's were' : ' was'} missing from this device. Press "Draw" to draw ${lost > 1 ? 'them' : 'it'} again.`, 6000);
+}
+
 /** A character whose picture can't be loaded (cleared storage, another device) needs redrawing. */
 async function checkCastPictures() {
   const p = state.project;
@@ -1199,7 +1195,7 @@ async function checkCastPictures() {
 
 async function fillImg(el, key) {
   const blob = await getBlob(key);
-  if (!blob) return;
+  if (!blob) { el.classList.add('missing'); return; }
   if (el.dataset.url) URL.revokeObjectURL(el.dataset.url);
   el.dataset.url = URL.createObjectURL(blob);
   el.src = el.dataset.url;
@@ -1212,7 +1208,7 @@ function renderChars() {
   el.innerHTML = p.characters.map((c, i) => `
     <div class="char" data-i="${i}">
       <div class="char-art">
-        ${c.image?.key ? '<img alt="">' : `<div class="empty"><div><b>${esc((c.name || '?')[0])}</b>Not drawn yet</div></div>`}
+        ${c.image?.key ? '<img alt="">' : `<div class="empty"><span class="avatar">${esc((c.name || '?').trim()[0] || '?')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
       </div>
@@ -1251,8 +1247,8 @@ function renderCastBar() {
     title = `Drawing your characters: ${drawn} of ${n} done`;
     sub = 'This takes about a minute. You can edit the descriptions while you wait.';
   } else if (missing) {
-    title = drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Step 1: draw your characters';
-    sub = 'Every scene is drawn from these designs, so each character needs a picture first.';
+    title = drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Step 1: check the details, then draw';
+    sub = drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Change any name or description above so each person looks the way you imagine. Then draw them.';
   } else {
     title = 'Step 2: check your characters';
     sub = `Look at each picture. Redraw anyone who looks wrong, then press the button to draw your ${scenes} scene${scenes === 1 ? '' : 's'}.`;
@@ -1263,6 +1259,12 @@ function renderCastBar() {
   gen.disabled = !!busy || state.busy;
   gen.classList.toggle('busy', !!busy);
   gen.querySelector('span').textContent = busy ? 'Drawing…' : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'my character' : `all ${n} characters`}`;
+  const sNow = settingsGet();
+  $('#cb-cost').textContent = missing && !busy ? `About ${missing > 2 ? Math.ceil(missing / 2) : 1} minute${missing > 2 ? 's' : ''} · about ${fmtUSD(estimateImageCost(missing, sNow, sNow.qc && !!sNow.key))}` : '';
+  $('#cb-cost').parentElement.hidden = gen.hidden;
+  $('#cast-bar').classList.toggle('cta-big', !!missing && !busy && !drawn);
+  $('#cast-title').textContent = !drawn && !busy ? `Your ${n} character${n === 1 ? '' : 's'}` : 'Meet your cast';
+  $('#cast-sub').textContent = !drawn && !busy ? 'We found these people in your story. Edit their names and looks below before drawing them.' : missing || busy ? 'Every scene is drawn from these designs.' : 'Every scene is drawn from these designs. Redraw anyone you don\'t love.';
   ok.hidden = !!missing || !!busy;
   ok.disabled = state.busy;
   ok.querySelector('span').textContent = `They look good, draw the ${scenes} scene${scenes === 1 ? '' : 's'}`;
@@ -1294,22 +1296,29 @@ async function drawCharacters(list) {
   const job = imageJobOpts();
   state.charBusy = new Set(list.map((c) => c.id));
   renderChars();
-  setStatus('#chars-status', `Designing ${list.length} character${list.length > 1 ? 's' : ''} in ${STYLES[state.project.settings.style]?.label || 'your'} style…`, 'busy');
+  const ld = showLoader($('#cast-loader'), {
+    kind: 'draw', title: `Drawing ${list.length === 1 ? list[0].name : `your ${list.length} characters`}`, total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
+    tips: ['Each character is designed once and reused in every scene.', 'Picking faces, hair, outfits and colours from your descriptions…', 'Every picture is checked for mistakes like extra fingers, and redrawn if needed.', 'You can keep editing the other descriptions while this runs.'],
+  });
+  let drawnN = 0;
+  setStatus('#chars-status', '');
   const me = list.find((c) => c.id === 'me' && c.useVideoLook !== false);
   const selfFrame = me ? await grabSelfFrame().catch(() => null) : null;
   const results = await pool(list, 2, async (ch) => {
     try {
       const img = await generateCharacterImage(state.project, ch, {
-        ...job, selfFrame, onStatus: (m) => setStatus('#chars-status', `${ch.name}: ${m}`, 'busy'),
+        ...job, selfFrame, onStatus: () => {},
       });
       ch.image = img;
       save();
     } finally {
       state.charBusy.delete(ch.id);
+      ld.update({ done: ++drawnN });
       renderChars();
     }
   });
   state.charBusy = new Set();
+  ld.stop();
   renderChars();
   const failed = results.filter((r) => !r.ok);
   failed.forEach((f) => console.error('StoryCuts character drawing failed', f.error));
@@ -1406,10 +1415,11 @@ async function animateScenes(list) {
   state.cache.animating = new Set(list.map((sg) => sg.id));
   state.genDone = 0; state.genTotal = list.length;
   updateCosts(); renderTimeline();
-  const bar = $('#gen-progress');
-  bar.classList.remove('hidden');
-  bar.firstElementChild.style.width = '3%';
-  setStatus('#scenes-status', 'Animating takes about a minute per scene. You can keep editing; finished scenes switch to animation as they arrive.');
+  const ld = showLoader($('#draw-loader'), {
+    kind: 'film', compact: true, title: `Animating ${list.length === 1 ? 'this scene' : `${list.length} scenes`}`, total: list.length, perItem: 100, parallel: 2,
+    tips: ['Each picture becomes the first frame of a short animated clip.', 'Animation takes one to two minutes per scene.', 'Finished scenes switch to animation as soon as they arrive.', 'You can keep editing while this runs.'],
+  });
+  setStatus('#scenes-status', '');
   const results = await pool(list, 2, async (sg) => {
     if (ac.stop) throw new Error('stopped');
     try {
@@ -1421,13 +1431,13 @@ async function animateScenes(list) {
     } finally {
       state.cache.animating.delete(sg.id);
       state.genDone++;
-      bar.firstElementChild.style.width = `${(state.genDone / list.length) * 100}%`;
+      ld.update({ done: state.genDone });
       updateCosts(); renderTimeline(); drawPreview();
       if (sg.id === state.selected) renderInspector();
     }
   });
   state.genAbort = null; state.genMode = null;
-  setTimeout(() => bar.classList.add('hidden'), 600);
+  ld.stop();
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
   failed.forEach((f) => console.error('StoryCuts animation failed', f.error));
   if (failed.length) setStatus('#scenes-status', `${list.length - failed.length} animated. ${failed.length} kept as still pictures: ${errText(failed[0].error)}`, 'err');
@@ -1444,13 +1454,15 @@ async function generateScenes(list, note = '') {
   state.cache.pending = new Set(list.map((sg) => sg.id));
   updateCosts(); renderTimeline();
   const bar = $('#gen-progress');
-  bar.classList.remove('hidden');
-  bar.firstElementChild.style.width = '3%';
   let done = 0;
   state.genDone = 0; state.genTotal = list.length;
   updateCosts();
+  const ld = showLoader($('#draw-loader'), {
+    kind: 'draw', compact: true, title: `Drawing ${list.length === 1 ? 'this scene' : `${list.length} scenes`}`, total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
+    tips: ['You can keep editing while this runs.', 'Each scene uses your approved characters, so they look the same every time.', 'Scenes in the same place are drawn to match each other.', 'Every picture is checked and redrawn automatically if something looks off.'],
+  });
   const aspect = state.aspect === 'vertical' ? '9:16' : '16:9';
-  setStatus('#scenes-status', 'You can keep editing while this runs.');
+  setStatus('#scenes-status', '');
   // first shot of each location is drawn first so later shots can reuse it as a reference
   const [anchors, rest] = orderForConsistency(state.project, list);
   const drawOne = async (sg) => {
@@ -1464,7 +1476,7 @@ async function generateScenes(list, note = '') {
     } finally {
       state.cache.pending.delete(sg.id);
       done++;
-      bar.firstElementChild.style.width = `${(done / list.length) * 100}%`;
+      ld.update({ done });
       state.genDone = done; updateCosts();
       renderTimeline();
       if (sg.id === state.selected) renderInspector();
@@ -1473,7 +1485,8 @@ async function generateScenes(list, note = '') {
   };
   const results = [...await pool(anchors, 2, drawOne), ...await pool(rest, 2, drawOne)];
   state.genAbort = null;
-  setTimeout(() => bar.classList.add('hidden'), 600);
+  ld.stop();
+  bar.classList.add('hidden');
   const failed = results.filter((r) => !r.ok && r.error.message !== 'stopped');
   const flagged = list.filter((sg) => sg.image?.qc && !sg.image.qc.pass).length;
   const redrawn = list.filter((sg) => sg.image?.attempts > 1).length;
@@ -2192,7 +2205,7 @@ function renderInspector() {
       </div>
       ${seg.image?.qc && !seg.image.qc.pass ? `<p class="warn-text">Quality check: ${esc(seg.image.qc.issues.join('; '))}</p>` : ''}
       ${seg.image?.stale ? '<p class="warn-text">You changed this scene since it was drawn. Redraw to update it.</p>' : ''}
-      ${animatedOn(p) && seg.image?.key ? (() => {
+      ${animatedOn(p) && seg.image?.key && !sceneSegs().some(needsImage) ? (() => {
         const busy = state.cache.animating?.has(seg.id);
         const ok = animReady(seg);
         const label = seg.still ? 'Using the still picture' : busy ? 'Animating…' : ok ? 'Animated' : 'Not animated yet';
@@ -2360,12 +2373,16 @@ async function doExport() {
   state.exporting = ac;
   btn.querySelector('span').textContent = 'Cancel export';
   const bar = $('#ex-progress');
-  bar.classList.remove('hidden');
-  setStatus('#ex-status', 'Rendering… keep this tab open and in front.', 'busy');
+  const secs = Math.ceil(state.project.duration);
+  const ld = showLoader($('#ex-loader'), {
+    kind: 'film', title: 'Exporting your video', total: secs, perItem: 1, parallel: 1,
+    tips: ['Your video plays once in real time while it records.', 'Keep this tab open and in front until it finishes.', 'Music, sound effects, captions and transitions are all included.'],
+  });
+  setStatus('#ex-status', '');
   try {
     if (!state.media.paused) state.media.pause();
     const { blob, ext } = await exportVideo(state.project, state.media, {
-      aspect: state.aspect, signal: ac.signal, sfxPlayer: state.sfxPlayer, musicPlayer: state.musicPlayer, onProgress: (f) => { bar.firstElementChild.style.width = `${Math.min(100, f * 100).toFixed(1)}%`; },
+      aspect: state.aspect, signal: ac.signal, sfxPlayer: state.sfxPlayer, musicPlayer: state.musicPlayer, onProgress: (f) => ld.update({ done: Math.min(secs, Math.floor(f * secs)) }),
     });
     if (ac.signal.aborted) { setStatus('#ex-status', 'Export cancelled.'); return; }
     download(blob, `${baseName()}-storycuts-${state.aspect}.${ext}`);
@@ -2375,8 +2392,9 @@ async function doExport() {
     setStatus('#ex-status', `Export failed: ${errText(e)}`, 'err');
   } finally {
     state.exporting = null;
+    ld.stop();
     btn.querySelector('span').textContent = 'Export video';
-    setTimeout(() => bar.classList.add('hidden'), 800);
+    bar.classList.add('hidden');
   }
 }
 

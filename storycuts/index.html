@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=26">
+  <link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
   <!-- icon sprite -->
@@ -298,14 +298,7 @@
         </div>
 
         <div class="run hidden" id="run">
-          <div class="live-card hidden" id="create-live">
-            <div class="orb"><i></i><i></i><i></i></div>
-            <div>
-              <b id="live-title">Working…</b>
-              <p id="live-tip" class="muted"></p>
-            </div>
-            <span class="elapsed" id="live-time">0:00</span>
-          </div>
+          <div class="ld-host" id="create-live" hidden></div>
           <ol class="pipeline" id="pipeline">
             <li data-stage="transcribe"><i></i><b>Transcribing your story</b></li>
             <li data-stage="plan"><i></i><b>Planning the edit</b></li>
@@ -325,18 +318,22 @@
         </div>
         <div class="cast hidden" id="cast">
           <div class="cast-head">
-            <div><h4>Meet your cast</h4><p>Every scene is drawn from these designs. Edit a description and redraw anyone you don't love.</p></div>
+            <div><h4 id="cast-title">Meet your cast</h4><p id="cast-sub">Every scene is drawn from these designs. Edit a description and redraw anyone you don't love.</p></div>
             <div class="cast-actions">
               <button class="btn glass sm" id="btn-add-char" title="Add a person or pet">+ Add character</button>
             </div>
           </div>
+          <div class="ld-host" id="cast-loader" hidden></div>
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
           <div class="cast-bar" id="cast-bar">
             <div class="cb-steps"><span class="cb-step" id="cb-step1"><i>1</i>Draw characters</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Check them</span><span class="cb-line"></span><span class="cb-step" id="cb-step3"><i>3</i>Draw scenes</span></div>
             <div class="cb-main">
               <div class="cb-txt"><b id="cb-title"></b><small id="cb-sub"></small></div>
-              <button class="btn primary lg" id="btn-gen-chars"><svg><use href="#i-spark"/></svg><span>Draw characters</span></button>
+              <div class="cb-cta">
+                <button class="btn primary lg" id="btn-gen-chars"><svg><use href="#i-spark"/></svg><span>Draw characters</span></button>
+                <small id="cb-cost"></small>
+              </div>
               <button class="btn primary lg" id="btn-approve"><svg><use href="#i-check"/></svg><span>Looks good, draw the scenes</span></button>
             </div>
           </div>
@@ -388,6 +385,7 @@
                   <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
                 </div>
                 <div class="progress hidden" id="gen-progress"><div></div></div>
+                <div class="ld-host" id="draw-loader" hidden></div>
                 <div class="status" id="scenes-status"></div>
               </div>
               <div class="inspector" id="inspector"><p class="muted">Tap a clip on the timeline.</p></div>
@@ -447,6 +445,7 @@
               <label class="switch"><input type="checkbox" id="opt-watermark"><span></span>"made with StoryCuts" tag</label>
               <button class="btn primary lg wide" id="btn-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
               <div class="progress hidden" id="ex-progress"><div></div></div>
+              <div class="ld-host" id="ex-loader" hidden></div>
               <div class="status" id="ex-status"></div>
               <p class="muted small">Export plays your video once in real time while it records, with music and sound effects. Keep this tab open until it finishes.</p>
               <div class="tool-row">
@@ -584,6 +583,6 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=26"></script>
+  <script type="module" src="js/app.js?v=27"></script>
 </body>
 </html>
