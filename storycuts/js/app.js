@@ -76,78 +76,54 @@ class VideoMedia {
   onEnded(cb) { this.video.addEventListener('ended', cb); return () => this.video.removeEventListener('ended', cb); }
 }
 
-// Stand-in "creator" for the demo story: a stock clip of a creator talking,
-// looped under the demo's 44-second clock. Behaves like a <video> for the app.
-const DEMO_CLIP = [['assets/hero/demo.webm', 'video/webm'], ['assets/hero/demo.mp4', 'video/mp4']];
-const clipVideo = () => {
-  const v = document.createElement('video');
-  Object.assign(v, { muted: true, playsInline: true, loop: true, preload: 'auto', crossOrigin: 'anonymous' });
-  v.src = DEMO_CLIP.find(([, type]) => v.canPlayType(type))?.[0] || DEMO_CLIP[1][0];
-  return v;
-};
-
+// Stand-in "creator" for the demo story: an animated presenter that talks
+// in sync with the demo transcript. Behaves like a <video> for the app.
 class DemoMedia {
   constructor(duration, words) {
     this.duration = duration; this.words = words;
     this.canvas = document.createElement('canvas');
     this.canvas.width = 720; this.canvas.height = 1280;
     this.offset = 0; this.t0 = 0; this.paused = true; this.listeners = new Set();
-    this.video = clipVideo();
-    this.video.addEventListener('loadeddata', () => { this.syncClip(this.offset); drawPreview(); }, { once: true });
   }
   get time() {
     if (this.paused) return this.offset;
     const t = this.offset + (performance.now() - this.t0) / 1000;
-    if (t >= this.duration) { this.offset = this.duration; this.paused = true; this.video.pause(); this.listeners.forEach((cb) => setTimeout(cb)); return this.duration; }
+    if (t >= this.duration) { this.offset = this.duration; this.paused = true; this.listeners.forEach((cb) => setTimeout(cb)); return this.duration; }
     return t;
   }
   get el() { this.render(this.time); return this.canvas; }
-  /** Where the looping clip should be for timeline time t. */
-  clipTime(t) { const d = this.video.duration || 16.8; return t % d; }
-  syncClip(t) {
-    const v = this.video;
-    if (v.readyState < 1) return;
-    const want = this.clipTime(t);
-    if (Math.abs(v.currentTime - want) > 0.25 && Math.abs(v.currentTime - want) < (v.duration || 99) - 0.25) v.currentTime = want;
-  }
-  async seek(t) {
-    this.offset = Math.max(0, Math.min(this.duration, t)); this.t0 = performance.now();
-    this.syncClip(this.offset);
-    if (this.paused) await new Promise((r) => { const done = () => r(); this.video.addEventListener('seeked', done, { once: true }); setTimeout(done, 400); });
-  }
+  async seek(t) { this.offset = Math.max(0, Math.min(this.duration, t)); this.t0 = performance.now(); }
   async play() {
     if (this.offset >= this.duration - 0.05) this.offset = 0;
     this.t0 = performance.now(); this.paused = false;
-    this.syncClip(this.offset);
-    this.video.play().catch(() => {});
-    clearInterval(this.iv); this.iv = setInterval(() => { if (!this.paused) this.syncClip(this.time); else clearInterval(this.iv); }, 500);
+    clearInterval(this.iv); this.iv = setInterval(() => { if (!this.paused) this.time; else clearInterval(this.iv); }, 100);
   }
-  pause() { this.offset = this.time; this.paused = true; this.video.pause(); this.syncClip(this.offset); }
+  pause() { this.offset = this.time; this.paused = true; }
   onEnded(cb) { this.listeners.add(cb); return () => this.listeners.delete(cb); }
-  render() {
+  render(t) {
     const c = this.canvas.getContext('2d'); const W = 720, H = 1280;
-    const v = this.video;
-    if (v.readyState >= 2) {
-      const sc = Math.max(W / v.videoWidth, H / v.videoHeight);
-      c.drawImage(v, (W - v.videoWidth * sc) / 2, (H - v.videoHeight * sc) / 2, v.videoWidth * sc, v.videoHeight * sc);
-    } else {
-      c.fillStyle = '#15131f'; c.fillRect(0, 0, W, H);
-      c.fillStyle = 'rgba(255,255,255,0.6)'; c.font = '600 34px Inter, system-ui, sans-serif'; c.textAlign = 'center';
-      c.fillText('Loading demo…', W / 2, H / 2);
-    }
-  }
-  /** Still frame for timeline thumbnails (uses its own copy of the clip). */
-  async frameAt(t, ctx, w, h) {
-    if (!this.thumbVideo) {
-      this.thumbVideo = clipVideo();
-      this.thumbVideo.loop = false;
-      await new Promise((r) => { this.thumbVideo.addEventListener('loadeddata', r, { once: true }); setTimeout(r, 4000); });
-    }
-    const v = this.thumbVideo;
-    await new Promise((r) => { v.addEventListener('seeked', r, { once: true }); v.currentTime = Math.min(this.clipTime(t + 0.3), (v.duration || 1) - 0.05); setTimeout(r, 1500); });
-    if (v.readyState < 2) throw new Error('no frame');
-    const sc = Math.max(w / v.videoWidth, h / v.videoHeight);
-    ctx.drawImage(v, (w - v.videoWidth * sc) / 2, (h - v.videoHeight * sc) / 2, v.videoWidth * sc, v.videoHeight * sc);
+    const g = c.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#ffd6a5'); g.addColorStop(1, '#ff8fab');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    const talking = this.words.some((w) => t >= w.s && t < w.e);
+    const sway = Math.sin(t * 1.3) * 8;
+    c.save(); c.translate(W / 2 + sway, 0);
+    c.fillStyle = '#3d348b'; c.beginPath(); c.ellipse(0, 1240, 300, 330, 0, Math.PI, 0); c.fill();
+    c.fillStyle = '#f1c27d'; c.fillRect(-55, 760, 110, 120);
+    c.beginPath(); c.ellipse(0, 600, 210, 250, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#2b2118'; c.beginPath(); c.ellipse(0, 420, 225, 120, 0, Math.PI, 0); c.fill();
+    c.fillRect(-225, 410, 40, 140); c.fillRect(185, 410, 40, 140);
+    const blink = (t % 3.7) < 0.12;
+    c.fillStyle = '#1b1b1b';
+    for (const ex of [-75, 75]) { c.beginPath(); c.ellipse(ex, 580, 18, blink ? 3 : 22, 0, 0, Math.PI * 2); c.fill(); }
+    c.lineWidth = 9; c.lineCap = 'round'; c.strokeStyle = '#1b1b1b';
+    const lift = Math.sin(t * 2.1) > 0.6 ? 12 : 0;
+    c.beginPath(); c.moveTo(-105, 530 - lift); c.lineTo(-45, 525 - lift); c.moveTo(45, 525 - lift); c.lineTo(105, 530 - lift); c.stroke();
+    const open = talking ? 14 + Math.abs(Math.sin(t * 17)) * 30 : 4;
+    c.fillStyle = '#7a1f1f'; c.beginPath(); c.ellipse(0, 700, 55, open, 0, 0, Math.PI * 2); c.fill();
+    c.restore();
+    c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 60, W, 70);
+    c.fillStyle = '#fff'; c.font = '700 34px Inter, system-ui, sans-serif'; c.textAlign = 'center';
+    c.fillText('DEMO · your face goes here', W / 2, 108);
   }
 }
 
@@ -426,7 +402,6 @@ function loadDemo() {
   state.file = null;
   const duration = 44;
   const words = wordsFromText(DEMO_TEXT, duration, [[0.6, 43.4]]);
-  state.media?.pause?.();
   state.media = new DemoMedia(duration, words);
   state.stages = {};
   showFileChip('Demo story', '0:44', 'silent demo: your own video keeps its sound');
@@ -910,7 +885,6 @@ async function createVideo() {
       const s = settingsGet();
       const notes = [
         $('#plan-notes').value.trim(),
-        state.media instanceof DemoMedia ? 'The narrator ("me") is a young woman with long, voluminous curly dark brown hair, wearing a light blue short-sleeved cropped hoodie with white drawstrings.' : '',
         p.settings.faceMode === 'bubble' ? '' : 'Use only "face" and "scene" shots (no scene_bubble): the creator wants full-frame cuts.',
       ].filter(Boolean).join(' ');
       try {
@@ -1329,7 +1303,8 @@ function faceThumb(t, onReady) {
     const ctx = c.getContext('2d');
     try {
       if (state.media instanceof DemoMedia) {
-        await state.media.frameAt(k, ctx, 72, 128);
+        state.media.render(k);
+        ctx.drawImage(state.media.canvas, 0, 0, 72, 128);
       } else if (state.objectUrl) {
         if (!state.thumbVideo || state.thumbVideo.dataset.src !== state.objectUrl) {
           state.thumbVideo = Object.assign(document.createElement('video'), { muted: true, playsInline: true, preload: 'auto', src: state.objectUrl });
