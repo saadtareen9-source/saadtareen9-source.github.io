@@ -1911,7 +1911,7 @@ $('#btn-test-relay').addEventListener('click', async (e) => {
   e.preventDefault();
   const out = $('#relay-result');
   out.className = 'relay-result busy'; out.textContent = 'Checking your relay and OpenAI video access…';
-  const r = await checkAnimationSetup($('#openai-key').value.trim(), $('#video-relay').value);
+  const r = await checkAnimationSetup($('#openai-key').value.trim(), $('#video-relay').value, $('#video-model').value);
   out.className = `relay-result ${r.ok ? 'ok' : 'err'}`; out.textContent = r.message;
 });
 $('#ed-close').addEventListener('click', () => goStep(4));
