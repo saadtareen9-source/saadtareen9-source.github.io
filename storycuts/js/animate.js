@@ -67,7 +67,7 @@ export async function testRelay(url) {
   try {
     const r = await fetch(`${base}/health`);
     const body = await r.json().catch(() => null);
-    if (body?.relay === 'storycuts') return { ok: true, message: body.version >= 2 ? 'Relay connected. Animation will go through it.' : 'Relay connected, but it\'s an older version. Re-paste the latest relay code in Cloudflare and deploy again.' };
+    if (body?.relay === 'storycuts') return { ok: body.version >= 3, message: body.version >= 3 ? 'Relay connected. Animation will go through it.' : 'Relay connected, but it\'s an older version. Re-paste the latest relay code in Cloudflare and deploy again.' };
     return { ok: false, message: `That address answered, but it isn't the StoryCuts relay (HTTP ${r.status}). In Cloudflare, open the worker → Edit code, replace everything with the relay code, and press Deploy.` };
   } catch (e) {
     return { ok: false, message: `Couldn't reach that address (${e.message}). Check it's the worker address ending in .workers.dev.` };
@@ -98,22 +98,29 @@ async function api(apiKey, path, init = {}, step = 'start') {
   return res;
 }
 
+/** Where an answer came from, plus the raw reply, for error messages. */
+const replyInfo = (res, text) => {
+  const via = res.headers.get('x-storycuts-relay') ? `via relay v${res.headers.get('x-storycuts-relay')}` : relayBase ? 'from the relay address' : 'direct';
+  return `HTTP ${res.status} · ${via}${text ? ` · "${text.replace(/\s+/g, ' ').slice(0, 140).trim()}"` : ' · empty reply'}`;
+};
+
 async function apiError(res) {
   const text = await res.text().catch(() => '');
   let json = {};
   try { json = JSON.parse(text); } catch { /* not JSON */ }
+  const detail = ` [${replyInfo(res, text)}]`;
   const msg = json?.error?.message || `HTTP ${res.status}`;
   // an answer that isn't OpenAI's JSON came from the relay address, not OpenAI
   if (!json?.error && relayBase && !res.headers.get('x-storycuts-relay')) {
-    return new Error(`The video relay address answered with HTTP ${res.status}${text ? ` ("${text.slice(0, 60).trim()}")` : ''} instead of passing the request to OpenAI. Open API keys → More options → Test to check it, and make sure the worker has the latest relay code.`);
+    return new Error(`The video relay address answered instead of passing the request to OpenAI. Open API keys → More options → Check animation setup, and make sure the worker has the latest relay code.${detail}`);
   }
-  if (/^StoryCuts relay:/.test(msg)) return new Error(msg);
-  if (res.status === 401) return new Error('Your OpenAI API key was rejected. Check it in Settings.');
-  if (res.status === 404 || /model/i.test(msg) && /access|exist|found/i.test(msg)) return new Error(`OpenAI says: ${msg} (your account may not have Sora video access yet).`);
-  if (/verif/i.test(msg)) return new Error(`OpenAI says: ${msg} (video models may require verifying your organization at platform.openai.com → Settings → Organization).`);
-  if (/billing|quota|insufficient/i.test(msg)) return new Error(`OpenAI says: ${msg} (add credit at platform.openai.com → Billing).`);
-  if (/moderation|safety|policy|face/i.test(msg)) return new Error('OpenAI\'s safety filter declined to animate this picture. The still picture is used instead.');
-  return new Error(`Video model error: ${msg}`);
+  if (/^StoryCuts relay:/.test(msg)) return new Error(msg + detail);
+  if (res.status === 401) return new Error(`Your OpenAI API key was rejected. Check it in Settings.${detail}`);
+  if (/verif/i.test(msg)) return new Error(`OpenAI says: ${msg} (video models may require verifying your organization at platform.openai.com → Settings → Organization → Verify).${detail}`);
+  if (/billing|quota|insufficient/i.test(msg)) return new Error(`OpenAI says: ${msg} (add credit at platform.openai.com → Billing).${detail}`);
+  if (/moderation|safety|policy|face/i.test(msg)) return new Error(`OpenAI's safety filter declined to animate this picture. The still picture is used instead.${detail}`);
+  if (res.status === 404 || /model/i.test(msg) && /access|exist|found/i.test(msg)) return new Error(`OpenAI says: ${msg} (your account may not have Sora video access yet).${detail}`);
+  return new Error(`Video model error: ${msg}${detail}`);
 }
 
 /**
@@ -200,4 +207,28 @@ export function syncAnim(v, local, live) {
 /** Pause every animation not drawn in the current frame. */
 export function pauseAnimsExcept(used) {
   for (const [key, p] of players) if (p.v && !used.has(key) && !p.v.paused) p.v.pause();
+}
+
+
+/**
+ * Check animation end to end without spending anything: can we reach
+ * OpenAI's video service (directly or via the relay), and does this account
+ * have access? Returns { ok, message }.
+ */
+export async function checkAnimationSetup(apiKey, relayUrl) {
+  setVideoRelay(relayUrl);
+  if (!apiKey) return { ok: false, message: 'Add your OpenAI key first.' };
+  if (relayBase) {
+    const t = await testRelay(relayBase);
+    if (!t.ok) return t;
+  }
+  let res;
+  try {
+    res = await fetch(`${relayBase || 'https://api.openai.com'}/v1/videos?limit=1`, { headers: { authorization: `Bearer ${apiKey}` } });
+  } catch (e) {
+    return { ok: false, message: relayBase ? `Couldn't reach the relay (${e.message}).` : 'Your browser can\'t talk to OpenAI\'s video service directly. Set up the free video relay (instructions in the StoryCuts README) and paste its address above.' };
+  }
+  if (res.ok) return { ok: true, message: `Animation is ready: your OpenAI account can use the video service${relayBase ? ' through your relay' : ''}.` };
+  const err = await apiError(res);
+  return { ok: false, message: err.message };
 }

@@ -8,7 +8,7 @@ import {
   BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
 } from './billing.js';
 import {
-  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay, testRelay,
+  VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay, checkAnimationSetup,
 } from './animate.js';
 import { showLoader } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
@@ -1910,8 +1910,8 @@ $('#sheet-done').addEventListener('click', closeSheet);
 $('#btn-test-relay').addEventListener('click', async (e) => {
   e.preventDefault();
   const out = $('#relay-result');
-  out.className = 'relay-result busy'; out.textContent = 'Checking…';
-  const r = await testRelay($('#video-relay').value);
+  out.className = 'relay-result busy'; out.textContent = 'Checking your relay and OpenAI video access…';
+  const r = await checkAnimationSetup($('#openai-key').value.trim(), $('#video-relay').value);
   out.className = `relay-result ${r.ok ? 'ok' : 'err'}`; out.textContent = r.message;
 });
 $('#ed-close').addEventListener('click', () => goStep(4));

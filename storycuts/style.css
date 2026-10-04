@@ -1730,3 +1730,4 @@ img.missing { display: none; }
 .relay-result.ok { color: var(--ok); }
 .relay-result.err { color: #fca5a5; }
 .relay-result.busy { color: var(--muted); }
+#btn-test-relay { justify-self: start; margin-top: 4px; }

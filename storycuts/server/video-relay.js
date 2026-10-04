@@ -1,23 +1,24 @@
-// StoryCuts video relay (v2): a Cloudflare Worker that passes animation
+// StoryCuts video relay (v3): a Cloudflare Worker that passes animation
 // requests from the StoryCuts site to OpenAI's video API, adding the browser
 // (CORS) headers OpenAI's video endpoints don't send.
 //
 // Deploy (free): dash.cloudflare.com → Workers & Pages → Create → Worker →
 // "Hello World" → Edit code → replace everything with this file → Deploy.
 // Check it: open the worker's address in a browser tab. You should see
-// {"ok":true,"relay":"storycuts","version":2}. Then paste the address into
+// {"ok":true,"relay":"storycuts","version":3}. Then paste the address into
 // StoryCuts → API keys → More options → "Video relay address" → Test.
 //
 // It only forwards video requests, only for the StoryCuts site, and never
 // stores anything. Each user's own OpenAI key passes straight through.
 
 const ALLOWED_ORIGINS = ['https://saadtareen9-source.github.io'];
-const VERSION = 2;
+const VERSION = 3;
 
 const cors = (origin) => ({
   'access-control-allow-origin': origin || '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'authorization, content-type',
+  'access-control-expose-headers': 'x-storycuts-relay',
   'access-control-max-age': '86400',
   vary: 'origin',
 });
