@@ -240,17 +240,22 @@ export async function checkAnimationSetup(apiKey, relayUrl, model = 'sora-2') {
     const t = await testRelay(relayBase);
     if (!t.ok) return t;
   }
-  // 3. the video service itself
+  // 3. the video service itself: an incomplete create request costs nothing.
+  //    If the service is there it answers "missing prompt" (400); if it isn't, "not found".
   let res;
   try {
-    res = await fetch(`${relayBase || 'https://api.openai.com'}/v1/videos?limit=1`, { headers: { authorization: `Bearer ${apiKey}` } });
+    const form = new FormData();
+    form.append('model', model);
+    res = await fetch(`${relayBase || 'https://api.openai.com'}/v1/videos`, { method: 'POST', headers: { authorization: `Bearer ${apiKey}` }, body: form });
   } catch (e) {
     return { ok: false, message: relayBase ? `Couldn't reach the relay (${e.message}).` : 'Your account has the video model, but your browser can\'t talk to OpenAI\'s video service directly. Set up the free video relay and paste its address above.' };
   }
-  if (res.ok) return { ok: true, message: `Animation is ready: your OpenAI account can use ${model}${relayBase ? ' through your relay' : ''}.` };
   const text = await res.clone().text().catch(() => '');
+  if (res.ok || (res.status === 400 && /prompt|required|missing|invalid/i.test(text))) {
+    return { ok: true, message: `Animation is ready: OpenAI's video service accepts requests from your account${relayBase ? ' through your relay' : ''}. Press Animate on a scene.` };
+  }
   if (res.status === 404 && !text) {
-    return { ok: false, noAccess: true, message: 'Your account has the model, but OpenAI\'s video service still answers "not found" for it. Video access is usually switched on after organization verification (platform.openai.com → Settings → Organization → Verify). It can take a few minutes after verifying.' };
+    return { ok: false, noAccess: true, message: `Your account lists ${model}, but OpenAI's video service still answers "not found" when asked to make a video. This is on OpenAI's side: make sure your organization is verified (platform.openai.com → Settings → Organization → Verify) and that the API key is from that organization with "All" permissions. If both are true, contact OpenAI support (help.openai.com) and say the Videos API returns 404 for your organization.` };
   }
   const err = await apiError(res);
   return { ok: false, message: err.message };
