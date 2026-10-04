@@ -152,6 +152,7 @@ export function normalizeSegments(segments, characters, duration, report = [], {
       reason: String(s.reason || '').slice(0, 200),
       scene: s.scene ? normalizeScene(s.scene, characters, report, null) : null,
       ...(s.image ? { image: s.image } : {}),
+      ...(s.pair ? { pair: true } : {}),
     }))
     .sort((a, b) => a.start - b.start);
 
@@ -210,13 +211,16 @@ export function normalizeSegments(segments, characters, duration, report = [], {
       if (!found) break;
       const [a, b] = found;
       // prefer turning a short middle shot into a face cut; otherwise split the longest one
-      const inner = segs.slice(a, b + 1).map((sg, k) => ({ sg, k: a + k })).filter(({ k }) => k > a || b === a);
+      const inner = segs.slice(a, b + 1).map((sg, k) => ({ sg, k: a + k })).filter(({ k, sg }) => (k > a || b === a) && !sg.pair);
       const short = inner.filter(({ sg }) => sg.end - sg.start <= 3.5).sort((x, y) => (x.sg.end - x.sg.start) - (y.sg.end - y.sg.start))[0];
       if (short && short.k > a) {
         Object.assign(short.sg, { type: 'face', reason: 'Cut back to you mid-story.', scene: null });
         delete short.sg.image;
       } else {
-        const long = segs.slice(a, b + 1).reduce((x, y) => (y.end - y.start > x.end - x.start ? y : x));
+        // never cut away in the middle of a two-sided conversation
+        const pool = segs.slice(a, b + 1).filter((sg) => !sg.pair);
+        if (!pool.length) break;
+        const long = pool.reduce((x, y) => (y.end - y.start > x.end - x.start ? y : x));
         const len = long.end - long.start;
         const faceLen = Math.min(2, len * 0.35);
         if (len < 2.2) break;

@@ -217,6 +217,180 @@ function drawKenBurns(ctx, img, W, H, local, dur, idx) {
   ctx.drawImage(img, x, y, dw, dh);
 }
 
+// ---------- living pictures ----------
+// Free motion for still scenes: a camera move picked per shot, a little
+// handheld drift and light effects that match what's in the picture. Every
+// value is a pure function of time and the shot, so preview and export match.
+
+const rand = (seed) => { const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+const MOVES = ['push', 'pull', 'panL', 'panR', 'rise', 'push'];
+
+const AMBIENT = [
+  ['steam', /\b(steam|steaming|smok\w*|burn\w*|cook\w*|coffee|tea|soup|pan|stove|kettle|sizzl\w*|hot)\b/i],
+  ['fire', /\b(fire|flames?|candles?|fireplace|campfire|bonfire|torch)\b/i],
+  ['rain', /\b(rain\w*|storm\w*|drizzl\w*|downpour)\b/i],
+  ['snow', /\b(snow\w*|blizzard|winter)\b/i],
+  ['sparkle', /\b(sparkl\w*|glitter\w*|magic\w*|shin\w+|twinkl\w*|celebrat\w*|party|confetti)\b/i],
+  ['screen', /\b(phone|screen|texting|texts?|laptop|tv|television|monitor|computer|scrolling)\b/i],
+  ['hearts', /\b(love|crush|heart\w*|kiss\w*|romantic|date)\b/i],
+  ['sleep', /\b(sleep\w*|asleep|nap\w*|snor\w*|bed ?time)\b/i],
+  ['shake', /\b(bang|crash\w*|boom|slam\w*|explo\w*|smash\w*|thud|fell|falls?|trip\w*|punch\w*|scream\w*)\b/i],
+];
+const EFFECT_MAP = { smoke: 'steam', fire: 'fire', rain: 'rain', sparkles: 'sparkle', stars: 'sparkle', hearts: 'hearts', zzz: 'sleep', exclamation: 'shake', anger: 'shake', motion_lines: 'shake' };
+
+const ambientMemo = new WeakMap();
+function ambientFor(scene) {
+  if (!scene) return [];
+  if (ambientMemo.has(scene)) return ambientMemo.get(scene);
+  const text = [scene.image_prompt, scene.moment, scene.sound_effect, (scene.props || []).join(' ')].filter(Boolean).join(' ');
+  const set = new Set((scene.effects || []).map((e) => EFFECT_MAP[e]).filter(Boolean));
+  AMBIENT.forEach(([k, re]) => { if (re.test(text)) set.add(k); });
+  if (set.has('fire')) set.delete('steam');
+  // keep it tasteful: at most three effects, always some floating dust
+  const list = [...set].slice(0, 3);
+  if (!list.some((k) => ['rain', 'snow', 'steam'].includes(k))) list.push('dust');
+  ambientMemo.set(scene, list);
+  return list;
+}
+
+function cameraFor(img, W, H, local, dur, idx, fx) {
+  const prog = Math.min(1, local / Math.max(0.5, dur));
+  const ease = prog * prog * (3 - 2 * prog);
+  const move = MOVES[Math.floor(rand(idx + 1) * MOVES.length)];
+  let zoom = 1.08, px = 0, py = 0;
+  if (move === 'push') zoom = 1.05 + ease * 0.13;
+  if (move === 'pull') zoom = 1.18 - ease * 0.12;
+  if (move === 'panL') { zoom = 1.14; px = 0.8 - ease * 1.6; }
+  if (move === 'panR') { zoom = 1.14; px = -0.8 + ease * 1.6; }
+  if (move === 'rise') { zoom = 1.12; py = 0.7 - ease * 1.4; }
+  // impact: a short punch-in and shake at the start of the shot
+  let sx = 0, sy = 0;
+  if (fx.includes('shake') && local < 0.5) {
+    const k = (1 - local / 0.5) ** 2;
+    zoom *= 1 + 0.05 * k;
+    sx = Math.sin(local * 90) * 14 * k; sy = Math.cos(local * 77) * 10 * k;
+  }
+  const pop = local < 0.18 ? 1.03 - (local / 0.18) * 0.03 : 1;
+  zoom *= pop;
+  const scale = Math.max(W / img.width, H / img.height) * zoom;
+  const dw = img.width * scale, dh = img.height * scale;
+  const maxX = (dw - W) / 2, maxY = (dh - H) / 2;
+  // slow handheld drift
+  const u = Math.min(W, H) / 1000;
+  const hx = (Math.sin(local * 0.9 + idx) * 5 + Math.sin(local * 2.3 + idx * 2) * 2) * u;
+  const hy = (Math.cos(local * 0.7 + idx * 3) * 4 + Math.sin(local * 1.9 + idx) * 1.5) * u;
+  const x = (W - dw) / 2 + Math.max(-maxX, Math.min(maxX, px * maxX * 0.8 + hx)) + sx * u;
+  const y = (H - dh) / 2 + Math.max(-maxY, Math.min(maxY, py * maxY * 0.8 + hy)) + sy * u;
+  return { x, y, dw, dh };
+}
+
+function drawAmbience(ctx, W, H, local, idx, fx) {
+  const u = Math.min(W, H) / 1000;
+  ctx.save();
+  for (const k of fx) {
+    if (k === 'dust') {
+      ctx.fillStyle = '#fff';
+      for (let i = 0; i < 18; i++) {
+        const r = (s) => rand(idx * 97 + i * 13 + s);
+        const x = ((r(1) * W + Math.sin(local * 0.4 + i) * 30 * u + local * 8 * u) % W + W) % W;
+        const y = ((r(2) * H - local * (6 + r(3) * 10) * u) % H + H) % H;
+        ctx.globalAlpha = 0.12 + 0.18 * (0.5 + 0.5 * Math.sin(local * 1.5 + i * 2));
+        ctx.beginPath(); ctx.arc(x, y, (1.5 + r(4) * 2.5) * u, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (k === 'steam') {
+      for (let i = 0; i < 9; i++) {
+        const r = (s) => rand(idx * 31 + i * 7 + s);
+        const life = 3.2, t = (local + r(1) * life) % life, q = t / life;
+        const x = W * (0.3 + r(2) * 0.4) + Math.sin(t * 1.7 + i) * 26 * u;
+        const y = H * (0.72 - r(3) * 0.12) - q * H * 0.35;
+        const rad = (40 + q * 120) * u;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+        g.addColorStop(0, `rgba(240,240,240,${0.3 * Math.sin(q * Math.PI)})`); g.addColorStop(1, 'rgba(235,235,235,0)');
+        ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      }
+    } else if (k === 'fire') {
+      const f = 0.75 + 0.15 * Math.sin(local * 13) + 0.1 * Math.sin(local * 29 + 1);
+      const g = ctx.createRadialGradient(W / 2, H * 1.05, 0, W / 2, H * 1.05, Math.max(W, H) * 0.75);
+      g.addColorStop(0, `rgba(255,140,40,${0.4 * f})`); g.addColorStop(1, 'rgba(255,120,30,0)');
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#ffb347';
+      for (let i = 0; i < 22; i++) {
+        const r = (s) => rand(idx * 53 + i * 11 + s);
+        const life = 2.4, t = (local + r(1) * life) % life, q = t / life;
+        ctx.globalAlpha = 0.8 * (1 - q);
+        ctx.beginPath(); ctx.arc(W * r(2) + Math.sin(t * 4 + i) * 12 * u, H * (0.95 - q * 0.6), (3 + r(3) * 4) * u, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (k === 'rain') {
+      ctx.strokeStyle = 'rgba(210,225,255,0.6)'; ctx.lineWidth = 2.5 * u; ctx.globalAlpha = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 70; i++) {
+        const r = (s) => rand(idx * 17 + i * 5 + s);
+        const sp = H * (1.6 + r(1));
+        const y = ((r(2) * H + local * sp) % (H + 60 * u)) - 30 * u;
+        const x = (r(3) * W * 1.2 - y * 0.12) % W;
+        ctx.moveTo(x, y); ctx.lineTo(x - 6 * u, y + 34 * u);
+      }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(20,30,60,0.12)'; ctx.fillRect(0, 0, W, H);
+    } else if (k === 'snow') {
+      ctx.fillStyle = '#fff';
+      for (let i = 0; i < 45; i++) {
+        const r = (s) => rand(idx * 23 + i * 3 + s);
+        const y = (r(1) * H + local * (40 + r(2) * 50) * u) % H;
+        const x = (r(3) * W + Math.sin(local + i) * 20 * u + W) % W;
+        ctx.globalAlpha = 0.5 + r(4) * 0.4;
+        ctx.beginPath(); ctx.arc(x, y, (2 + r(5) * 3) * u, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (k === 'sparkle') {
+      ctx.fillStyle = '#fff7d6';
+      for (let i = 0; i < 12; i++) {
+        const r = (s) => rand(idx * 41 + i * 9 + s);
+        const tw = Math.max(0, Math.sin(local * (2 + r(1) * 2) + r(2) * 6));
+        const x = W * (0.08 + r(3) * 0.84), y = H * (0.08 + r(4) * 0.7), s = (12 + r(5) * 16) * u * tw;
+        ctx.globalAlpha = 0.9 * tw;
+        ctx.beginPath();
+        ctx.moveTo(x, y - s); ctx.quadraticCurveTo(x, y, x + s, y); ctx.quadraticCurveTo(x, y, x, y + s);
+        ctx.quadraticCurveTo(x, y, x - s, y); ctx.quadraticCurveTo(x, y, x, y - s); ctx.fill();
+      }
+    } else if (k === 'screen') {
+      const f = 0.6 + 0.25 * Math.sin(local * 2.2) + 0.15 * Math.sin(local * 7.3);
+      const g = ctx.createRadialGradient(W / 2, H * 0.55, 0, W / 2, H * 0.55, Math.max(W, H) * 0.6);
+      g.addColorStop(0, `rgba(120,170,255,${0.22 * f})`); g.addColorStop(1, 'rgba(120,170,255,0)');
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+    } else if (k === 'hearts') {
+      ctx.fillStyle = '#ff5c8a';
+      for (let i = 0; i < 6; i++) {
+        const r = (s) => rand(idx * 61 + i * 19 + s);
+        const life = 3, t = (local + r(1) * life) % life, q = t / life;
+        const x = W * (0.15 + r(2) * 0.7) + Math.sin(t * 2 + i) * 18 * u, y = H * (0.85 - q * 0.6), s = (10 + r(3) * 8) * u;
+        ctx.globalAlpha = 0.75 * Math.sin(q * Math.PI);
+        ctx.beginPath(); ctx.moveTo(x, y + s * 0.9);
+        ctx.bezierCurveTo(x - s * 1.4, y - s * 0.2, x - s * 0.6, y - s * 1.2, x, y - s * 0.4);
+        ctx.bezierCurveTo(x + s * 0.6, y - s * 1.2, x + s * 1.4, y - s * 0.2, x, y + s * 0.9); ctx.fill();
+      }
+    } else if (k === 'sleep') {
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+      for (let i = 0; i < 3; i++) {
+        const life = 2.4, t = (local + i * 0.8) % life, q = t / life;
+        ctx.globalAlpha = 0.85 * Math.sin(q * Math.PI);
+        ctx.font = `800 ${(26 + i * 8) * u}px system-ui, sans-serif`;
+        ctx.fillText('Z', W * (0.62 + q * 0.12) + Math.sin(t * 3) * 10 * u, H * (0.32 - q * 0.14));
+      }
+    }
+  }
+  ctx.restore();
+}
+
+export function drawLiving(ctx, img, W, H, local, dur, idx, scene) {
+  const fx = ambientFor(scene);
+  const { x, y, dw, dh } = cameraFor(img, W, H, local, dur, idx, fx);
+  ctx.drawImage(img, x, y, dw, dh);
+  drawAmbience(ctx, W, H, local, idx, fx);
+}
+
 /** Draw one shot (no captions) at time t. */
 function drawShot(ctx, W, H, t, project, seg, video, cache) {
   const { segments, settings } = project;
@@ -241,7 +415,8 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
       drawVideoCover(ctx, anim, 0, 0, W, H, 0.5, 0.5, 1);
       drawSoundEffect(ctx, seg.scene.sound_effect, W, H, local, Math.min(W, H) / 1000, sfxSide);
     } else if (bmp) {
-      drawKenBurns(ctx, bmp, W, H, local, dur, idx);
+      if (settings.sceneMotion === 'still') drawKenBurns(ctx, bmp, W, H, local, dur, idx);
+      else drawLiving(ctx, bmp, W, H, local, dur, idx, seg.scene);
       drawSoundEffect(ctx, seg.scene.sound_effect, W, H, local, Math.min(W, H) / 1000, sfxSide);
     } else {
       drawPlaceholder(ctx, W, H, seg, local, cache.pending?.has(seg.id));
