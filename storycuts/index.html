@@ -5,17 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StoryCuts: turn your storytime into an illustrated video</title>
   <meta name="description" content="Upload a video of yourself telling a story. StoryCuts keeps your face for the best moments and cuts to AI illustrations that act out what you're saying, with the same characters throughout.">
-  <meta name="theme-color" content="#0b0b14">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%238b5cf6'/><stop offset='.55' stop-color='%23ec4899'/><stop offset='1' stop-color='%23f59e0b'/></linearGradient></defs><rect width='64' height='64' rx='16' fill='url(%23g)'/><path d='M24 18l22 14-22 14z' fill='white'/></svg>">
+  <meta name="theme-color" content="#0a0a0b">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23f4f4f5'/><path d='M25 19l21 13-21 13z' fill='%230a0a0b'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=35">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
   <!-- icon sprite -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <defs><linearGradient id="sketch-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset=".6" stop-color="#f472b6"/><stop offset="1" stop-color="#fbbf24"/></linearGradient></defs>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.5 0-.9-.7-1.3-.7-2.2 0-.9.8-1.6 1.7-1.6H17a4 4 0 004-4c0-4.7-4-8.7-9-8.7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="7.5" cy="11" r="1.3" fill="currentColor"/><circle cx="10" cy="7" r="1.3" fill="currentColor"/><circle cx="14.5" cy="7" r="1.3" fill="currentColor"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
@@ -68,9 +67,7 @@
     <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2-.5-2.5-1.2M12 6.5v11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
   </svg>
 
-  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
-
-  <header class="nav">
+    <header class="nav">
     <a class="brand" href="#top" aria-label="StoryCuts home">
       <span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>
       StoryCuts
@@ -299,7 +296,6 @@
         </div>
 
         <div class="run hidden" id="run">
-          <div class="ld-host" id="create-live" hidden></div>
           <ol class="pipeline" id="pipeline">
             <li data-stage="transcribe"><i></i><b>Transcribing your story</b></li>
             <li data-stage="plan"><i></i><b>Planning the edit</b></li>
@@ -324,7 +320,6 @@
               <button class="btn glass sm" id="btn-add-char" title="Add a person or pet">+ Add character</button>
             </div>
           </div>
-          <div class="ld-host" id="cast-loader" hidden></div>
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
           <div class="cast-bar" id="cast-bar">
@@ -353,6 +348,15 @@
             <button class="btn primary sm ed-export" id="ed-export"><span>Export</span></button>
           </div>
           <div class="ed-view">
+            <div class="draw-card" id="draw-card" hidden>
+              <div class="dc-row">
+                <span class="dc-ico"><svg><use href="#i-spark"/></svg></span>
+                <div class="dc-txt"><b id="dc-title">Scenes</b><span id="scenes-cost"></span></div>
+                <button class="btn primary sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
+              </div>
+              <div class="progress hidden" id="gen-progress"><div></div></div>
+              <div class="status" id="scenes-status"></div>
+            </div>
             <div class="stage" id="stage"><canvas id="preview"></canvas></div>
             <div class="transport">
               <span id="time" class="tc">0:00.0</span>
@@ -379,17 +383,8 @@
             <div class="ed-sheet" id="ed-sheet">
             <div class="sheet-head"><i class="grip"></i><b id="sheet-title">Edit</b><button class="icon-btn sheet-done" id="sheet-done" aria-label="Done"><svg><use href="#i-check"/></svg></button></div>
             <div class="ed-panel" data-pane="shot">
-              <div class="draw-card" id="draw-card">
-                <div class="dc-row">
-                  <span class="dc-ico"><svg><use href="#i-spark"/></svg></span>
-                  <div class="dc-txt"><b id="dc-title">Scenes</b><span id="scenes-cost"></span></div>
-                  <button class="btn glass sm" id="btn-gen-scenes"><svg><use href="#i-spark"/></svg><span>Draw scenes</span></button>
-                </div>
-                <div class="progress hidden" id="gen-progress"><div></div></div>
-                <div class="ld-host" id="draw-loader" hidden></div>
-                <div class="status" id="scenes-status"></div>
-              </div>
               <div class="inspector" id="inspector"><p class="muted">Tap a clip on the timeline.</p></div>
+              <button class="btn ghost sm redraw-all" id="btn-redraw-all" hidden><svg><use href="#i-redo"/></svg>Redraw all scenes</button>
             </div>
 
             <div class="ed-panel" data-pane="sound" hidden>
@@ -447,7 +442,6 @@
               <label class="switch"><input type="checkbox" id="opt-watermark"><span></span>"made with StoryCuts" tag</label>
               <button class="btn primary lg wide" id="btn-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
               <div class="progress hidden" id="ex-progress"><div></div></div>
-              <div class="ld-host" id="ex-loader" hidden></div>
               <div class="status" id="ex-status"></div>
               <p class="muted small">Export plays your video once in real time while it records, with music and sound effects. Keep this tab open until it finishes.</p>
               <div class="tool-row">
@@ -592,7 +586,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=35", "./js/app.js": "./js/app.js?v=35", "./js/billing.js": "./js/billing.js?v=35", "./js/constants.js": "./js/constants.js?v=35", "./js/draw.js": "./js/draw.js?v=35", "./js/images.js": "./js/images.js?v=35", "./js/loader.js": "./js/loader.js?v=35", "./js/planner.js": "./js/planner.js?v=35", "./js/qc.js": "./js/qc.js?v=35", "./js/render.js": "./js/render.js?v=35", "./js/sfx.js": "./js/sfx.js?v=35", "./js/transcribe.js": "./js/transcribe.js?v=35"}}</script>
-  <script type="module" src="js/app.js?v=35"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=36", "./js/app.js": "./js/app.js?v=36", "./js/billing.js": "./js/billing.js?v=36", "./js/constants.js": "./js/constants.js?v=36", "./js/draw.js": "./js/draw.js?v=36", "./js/images.js": "./js/images.js?v=36", "./js/loader.js": "./js/loader.js?v=36", "./js/planner.js": "./js/planner.js?v=36", "./js/qc.js": "./js/qc.js?v=36", "./js/render.js": "./js/render.js?v=36", "./js/sfx.js": "./js/sfx.js?v=36", "./js/transcribe.js": "./js/transcribe.js?v=36"}}</script>
+  <script type="module" src="js/app.js?v=36"></script>
 </body>
 </html>
