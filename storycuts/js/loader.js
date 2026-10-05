@@ -67,6 +67,8 @@ const jobs = [];
 let overlay = null;
 let pill = null;
 let ticker = null;
+let returnFocus = null;
+const inertBackground = new Map();
 
 const shown = () => jobs.filter((j) => !j.minimized).at(-1);
 const backgrounded = () => jobs.filter((j) => j.minimized).at(-1);
@@ -77,14 +79,17 @@ function buildOverlay(job) {
   overlay.className = 'work';
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-live', 'polite');
+  overlay.setAttribute('aria-labelledby', `work-title-${job.id}`);
+  overlay.setAttribute('aria-describedby', `work-tip-${job.id}`);
+  overlay.tabIndex = -1;
   overlay.innerHTML = `
     <div class="work-card">
+      <div class="work-brand">StoryCuts studio</div>
       <div class="work-visual">${VISUALS[job.kind] || VISUALS.draw}</div>
-      <h2 class="work-title"></h2>
-      <p class="work-tip"></p>
+      <h2 class="work-title" id="work-title-${job.id}"></h2>
+      <p class="work-tip" id="work-tip-${job.id}"></p>
       ${job.steps.length ? `<ol class="work-steps">${job.steps.map((s) => `<li><i></i>${s}</li>`).join('')}</ol>` : ''}
-      <div class="work-bar"><i></i></div>
+      <div class="work-bar" role="progressbar" aria-label="Job progress" aria-valuemin="0" aria-valuemax="100"><i></i></div>
       <div class="work-meta"><span class="wm-count"></span><span class="wm-eta"></span></div>
       <div class="work-actions"></div>
       <p class="work-note"></p>
@@ -106,7 +111,7 @@ function buildOverlay(job) {
   });
   overlay.querySelector('.work-note').textContent = job.note || '';
   document.body.append(overlay);
-  overlay.querySelector('.work-actions .btn')?.focus({ preventScroll: true });
+  (overlay.querySelector('.work-actions .btn') || overlay).focus({ preventScroll: true });
   job.tipEl = overlay.querySelector('.work-tip');
   job.tipIdx = 0;
   showTip(job, true);
@@ -125,7 +130,7 @@ function buildPill(job) {
   pill?.remove();
   pill = document.createElement('button');
   pill.className = 'work-pill';
-  pill.innerHTML = `<svg class="ring" viewBox="0 0 20 20"><circle class="bg" cx="10" cy="10" r="8"/><circle class="fg" cx="10" cy="10" r="8" stroke-dasharray="50.3" stroke-dashoffset="50.3"/></svg><span class="wp-txt"><b></b><em></em></span><span class="wp-open">Show</span>`;
+  pill.innerHTML = `<svg class="ring" viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="8"/><circle class="fg" cx="10" cy="10" r="8" stroke-dasharray="50.3" stroke-dashoffset="50.3"/></svg><span class="wp-txt"><b></b><em></em></span><span class="wp-open">View progress</span>`;
   pill.addEventListener('click', () => { job.minimized = false; render(); });
   document.body.append(pill);
   pill.dataset.job = job.id;
@@ -137,6 +142,8 @@ function paint() {
     const r = j.model.read();
     overlay.querySelector('.work-title').textContent = j.title;
     overlay.querySelector('.work-bar i').style.width = `${r.pct.toFixed(1)}%`;
+    overlay.querySelector('.work-bar').setAttribute('aria-valuenow', String(Math.round(r.pct)));
+    overlay.querySelector('.work-bar').setAttribute('aria-valuetext', `${r.count}. ${r.eta}`);
     overlay.querySelector('.wm-count').textContent = r.count;
     overlay.querySelector('.wm-eta').textContent = r.eta;
     overlay.querySelectorAll('.work-steps li').forEach((li, i) => {
@@ -149,11 +156,19 @@ function paint() {
     pill.querySelector('.fg').setAttribute('stroke-dashoffset', (50.3 * (1 - r.pct / 100)).toFixed(1));
     pill.querySelector('.wp-txt b').textContent = b.short || b.title;
     pill.querySelector('.wp-txt em').textContent = b.model.st.total ? `${b.model.st.done}/${b.model.st.total}` : `${Math.round(r.pct)}%`;
+    pill.setAttribute('aria-label', `${b.short || b.title}, ${r.count}. View progress`);
   }
 }
 
 function render() {
   const j = shown();
+  if (j && !returnFocus) returnFocus = document.activeElement;
+  if (j) {
+    document.querySelectorAll('.nav, .menu-sheet, main, .cta-band, .foot, dialog').forEach((el) => {
+      if (!inertBackground.has(el)) inertBackground.set(el, el.inert);
+      el.inert = true;
+    });
+  }
   if (!j) {
     if (overlay) { const o = overlay; overlay = null; o.classList.add('out'); setTimeout(() => o.remove(), 240); }
   } else if (overlay?.dataset.job !== String(j.id)) {
@@ -164,10 +179,30 @@ function render() {
   if (!b) { pill?.remove(); pill = null; } else if (pill?.dataset.job !== String(b.id)) buildPill(b);
   document.body.classList.toggle('has-job', !!b);
   document.body.classList.toggle('work-open', !!j);
+  if (!j && returnFocus) {
+    inertBackground.forEach((wasInert, el) => { el.inert = wasInert; });
+    inertBackground.clear();
+    const fallback = document.body.classList.contains('sheet-open') ? document.querySelector('#sheet-done') : document.body.classList.contains('ed-app') || document.body.classList.contains('ed-full') ? document.querySelector('#btn-play') : [...document.querySelectorAll('.panel.active .btn.primary:not(:disabled)')].find((el) => el.getClientRects().length);
+    const target = returnFocus.isConnected && !returnFocus.disabled && returnFocus.getClientRects().length ? returnFocus : pill || fallback;
+    target?.focus({ preventScroll: true });
+    returnFocus = null;
+  }
   if (jobs.length && !ticker) ticker = setInterval(() => { paint(); jobs.forEach((x) => { if (!x.minimized && performance.now() - x.tipAt > 4800) { x.tipAt = performance.now(); showTip(x); } }); }, 400);
   if (!jobs.length && ticker) { clearInterval(ticker); ticker = null; }
   paint();
 }
+
+document.addEventListener('keydown', (e) => {
+  const job = shown();
+  if (!job || !overlay) return;
+  if (e.key === 'Escape' && job.background) { e.preventDefault(); job.minimized = true; render(); return; }
+  if (e.key !== 'Tab') return;
+  const controls = [...overlay.querySelectorAll('button:not(:disabled)')];
+  if (!controls.length) { e.preventDefault(); overlay.focus(); return; }
+  const first = controls[0], last = controls.at(-1);
+  if (!overlay.contains(document.activeElement) || (e.shiftKey && document.activeElement === first)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 
 let nextId = 1;
 /**

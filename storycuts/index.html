@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StoryCuts: turn your storytime into an illustrated video</title>
   <meta name="description" content="Upload a video of yourself telling a story. StoryCuts keeps your face for the best moments and cuts to AI illustrations that act out what you're saying, with the same characters throughout.">
-  <meta name="theme-color" content="#0a0a0b">
+  <meta name="theme-color" content="#0d0f13">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23f4f4f5'/><path d='M25 19l21 13-21 13z' fill='%230a0a0b'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=37; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=38; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=37">
+  <link rel="stylesheet" href="style.css?v=38">
 </head>
 <body>
   <!-- icon sprite -->
@@ -85,7 +85,7 @@
     </nav>
     <div class="nav-right">
       <button class="icon-btn nav-keys" id="btn-keys" aria-label="Connect your AI accounts" data-tip="AI accounts"><svg><use href="#i-key"/></svg><i class="dot" id="keys-dot"></i></button>
-      <a class="btn primary sm nav-cta" id="nav-plan" href="#pricing"><span>Get started</span></a>
+      <a class="btn primary sm nav-cta" id="nav-plan" href="#studio"><span>Get started</span></a>
       <button class="icon-btn nav-menu" id="btn-menu" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
     </div>
   </header>
@@ -103,12 +103,12 @@
     <!-- HERO -->
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow"><i></i> AI editor for storytime creators</span>
-        <h1>Tell your story on camera.<br><span class="grad">We'll illustrate it.</span></h1>
-        <p class="lead">Upload a video of yourself telling a story. StoryCuts keeps your face for the hook and the punchlines, and cuts to scenes that act out what you're describing, with the same characters in every shot.</p>
+        <span class="eyebrow"><i></i> Your story. A little more imagination.</span>
+        <h1>You tell the story.<br><span class="grad">We set the scene.</span></h1>
+        <p class="lead">Turn your storytime into an illustrated video. Keep your face for the best moments. Bring the rest to life with a cast that stays consistent.</p>
         <div class="hero-ctas">
-          <a class="btn primary lg" href="#studio"><svg><use href="#i-spark"/></svg>Start creating</a>
-          <button class="btn glass lg" id="cta-demo"><svg><use href="#i-play"/></svg>Try the demo story</button>
+          <a class="btn primary lg" href="#studio">Create your first video<svg><use href="#i-right"/></svg></a>
+          <button class="btn glass ghost lg" id="cta-demo"><svg><use href="#i-play"/></svg>Try the demo story</button>
         </div>
         <ul class="trust">
           <li><svg><use href="#i-shield"/></svg>Your video stays on your device</li>
@@ -117,6 +117,7 @@
         </ul>
       </div>
       <div class="hero-visual" aria-hidden="true">
+        <div class="hero-preview-head"><span><i></i> StoryCuts preview</span><span>9:16</span></div>
         <div class="phone">
           <div class="phone-screen">
             <div class="shot shot-face">
@@ -135,6 +136,8 @@
         </div>
         <div class="float-card fc1"><svg><use href="#i-spark"/></svg><div><b>Scene drawn</b><small>Two friends laughing over coffee</small></div></div>
         <div class="float-card fc2"><svg><use href="#i-check"/></svg><div><b>Quality checked</b><small>Characters match · no stray text</small></div></div>
+        <div class="hero-mini-tl"><span class="face"></span><span></span><span></span><span class="face"></span><span></span><span class="face"></span><i></i></div>
+        <p class="hero-preview-foot">Your face. Your characters. One story.</p>
       </div>
     </section>
 
@@ -147,7 +150,7 @@
     <!-- HOW -->
     <section class="how reveal" id="how">
       <span class="kicker">How it works</span>
-      <h2 class="section-title">From talking head to illustrated story in three steps</h2>
+      <h2 class="section-title">A good story. An easier edit.</h2>
       <div class="how-grid stagger">
         <article class="how-card spot"><span class="how-n">01</span><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Upload</h3><p>Film yourself telling a story on your phone and drop the video in.</p></article>
         <article class="how-card spot"><span class="how-n">02</span><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Pick a style</h3><p>Stick figures, anime, 3D, realistic and more. Your cast is designed once and stays consistent.</p></article>
@@ -158,7 +161,7 @@
     <!-- STUDIO -->
     <section class="studio" id="studio">
       <div class="studio-head">
-        <div><span class="kicker">Studio</span><h2 class="section-title">Make your video</h2></div>
+        <div><span class="kicker">Your creative space</span><h2 class="section-title">Let's make your video</h2></div>
         <ol class="stepper" id="stepper">
           <li data-s="1"><button><span>1</span><em>Upload</em></button></li>
           <li data-s="2"><button><span>2</span><em>Style</em></button></li>
@@ -178,11 +181,12 @@
           <div class="proj-row" id="proj-row"></div>
           <div class="or-line"><span>or start a new video</span></div>
         </div>
-        <label class="drop" id="drop">
+        <label class="drop" id="drop" role="button" tabindex="0" aria-label="Choose a video file" aria-describedby="upload-formats">
           <input type="file" id="file" accept="video/*" hidden>
           <span class="drop-ico"><svg><use href="#i-upload"/></svg></span>
           <strong>Drop your video here</strong>
-          <span>or <u>browse your files</u> · MP4, MOV or WebM</span>
+          <span>or <u>choose a file</u></span>
+          <small id="upload-formats">MP4, MOV or WebM · edited on your device</small>
         </label>
         <div class="upload-foot">
           <label class="check"><input type="checkbox" id="rights"><span class="box"><svg><use href="#i-check"/></svg></span>I own this video or have the rights to edit it</label>
@@ -194,7 +198,7 @@
 
       <!-- 2 STYLE -->
       <div class="panel" id="panel-style" data-step="2">
-        <div class="panel-head"><span class="num">2</span><div><h3>Choose your style</h3><p>Swipe through the styles. The one in the middle is selected.</p></div></div>
+        <div class="panel-head"><span class="num">2</span><div><h3>Find your story's look</h3><p>Swipe or use the arrows to explore. The centre style is your selection.</p></div></div>
         <div class="slider">
           <button class="slide-btn prev" id="style-prev" aria-label="Previous style"><svg><use href="#i-left"/></svg></button>
           <div class="style-track" id="style-track" role="listbox" aria-label="Art style" tabindex="0"></div>
@@ -225,7 +229,7 @@
 
       <!-- 3 SETTINGS -->
       <div class="panel" id="panel-settings" data-step="3">
-        <div class="panel-head"><span class="num">3</span><div><h3>Video settings</h3><p>How your video is framed and edited. You can change these later.</p></div></div>
+        <div class="panel-head"><span class="num">3</span><div><h3>Make it yours</h3><p>Start with the recommended settings, or choose your own. You can adjust them in the editor.</p></div></div>
         <div class="opt-group">
           <span class="opt-label">Format</span>
           <div class="choices two" id="seg-format">
@@ -260,7 +264,7 @@
 
       <!-- 3 CREATE -->
       <div class="panel" id="panel-create" data-step="4">
-        <div class="panel-head"><span class="num">4</span><div><h3>Create your video</h3><p>Check your choices, then let StoryCuts do the work.</p></div></div>
+        <div class="panel-head"><span class="num">4</span><div><h3>Ready to bring it to life?</h3><p>We'll plan the cuts first. You'll check the characters before we draw your scenes.</p></div></div>
 
         <div class="create-start" id="create-start">
           <div class="summary" id="create-summary"></div>
@@ -327,7 +331,7 @@
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
           <div class="cast-bar" id="cast-bar">
-            <div class="cb-steps"><span class="cb-step" id="cb-step1"><i>1</i>Draw characters</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Check them</span><span class="cb-line"></span><span class="cb-step" id="cb-step3"><i>3</i>Draw scenes</span></div>
+            <div class="cb-steps" aria-label="Character workflow"><span class="cb-step" id="cb-step1"><i>1</i>Draw</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Review</span><span class="cb-line"></span><span class="cb-step" id="cb-step3"><i>3</i>Scenes</span></div>
             <div class="cb-main">
               <div class="cb-txt"><b id="cb-title"></b><small id="cb-sub"></small></div>
               <div class="cb-cta">
@@ -347,11 +351,12 @@
 
         <div class="ed">
           <div class="ed-top">
-            <button class="icon-btn ed-x" id="ed-close" aria-label="Close editor"><svg><use href="#i-close"/></svg></button>
-            <span class="ed-title">StoryCuts</span>
-            <button class="btn primary sm ed-export" id="ed-export"><span>Export</span></button>
+            <button class="icon-btn ed-x" id="ed-close" aria-label="Back to create"><svg><use href="#i-left"/></svg></button>
+            <div class="ed-project"><span class="ed-project-label">StoryCuts studio</span><span class="ed-title">Untitled story</span></div>
+            <button class="btn primary sm ed-export" id="ed-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
           </div>
           <div class="ed-view">
+            <div class="view-bar"><span>Preview</span><span class="preview-spec" id="preview-spec">9:16 · Vertical</span></div>
             <div class="draw-card" id="draw-card" hidden>
               <div class="dc-row">
                 <span class="dc-ico"><svg><use href="#i-spark"/></svg></span>
@@ -365,33 +370,33 @@
             <div class="transport">
               <span id="time" class="tc">0:00.0</span>
               <div class="transport-mid">
-                <button class="tbtn" id="btn-undo" data-tip="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg><span>Undo</span></button>
-                <button class="tbtn flip" id="btn-redo" data-tip="Redo (Ctrl+Shift+Z)" disabled><svg><use href="#i-undo"/></svg><span>Redo</span></button>
+                <button class="tbtn" id="btn-undo" aria-label="Undo" data-tip="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg><span>Undo</span></button>
+                <button class="tbtn flip" id="btn-redo" aria-label="Redo" data-tip="Redo (Ctrl+Shift+Z)" disabled><svg><use href="#i-undo"/></svg><span>Redo</span></button>
                 <button class="play" id="btn-play" aria-label="Play"><svg><use href="#i-play"/></svg></button>
-                <button class="tbtn" id="btn-split" data-tip="Split the shot at the playhead (S)"><svg><use href="#i-scissors"/></svg><span>Split</span></button>
-                <button class="tbtn" id="btn-snap" data-tip="Jump to the next cut (→)"><svg><use href="#i-right"/></svg><span>Next</span></button>
+                <button class="tbtn" id="btn-split" aria-label="Split at playhead" data-tip="Split the shot at the playhead (S)"><svg><use href="#i-scissors"/></svg><span>Split</span></button>
+                <button class="tbtn" id="btn-snap" aria-label="Next cut" data-tip="Jump to the next cut (→)"><svg><use href="#i-right"/></svg><span>Next</span></button>
               </div>
               <div class="zoom"><button class="icon-btn sm" id="zoom-out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="icon-btn sm" id="zoom-in" aria-label="Zoom in"><svg><use href="#i-plus"/></svg></button></div>
             </div>
           </div>
 
           <div class="ed-side">
-            <nav class="ed-tabs" id="ed-tabs" role="tablist">
-              <button data-tab="shot" class="on"><svg><use href="#i-edit"/></svg>Edit</button>
-              <button data-tab="sound"><svg><use href="#i-music"/></svg>Audio</button>
-              <button data-tab="captions"><svg><use href="#i-text"/></svg>Text</button>
-              <button data-tab="filters"><svg><use href="#i-filter"/></svg>Filters</button>
-              <button data-tab="trans"><svg><use href="#i-trans"/></svg>Transitions</button>
-              <button data-tab="export"><svg><use href="#i-download"/></svg>Export</button>
+            <nav class="ed-tabs" id="ed-tabs" role="tablist" aria-label="Editor tools">
+              <button id="tab-shot" data-tab="shot" class="on" role="tab" aria-selected="true" aria-controls="pane-shot"><svg><use href="#i-edit"/></svg>Edit</button>
+              <button id="tab-sound" data-tab="sound" role="tab" aria-selected="false" aria-controls="pane-sound"><svg><use href="#i-music"/></svg>Audio</button>
+              <button id="tab-captions" data-tab="captions" role="tab" aria-selected="false" aria-controls="pane-captions"><svg><use href="#i-text"/></svg>Text</button>
+              <button id="tab-filters" data-tab="filters" role="tab" aria-selected="false" aria-controls="pane-filters"><svg><use href="#i-filter"/></svg>Filters</button>
+              <button id="tab-trans" data-tab="trans" role="tab" aria-selected="false" aria-controls="pane-trans"><svg><use href="#i-trans"/></svg>Transitions</button>
+              <button id="tab-export" data-tab="export" role="tab" aria-selected="false" aria-controls="pane-export"><svg><use href="#i-download"/></svg>Export</button>
             </nav>
             <div class="ed-sheet" id="ed-sheet">
             <div class="sheet-head"><i class="grip"></i><b id="sheet-title">Edit</b><button class="icon-btn sheet-done" id="sheet-done" aria-label="Done"><svg><use href="#i-check"/></svg></button></div>
-            <div class="ed-panel" data-pane="shot">
+            <div class="ed-panel" id="pane-shot" data-pane="shot" role="tabpanel" aria-labelledby="tab-shot">
               <div class="inspector" id="inspector"><p class="muted">Tap a clip on the timeline.</p></div>
               <button class="btn ghost sm redraw-all" id="btn-redraw-all" hidden><svg><use href="#i-redo"/></svg>Redraw all scenes</button>
             </div>
 
-            <div class="ed-panel" data-pane="sound" hidden>
+            <div class="ed-panel" id="pane-sound" data-pane="sound" role="tabpanel" aria-labelledby="tab-sound" hidden>
               <p class="pane-title">Mix</p>
               <div class="mix">
                 <label class="range-field" id="mix-voice"><span>Voice</span><input type="range" id="vol-voice" min="0" max="1.5" step="0.05" value="1"></label>
@@ -408,8 +413,8 @@
               <input type="file" id="sfx-file" accept="audio/*" multiple hidden>
             </div>
 
-            <div class="ed-panel" data-pane="captions" hidden>
-              <div class="pane-title-row"><p class="pane-title">Captions</p><label class="switch"><input type="checkbox" id="opt-captions" checked><span></span></label></div>
+            <div class="ed-panel" id="pane-captions" data-pane="captions" role="tabpanel" aria-labelledby="tab-captions" hidden>
+              <div class="pane-title-row"><p class="pane-title">Captions</p><label class="switch"><input type="checkbox" id="opt-captions" aria-label="Show captions" checked><span></span></label></div>
               <div class="cap-styles" id="cap-styles"></div>
               <p class="pane-title">Position</p>
               <div class="mini-seg" id="cap-pos"><button data-v="high">Top</button><button data-v="mid">Middle</button><button data-v="low" class="on">Bottom</button></div>
@@ -421,7 +426,7 @@
               <details class="transcript-box"><summary>Transcript</summary><div class="transcript" id="transcript"></div></details>
             </div>
 
-            <div class="ed-panel" data-pane="filters" hidden>
+            <div class="ed-panel" id="pane-filters" data-pane="filters" role="tabpanel" aria-labelledby="tab-filters" hidden>
               <p class="pane-title">Filter</p>
               <div class="filter-grid" id="filter-grid"></div>
               <label class="range-field wide-range" id="filter-amt-row"><span>Strength</span><input type="range" id="filter-amt" min="0" max="1" step="0.05" value="1"></label>
@@ -431,13 +436,14 @@
               <label class="range-field wide-range"><span>Face framing</span><input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
             </div>
 
-            <div class="ed-panel" data-pane="trans" hidden>
+            <div class="ed-panel" id="pane-trans" data-pane="trans" role="tabpanel" aria-labelledby="tab-trans" hidden>
               <div class="mini-seg" id="trans-scope"><button data-v="all" class="on">All cuts</button><button data-v="one">Selected cut</button></div>
               <p class="muted small" id="trans-hint"></p>
               <div class="trans-grid" id="trans-grid"></div>
             </div>
 
-            <div class="ed-panel" data-pane="export" hidden>
+            <div class="ed-panel" id="pane-export" data-pane="export" role="tabpanel" aria-labelledby="tab-export" hidden>
+              <div class="export-intro"><span class="export-ico"><svg><use href="#i-download"/></svg></span><h4>Your story, ready to share</h4><p>Choose a format, then save the finished video to your device.</p></div>
               <p class="pane-title">Format</p>
               <div class="mini-seg" id="seg-aspect">
                 <button data-aspect="vertical" class="on">9:16 vertical</button>
@@ -458,6 +464,7 @@
           </div>
 
           <div class="tl" id="tl">
+            <div class="timeline-bar"><b>Timeline</b><span class="timeline-help">Select a shot to edit · drag its edges to trim</span><span class="timeline-legend"><i class="legend-face"></i>Your face<i class="legend-scene"></i>Scene</span></div>
             <div class="tl-scroll" id="tl-scroll">
               <div class="tl-content" id="tl-content">
                 <div class="tl-ruler" id="tl-ruler"></div>
@@ -467,10 +474,11 @@
                 <div class="tl-track voice"><canvas id="tl-wave"></canvas></div>
               </div>
             </div>
-            <div class="tl-labels"><span>Shots</span><span>FX</span><span>Music</span><span>Voice</span></div>
+            <div class="tl-labels"><span>Shots</span><span>Effects</span><span>Music</span><span>Voice</span></div>
             <div class="tl-head" id="playhead"></div>
           </div>
         </div>
+        <button class="ed-scrim" id="ed-scrim" tabindex="-1" aria-label="Close tools" hidden></button>
         <div class="wiz-nav"><button class="btn ghost lg" data-back="4"><svg><use href="#i-left"/></svg>Back to create</button><span></span></div>
       </div>
       </div>
@@ -590,7 +598,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=37", "./js/app.js": "./js/app.js?v=37", "./js/billing.js": "./js/billing.js?v=37", "./js/constants.js": "./js/constants.js?v=37", "./js/draw.js": "./js/draw.js?v=37", "./js/images.js": "./js/images.js?v=37", "./js/loader.js": "./js/loader.js?v=37", "./js/planner.js": "./js/planner.js?v=37", "./js/qc.js": "./js/qc.js?v=37", "./js/render.js": "./js/render.js?v=37", "./js/sfx.js": "./js/sfx.js?v=37", "./js/transcribe.js": "./js/transcribe.js?v=37"}}</script>
-  <script type="module" src="js/app.js?v=37"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=38", "./js/app.js": "./js/app.js?v=38", "./js/billing.js": "./js/billing.js?v=38", "./js/constants.js": "./js/constants.js?v=38", "./js/draw.js": "./js/draw.js?v=38", "./js/images.js": "./js/images.js?v=38", "./js/loader.js": "./js/loader.js?v=38", "./js/planner.js": "./js/planner.js?v=38", "./js/qc.js": "./js/qc.js?v=38", "./js/render.js": "./js/render.js?v=38", "./js/sfx.js": "./js/sfx.js?v=38", "./js/transcribe.js": "./js/transcribe.js?v=38"}}</script>
+  <script type="module" src="js/app.js?v=38"></script>
 </body>
 </html>

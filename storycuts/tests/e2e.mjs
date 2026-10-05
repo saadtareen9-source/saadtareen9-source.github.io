@@ -85,6 +85,8 @@ const browser = await chromium.launch();
 const errors = [];
 async function newContext(opts) {
   const ctx = await browser.newContext(opts);
+  // Keep the suite offline: use the site's system font fallback in tests.
+  await ctx.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ body: '', contentType: 'text/css' }));
   await ctx.addInitScript(() => {
     localStorage.setItem('storycuts:key', JSON.stringify('sk-ant-test'));
     localStorage.setItem('storycuts:okey', JSON.stringify('sk-openai-test'));
@@ -122,6 +124,11 @@ try {
   watch(p, 'desktop');
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
+  await p.locator('#nav-plan').click(); await sleep(400);
+  await shot(p, '01b-upload');
+  const chooser = p.waitForEvent('filechooser');
+  await p.locator('#drop').focus(); await p.keyboard.press('Enter');
+  check(!!(await chooser), 'upload can be opened with the keyboard');
   await p.click('#cta-demo'); await sleep(900);
   check(await step() === '2', 'demo opens the style step');
   await shot(p, '02-style');
@@ -141,21 +148,72 @@ try {
   const segs = await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.scene).map((s) => ({ a: s.scene.actors.map((x) => x.character_id).join(','), off: (s.scene.offscreen || []).join(','), loc: s.scene.location_id })));
   check(segs.some((s) => s.a === 'jake' && s.loc === 'jake_room') && segs.some((s) => s.a === 'me' && s.off === 'jake'), 'texting is split into two shots, one per place', JSON.stringify(segs));
   await shot(p, '06-characters');
+  await p.click('#btn-add-char');
+  check(await p.evaluate(() => document.activeElement?.matches('#chars .char:last-child [data-k=name]')), 'adding a character opens an inline name field');
+  await p.locator('#chars .char:last-child [data-k=name]').fill('Grandma');
+  await p.locator('#chars .char:last-child [data-k=description]').fill('Gray bob, round glasses, cream cardigan');
+  check(await p.evaluate(() => window.__storycuts.state.project.characters.at(-1).name === 'Grandma'), 'character edits save without a dialog');
+  await p.locator('#chars .char:last-child [data-del]').click();
+  check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 3, 'inline character can be removed');
+  for (let i = 0; i < 6; i++) await p.click('#btn-add-char');
+  check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 8, 'character limit prevents an extra character being silently discarded');
+  for (let i = 0; i < 5; i++) await p.locator('#chars .char:last-child [data-del]').click();
+  await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad the cook');
   await p.click('#btn-gen-chars'); await sleep(400);
   check(await p.isVisible('.work'), 'progress screen shows while drawing characters');
   await p.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await sleep(600);
+  const dadKey = await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.key);
+  await p.locator('#chars [data-character=dad] [data-k=description]').fill('Tall bald dad, bushy mustache, red polo and a cream apron');
+  check(await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.stale) && !(await p.isVisible('#btn-approve')), 'changing appearance requires a new drawing before approval');
+  await shot(p, '07b-character-updated');
+  await p.click('#btn-gen-chars');
+  await p.waitForFunction((old) => {
+    const c = window.__storycuts.state.project.characters.find((c) => c.id === 'dad');
+    return c.image?.key !== old && !c.image?.stale && !window.__storycuts.state.charBusy?.size;
+  }, dadKey, { timeout: 30000 });
+  await sleep(400);
+  check(await p.isVisible('#btn-approve'), 'redrawing the updated character restores approval');
+  await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad');
+  check(await p.isVisible('#btn-approve'), 'renaming a character keeps its existing drawing');
   await shot(p, '07-characters-drawn');
   await p.click('#btn-approve'); await sleep(800);
   check(await p.isVisible('.work .btn.primary'), 'scene drawing offers "Back to editor"');
   await shot(p, '08-drawing-scenes');
   await p.click('.work .btn.primary'); await sleep(400);
   check(await p.isVisible('.work-pill'), 'background job pill shows in the editor');
+  await p.locator('#timeline .clip.scene').first().click();
+  await p.locator('#redo-note').fill('Keep this change request while the pictures arrive');
+  await shot(p, '08b-background-editor');
   await p.waitForFunction(() => !window.__storycuts.state.genAbort, null, { timeout: 60000 });
   await sleep(600);
+  check(await p.locator('#redo-note').inputValue() === 'Keep this change request while the pictures arrive', 'background drawing preserves the inspector draft');
   check(await step() === '5' && await p.evaluate(() => document.body.classList.contains('ed-app')), 'editor opens full-screen on desktop');
   const drawn = await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.type !== 'face' && s.scene).every((s) => s.image?.key));
   check(drawn, 'every scene has a picture');
+  // A scene edited while its picture is in flight must still ask for an update.
+  await p.route('https://api.openai.com/**', async (r) => {
+    if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
+    await sleep(1800);
+    await r.fulfill({ contentType: 'application/json', headers: cors, body: JSON.stringify({ created: 1, data: [{ b64_json: pngs[0] }] }) });
+  });
+  const drawingRequest = p.waitForRequest((r) => r.url().startsWith('https://api.openai.com/') && r.method() !== 'OPTIONS');
+  await p.click('#inspector [data-act=redraw]'); await drawingRequest;
+  await p.click('.work .btn.primary');
+  await p.locator('#inspector [data-s=image_prompt]').fill('Me in the kitchen holding a frying pan and wearing a blue apron.');
+  await p.locator('#redo-note').focus();
+  await p.waitForFunction(() => !window.__storycuts.state.genAbort, null, { timeout: 30000 });
+  check(await p.evaluate(() => {
+    const st = window.__storycuts.state;
+    return st.project.segments.find((s) => s.id === st.selected).image.stale;
+  }), 'a scene changed during drawing stays marked for updating');
+  await p.unroute('https://api.openai.com/**');
+  await p.click('#inspector [data-act=redraw]');
+  await p.waitForFunction(() => !window.__storycuts.state.genAbort, null, { timeout: 30000 });
+  check(await p.evaluate(() => {
+    const st = window.__storycuts.state;
+    return !st.project.segments.find((s) => s.id === st.selected).image.stale;
+  }), 'redrawing the latest scene clears its update warning');
   await p.locator('#timeline .clip.scene').nth(1).click(); await sleep(400);
   await shot(p, '09-editor');
   // trim
@@ -174,6 +232,9 @@ try {
     check(await p.isVisible(`.ed-panel[data-pane=${t}]`), `editor tab "${t}" opens`);
     if (t !== 'shot') await shot(p, `10-tab-${t}`);
   }
+  await p.locator('#ed-tabs [data-tab=shot]').focus();
+  await p.keyboard.press('ArrowDown');
+  check(await p.isVisible('.ed-panel[data-pane=sound]') && await p.getAttribute('#tab-sound', 'aria-selected') === 'true', 'keyboard navigation selects the next tool tab');
   // sound effect
   await p.click('#ed-tabs button[data-tab=sound]');
   const fx0 = await p.evaluate(() => window.__storycuts.state.project.sfx.length);
@@ -182,11 +243,14 @@ try {
   // split
   const n0 = await p.evaluate(() => window.__storycuts.state.project.segments.length);
   await p.evaluate(async () => { const st = window.__storycuts.state; const s = st.project.segments.find((x) => x.id === st.selected); await st.media.seek((s.start + s.end) / 2); });
-  await p.click('#btn-split'); await sleep(300);
+  await p.locator('#btn-split').focus(); await p.keyboard.press('Space'); await sleep(300);
   check(await p.evaluate(() => window.__storycuts.state.project.segments.length) === n0 + 1, 'split adds a shot');
+  check(await p.evaluate(() => window.__storycuts.state.media.paused), 'Space activates the focused Split button without starting playback');
   // play
   const t0 = await p.evaluate(() => window.__storycuts.state.media.time);
-  await p.click('#btn-play'); await sleep(1200); await p.click('#btn-play');
+  await p.click('#btn-play');
+  check(await p.getAttribute('#btn-play', 'aria-label') === 'Pause', 'playback control announces Pause while playing');
+  await sleep(1200); await p.click('#btn-play');
   check(await p.evaluate(() => window.__storycuts.state.media.time) > t0 + 0.5, 'play moves the playhead');
   // living pictures toggle
   await p.click('#ed-tabs button[data-tab=filters]'); await sleep(200);
@@ -197,11 +261,38 @@ try {
   await p.click('#ed-tabs button[data-tab=export]'); await sleep(200);
   await p.click('#btn-export'); await sleep(1200);
   check(await p.isVisible('.work'), 'export shows the progress screen');
+  const exportingShots = await p.evaluate(() => window.__storycuts.state.project.segments.length);
+  await p.keyboard.press('s');
+  check(await p.evaluate(() => window.__storycuts.state.project.segments.length) === exportingShots, 'loading screen blocks hidden editor shortcuts');
+  await p.keyboard.press('Tab');
+  check(await p.evaluate(() => !!document.activeElement?.closest('.work')), 'keyboard focus stays inside the loading screen');
+  check(await p.getAttribute('.work-bar', 'aria-valuenow') !== null, 'loading progress is exposed to assistive technology');
   await shot(p, '11-exporting');
   await p.click('.work .btn.ghost'); await sleep(1500);
   check(!(await p.isVisible('.work')), 'export can be cancelled');
+  // Geometry at a smaller desktop size and in landscape format.
+  await p.setViewportSize({ width: 900, height: 700 });
+  await p.click('#tab-export');
+  await p.click('#seg-aspect [data-aspect=horizontal]'); await sleep(350);
+  check(await p.textContent('#preview-spec') === '16:9 · Horizontal', 'preview label follows the chosen export format');
+  await shot(p, '12-editor-horizontal');
+  await p.click('#seg-aspect [data-aspect=vertical]');
+  await p.click('#tab-shot'); await sleep(350);
+  const preview = await p.locator('#preview').boundingBox();
+  check(preview.x >= 0 && preview.y >= 0 && preview.x + preview.width <= 900 && preview.y + preview.height <= 700, 'preview fits a smaller desktop viewport');
+  await p.locator('#pane-shot').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await p.locator('#timeline .clip.sel').focus();
+  const selectedBefore = await p.evaluate(() => window.__storycuts.state.selected);
+  await p.keyboard.press('ArrowRight');
+  check(await p.evaluate(() => window.__storycuts.state.selected) !== selectedBefore, 'timeline shots can be selected with the keyboard');
+  check(await p.locator('#pane-shot').evaluate((el) => el.scrollTop === 0), 'selecting another shot returns its inspector to the top');
+  await sleep(650);
+  await shot(p, '13-editor-small-desktop');
   // missing character pictures are reported honestly
   await p.click('#ed-close'); await sleep(700);
+  await p.click('#btn-show-cast');
+  await p.locator('#chars [data-character=dad] [data-k=description]').fill('Tall dad in a green sweater');
+  check(await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.scene?.actors.some((a) => a.character_id === 'dad') && s.image?.key).every((s) => s.image.stale)), 'a changed character marks its existing scenes for updating');
   await p.evaluate(() => window.__storycuts.state.project.characters.forEach((c) => delete c.image));
   await p.click('#stepper li[data-s="3"] button'); await sleep(300);
   await p.click('#stepper li[data-s="4"] button'); await sleep(800);
@@ -216,8 +307,18 @@ try {
   const noSideScroll = async (where) => check(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, `no sideways scroll on phone: ${where}`);
   await noSideScroll('landing');
   await m.click('#cta-demo'); await sleep(900); await shot(m, 'p02-style'); await noSideScroll('style');
+  check(await m.locator('#btn-style-next').evaluate((el) => el.scrollWidth <= el.clientWidth), 'style Continue label fits its phone button');
+  check(await m.evaluate(() => {
+    const card = document.querySelector('.style-card.on').getBoundingClientRect();
+    return card.bottom <= document.querySelector('#style-track').getBoundingClientRect().bottom && card.bottom <= document.querySelector('#panel-style .wiz-nav').getBoundingClientRect().top;
+  }), 'selected style details stay above the phone footer');
   await m.click('#btn-style-next'); await sleep(800); await shot(m, 'p03-settings'); await noSideScroll('settings');
   await m.click('#panel-settings [data-next="4"]'); await sleep(800); await shot(m, 'p04-create'); await noSideScroll('create');
+  check(await m.locator('#btn-create').evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, Math.min(innerHeight - 1, rect.y + rect.height / 2));
+    return rect.bottom <= innerHeight && (hit === el || el.contains(hit));
+  }), 'Create action is visible above the phone footer');
   await m.click('#btn-create');
   await m.waitForFunction(() => !document.querySelector('#btn-gen-chars').hidden, null, { timeout: 30000 });
   await sleep(500); await shot(m, 'p05-characters'); await noSideScroll('characters');
@@ -225,6 +326,10 @@ try {
   await m.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await m.click('#btn-approve'); await sleep(600);
   await m.click('.work .btn.primary');
+  await sleep(150); await shot(m, 'p06b-background-editor');
+  const pill = await m.locator('.work-pill').boundingBox();
+  const mobileStage = await m.locator('#stage').boundingBox();
+  check(pill.x >= 0 && pill.x + pill.width <= 390 && pill.y + pill.height <= mobileStage.y, 'background pill fits above the phone preview');
   await m.waitForFunction(() => !window.__storycuts.state.genAbort, null, { timeout: 60000 });
   await sleep(600);
   check(await m.evaluate(() => document.body.classList.contains('ed-full')), 'editor is full-screen on phone');
@@ -233,8 +338,38 @@ try {
   check(await m.evaluate(() => document.querySelector('#ed-sheet').classList.contains('open')), 'phone tool sheet slides up');
   await shot(m, 'p07-sheet');
   await m.click('#sheet-done'); await sleep(500);
+  check(await m.evaluate(() => document.activeElement?.id) === 'tab-shot', 'closing the phone sheet returns focus to its tool');
+  for (const t of ['sound', 'captions', 'filters', 'trans', 'export']) {
+    await m.click(t === 'export' ? '#ed-export' : `#ed-tabs [data-tab=${t}]`); await sleep(350);
+    check(await m.isVisible(`.ed-panel[data-pane=${t}]`), `phone tool "${t}" is reachable`);
+    await shot(m, `p08-tool-${t}`); await noSideScroll(t);
+    if (t === 'sound') {
+      const focused = await m.evaluate(() => ({ id: document.activeElement.id, tag: document.activeElement.tagName, inside: !!document.activeElement.closest('#ed-sheet') }));
+      check(focused.inside && focused.id === 'sheet-done', 'opening a phone tool moves focus into the sheet');
+      await m.keyboard.press('Shift+Tab');
+      check(await m.evaluate(() => !!document.activeElement?.closest('#ed-sheet')), 'phone sheet contains keyboard focus');
+      await m.keyboard.press('Escape');
+    } else await m.click('#sheet-done');
+  }
+  await m.click('#ed-tabs [data-tab=shot]'); await sleep(350);
+  await m.locator('#ed-scrim').click({ position: { x: 8, y: 100 } });
+  check(!(await m.evaluate(() => document.body.classList.contains('sheet-open'))), 'tapping outside the phone sheet closes it');
   await noSideScroll('editor');
   await mctx.close();
+
+  // Reduced motion still leaves the landing and progress visuals readable.
+  const rctx = await newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  const r = await rctx.newPage(); watch(r, 'reduced motion');
+  await r.goto(URL0); await sleep(400);
+  check(await r.evaluate(() => document.querySelector('#hero-talk').paused), 'reduced motion pauses the autoplay hero');
+  await r.evaluate(async () => {
+    const { showWork } = await import('./js/loader.js');
+    window.testWork = showWork({ kind: 'plan', title: 'Planning your story', tips: ['Finding the moments to bring to life.'], steps: ['Plan the edit', 'Check the scenes'] });
+  });
+  await shot(r, 'p09-reduced-motion-progress');
+  check(await r.isVisible('.work-title') && await r.evaluate(() => getComputedStyle(document.querySelector('.wv-plan .card')).opacity === '1'), 'reduced motion keeps the progress illustration visible');
+  await r.evaluate(() => window.testWork.stop());
+  await rctx.close();
 } catch (e) {
   check(false, 'test run finished', e.message.split('\n')[0]);
 }

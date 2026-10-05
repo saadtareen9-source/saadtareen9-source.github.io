@@ -524,7 +524,7 @@ function renderPipeline() {
   $('#run').classList.toggle('hidden', phase !== 'running');
   $('#ready-card').classList.toggle('hidden', phase !== 'ready');
   // be honest when pictures are missing (never drawn, or cleared by the browser)
-  const missChars = p0?.characters.filter((c) => !c.image?.key).length || 0;
+  const missChars = p0?.characters.filter(characterNeedsDrawing).length || 0;
   const missScenes = phase === 'ready' ? p0.segments.filter((sg) => sg.type !== 'face' && sg.scene && (!sg.image?.key || sg.image.stale)).length : 0;
   if (phase === 'ready') {
     const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -554,12 +554,16 @@ function renderPipeline() {
 
 // ---------- step 1: upload ----------
 
+$('#drop').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); }
+});
+
 async function loadFile(file, { reopen = false } = {}) {
   if (!file) return;
   if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v|mkv)$/i.test(file.name)) { toast('That doesn\'t look like a video file.'); return; }
   if (!reopen && !$('#rights').checked) {
     toast('Please tick the box confirming you have the rights to this video.');
-    $('#rights').closest('.check').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 300 });
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('#rights').closest('.check').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 300 });
     $('#file').value = '';
     return;
   }
@@ -670,7 +674,10 @@ function layoutStyles() {
   $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === near));
   const id = ids[near];
   const btn = $('#btn-style-next');
-  if (btn) btn.firstChild.textContent = `Continue with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`;
+  if (btn) {
+    btn.firstChild.textContent = 'Continue';
+    btn.setAttribute('aria-label', `Continue with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`);
+  }
 }
 
 function cfTick(now) {
@@ -1228,30 +1235,69 @@ async function checkCastPictures() {
 
 async function fillImg(el, key) {
   const blob = await getBlob(key);
+  if (!el.isConnected) return;
   if (!blob) { el.classList.add('missing'); return; }
   if (el.dataset.url) URL.revokeObjectURL(el.dataset.url);
+  el.classList.remove('missing');
   el.dataset.url = URL.createObjectURL(blob);
   el.src = el.dataset.url;
+}
+
+// A redraw must not throw away a draft in a different card or in the inspector.
+function captureEditing(host) {
+  const a = document.activeElement;
+  if (!host.contains(a) || !a.matches('input, textarea, select')) return null;
+  const k = ['k', 's', 'f'].find((key) => a.dataset[key]);
+  const field = a.id ? `#${CSS.escape(a.id)}` : k ? `[data-${k}="${CSS.escape(a.dataset[k])}"]` : null;
+  if (!field) return null;
+  const card = a.closest('.char');
+  return { selector: `${card ? `[data-character="${CSS.escape(card.dataset.character)}"] ` : ''}${field}`, value: a.value, checked: a.checked, start: a.selectionStart, end: a.selectionEnd, scroll: a.scrollTop };
+}
+
+function restoreEditing(host, draft) {
+  if (!draft) return;
+  const a = host.querySelector(draft.selector);
+  if (!a || a.disabled) return;
+  a.value = draft.value;
+  if (a.type === 'checkbox') a.checked = draft.checked;
+  a.focus({ preventScroll: true });
+  if (typeof draft.start === 'number') a.setSelectionRange(draft.start, draft.end);
+  a.scrollTop = draft.scroll;
+}
+
+function releaseImageUrls(host) {
+  host.querySelectorAll('img[data-url]').forEach((img) => URL.revokeObjectURL(img.dataset.url));
+}
+
+const characterNeedsDrawing = (c) => !c.image?.key || !!c.image.stale;
+
+function invalidateCharacterScenes(ch) {
+  state.project.segments.forEach((sg) => {
+    if (sg.image?.key && sg.scene?.actors.some((a) => a.character_id === ch.id)) sg.image.stale = true;
+  });
 }
 
 function renderChars() {
   const el = $('#chars');
   const p = state.project;
   const busy = state.charBusy || new Set();
+  const draft = captureEditing(el);
+  releaseImageUrls(el);
   el.innerHTML = p.characters.map((c, i) => `
-    <div class="char" data-i="${i}">
+    <div class="char ${c.image?.stale ? 'stale' : ''}" data-i="${i}" data-character="${esc(c.id)}">
       <div class="char-art">
-        ${c.image?.key ? '<img alt="">' : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Not drawn yet'}</span></div>`}
+        ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
       </div>
       <div class="char-fields">
-        <input data-k="name" value="${esc(c.name)}" aria-label="Name">
-        <textarea data-k="description" rows="3" placeholder="What they look like: age, hair, clothes, a signature detail">${esc(c.description)}</textarea>
-        ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
+        <label class="field">Name<input data-k="name" value="${esc(c.name)}" maxlength="24" ${busy.has(c.id) ? 'disabled' : ''}></label>
+        <label class="field">Appearance<textarea data-k="description" rows="3" maxlength="140" placeholder="Age, hair, clothes, a signature detail" ${busy.has(c.id) ? 'disabled' : ''}>${esc(c.description)}</textarea></label>
+        ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''} ${busy.has(c.id) ? 'disabled' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
+        <p class="char-edit-note" ${c.image?.stale ? '' : 'hidden'}>Details changed. Redraw to update this look.</p>
         <div class="char-row">
-          <button class="btn sm" data-redraw="${i}" ${busy.has(c.id) ? 'disabled' : ''}>${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Redraw' : 'Draw'}</button>
-          ${c.id === 'me' ? '<small>This is you</small>' : `<button class="icon-btn sm" data-del="${i}" aria-label="Remove ${esc(c.name)}" data-tip="Remove">${icon('trash')}</button>`}
+          <button class="btn sm" data-redraw="${i}" ${busy.size ? 'disabled' : ''}>${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Redraw' : 'Draw'}</button>
+          ${c.id === 'me' ? '<small>This is you</small>' : `<button class="icon-btn sm" data-del="${i}" aria-label="Remove ${esc(c.name)}" data-tip="Remove" ${busy.size ? 'disabled' : ''}>${icon('trash')}</button>`}
         </div>
       </div>
     </div>`).join('');
@@ -1260,6 +1306,8 @@ function renderChars() {
     const img = card.querySelector('img');
     if (img) fillImg(img, ch.image.key);
   });
+  restoreEditing(el, draft);
+  $('#btn-add-char').disabled = !!busy.size;
   checkCastPictures();
   renderCastBar();
 }
@@ -1269,8 +1317,9 @@ function renderCastBar() {
   const p = state.project;
   if (!p) return;
   const n = p.characters.length;
-  const drawn = p.characters.filter((c) => c.image?.key).length;
+  const drawn = p.characters.filter((c) => !characterNeedsDrawing(c)).length;
   const missing = n - drawn;
+  const changed = p.characters.filter((c) => c.image?.stale).length;
   const busy = state.charBusy?.size || 0;
   const gen = $('#btn-gen-chars');
   const ok = $('#btn-approve');
@@ -1280,10 +1329,10 @@ function renderCastBar() {
     title = `Drawing your characters: ${drawn} of ${n} done`;
     sub = 'This takes about a minute. You can edit the descriptions while you wait.';
   } else if (missing) {
-    title = drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Step 1: check the details, then draw';
-    sub = drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Change any name or description above so each person looks the way you imagine. Then draw them.';
+    title = changed ? `Update ${missing} character${missing === 1 ? '' : 's'} before continuing` : drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Check the details, then draw your cast';
+    sub = changed ? 'The details have changed. Redraw these characters so your scenes use the right look.' : drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Edit the names and appearances above. These designs will be reused throughout your story.';
   } else {
-    title = 'Step 2: check your characters';
+    title = 'Happy with your cast?';
     sub = `Look at each picture. Redraw anyone who looks wrong, then press the button to draw your ${scenes} scene${scenes === 1 ? '' : 's'}.`;
   }
   $('#cb-title').textContent = title;
@@ -1291,16 +1340,17 @@ function renderCastBar() {
   gen.hidden = !missing && !busy;
   gen.disabled = !!busy || state.busy;
   gen.classList.toggle('busy', !!busy);
-  gen.querySelector('span').textContent = busy ? 'Drawing…' : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'my character' : `all ${n} characters`}`;
+  gen.querySelector('span').textContent = busy ? 'Drawing…' : changed ? `Redraw ${missing} character${missing === 1 ? '' : 's'}` : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'my character' : `all ${n} characters`}`;
   const sNow = settingsGet();
   $('#cb-cost').textContent = missing && !busy ? `About ${missing > 2 ? Math.ceil(missing / 2) : 1} minute${missing > 2 ? 's' : ''} · about ${fmtUSD(estimateImageCost(missing, sNow, sNow.qc && !!sNow.key))}` : '';
   $('#cb-cost').parentElement.hidden = gen.hidden;
   $('#cast-bar').classList.toggle('cta-big', !!missing && !busy && !drawn);
-  $('#cast-title').textContent = !drawn && !busy ? `Your ${n} character${n === 1 ? '' : 's'}` : 'Meet your cast';
-  $('#cast-sub').textContent = !drawn && !busy ? 'We found these people in your story. Edit their names and looks below before drawing them.' : missing || busy ? 'Every scene is drawn from these designs.' : 'Every scene is drawn from these designs. Redraw anyone you don\'t love.';
+  const firstDraw = !p.characters.some((c) => c.image?.key) && !busy;
+  $('#cast-title').textContent = firstDraw ? `Your ${n} character${n === 1 ? '' : 's'}` : 'Meet your cast';
+  $('#cast-sub').textContent = firstDraw ? 'We found these people in your story. Edit their names and looks below before drawing them.' : changed ? 'Redraw the updated characters before drawing your scenes.' : missing || busy ? 'Every scene is drawn from these designs.' : 'Every scene is drawn from these designs. Redraw anyone you don\'t love.';
   ok.hidden = !!missing || !!busy;
   ok.disabled = state.busy;
-  ok.querySelector('span').textContent = `They look good, draw the ${scenes} scene${scenes === 1 ? '' : 's'}`;
+  ok.querySelector('span').textContent = `Approve & draw ${scenes} scene${scenes === 1 ? '' : 's'}`;
   $('#cb-step1').className = `cb-step ${missing || busy ? 'on' : 'done'}`;
   $('#cb-step2').className = `cb-step ${missing || busy ? '' : 'on'}`;
   $('#cb-step3').className = 'cb-step';
@@ -1324,6 +1374,7 @@ async function grabSelfFrame() {
 
 /** Draws the given characters. Resolves true if all succeeded. */
 async function drawCharacters(list) {
+  if (state.charBusy?.size) { toast('Your characters are still being drawn.'); return false; }
   if (!hasImageKey()) { openSettings(); return false; }
   if (!list.length) return true;
   const job = imageJobOpts();
@@ -1344,6 +1395,7 @@ async function drawCharacters(list) {
         ...job, selfFrame, onStatus: () => {},
       });
       ch.image = img;
+      invalidateCharacterScenes(ch);
       save();
     } finally {
       state.charBusy.delete(ch.id);
@@ -1367,7 +1419,7 @@ async function drawCharacters(list) {
 
 $('#btn-gen-chars').addEventListener('click', () => {
   const p = state.project;
-  const missing = p.characters.filter((c) => !c.image?.key);
+  const missing = p.characters.filter(characterNeedsDrawing);
   drawCharacters(missing.length ? missing : p.characters);
 });
 
@@ -1378,7 +1430,21 @@ $('#chars').addEventListener('input', (e) => {
   const ch = state.project.characters[+card.dataset.i];
   if (!state._charEditing) { snapshot(); state._charEditing = true; setTimeout(() => { state._charEditing = false; }, 800); }
   ch[k] = k === 'useVideoLook' ? e.target.checked : e.target.value;
+  if (ch.image?.key && k !== 'name') {
+    ch.image.stale = true;
+    invalidateCharacterScenes(ch);
+    card.classList.add('stale');
+    card.querySelector('.char-edit-note').hidden = false;
+  }
   save();
+  renderPipeline();
+});
+
+$('#chars').addEventListener('focusin', (e) => {
+  if (!isPhone() || !e.target.matches('input, textarea')) return;
+  const bottom = e.target.getBoundingClientRect().bottom;
+  const bar = $('#cast-bar').getBoundingClientRect();
+  if (bar.height && bottom > bar.top - 16) window.scrollBy({ top: bottom - bar.top + 24, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 });
 
 $('#chars').addEventListener('click', (e) => {
@@ -1401,19 +1467,26 @@ $('#chars').addEventListener('click', (e) => {
 });
 
 $('#btn-add-char').addEventListener('click', () => {
-  const name = prompt('Who should we add? (e.g. "Grandma", "Jake", "Biscuit the dog")');
-  if (!name) return;
+  if (state.charBusy?.size) return;
+  if (state.project.characters.length >= 8) { toast('A story can have up to 8 characters.'); return; }
+  const name = 'New character';
+  let added;
   edit(() => {
     const p = state.project;
     let id = slug(name);
     while (p.characters.some((c) => c.id === id)) id += '_2';
+    added = id;
     p.characters.push({ id, name, description: '', color: '#8854d0', hair: 'short', hairColor: '#2b2b2b', accessory: 'none', height: 1 });
   });
+  const input = $(`#chars [data-character="${CSS.escape(added)}"] [data-k="name"]`);
+  input?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  input?.focus({ preventScroll: true });
+  input?.select();
 });
 
 async function approveAndDraw() {
   const p = state.project;
-  if (p.characters.some((c) => !c.image?.key) && !confirm('Some characters haven\'t been drawn yet, so their scenes may not match. Continue anyway?')) return;
+  if (p.characters.some(characterNeedsDrawing)) { toast('Draw or update your characters before approving the cast.'); return; }
   snapshot();
   p.characters = normalizeCharacters(p.characters);
   p.segments = normalizeSegments(p.segments, p.characters, p.duration, [], { pacing: p.settings.pacing });
@@ -1494,6 +1567,7 @@ async function animateScenes(list) {
 async function generateScenes(list, note = '') {
   if (!hasImageKey()) { openSettings(); return; }
   if (!list.length) return;
+  if (document.body.classList.contains('sheet-open')) closeSheet();
   const job = imageJobOpts();
   const ac = { stop: false };
   state.genAbort = ac;
@@ -1516,10 +1590,12 @@ async function generateScenes(list, note = '') {
   const drawOne = async (sg) => {
     if (ac.stop) throw new Error('stopped');
     try {
+      const requestScene = JSON.stringify(sg.scene);
       sg.image = await generateSceneImage(state.project, sg, {
         ...job, aspect, note,
         onStatus: (m) => { if (sg.id === state.selected) setStatus('#redo-status', m, 'busy'); },
       });
+      if (JSON.stringify(sg.scene) !== requestScene) sg.image.stale = true;
       save();
     } finally {
       state.cache.pending.delete(sg.id);
@@ -1575,6 +1651,7 @@ function sizePreview() {
   const c = $('#preview');
   c.width = Math.round(w * 0.5); c.height = Math.round(h * 0.5);
   $('#stage').dataset.aspect = state.aspect;
+  $('#preview-spec').textContent = state.aspect === 'vertical' ? '9:16 · Vertical' : '16:9 · Horizontal';
 }
 
 function drawPreview() {
@@ -1596,7 +1673,7 @@ function graph() { return audioGraph(state.media?.video || null); }
 function loop() {
   drawPreview();
   if (state.media && !state.media.paused) requestAnimationFrame(loop);
-  else { $('#btn-play').innerHTML = icon('play'); stopAudio(); }
+  else { $('#btn-play').innerHTML = icon('play'); $('#btn-play').setAttribute('aria-label', 'Play'); stopAudio(); }
 }
 
 async function togglePlay() {
@@ -1607,9 +1684,12 @@ async function togglePlay() {
     await m.play();
     startAudio(m.time);
     $('#btn-play').innerHTML = icon('pause');
+    $('#btn-play').setAttribute('aria-label', 'Pause');
     loop();
   } else {
     m.pause();
+    $('#btn-play').innerHTML = icon('play');
+    $('#btn-play').setAttribute('aria-label', 'Play');
     stopAudio();
   }
 }
@@ -1722,7 +1802,7 @@ function renderTimeline() {
     const thumb = type === 'face' ? faceThumb(s.start, tlRefreshSoon) : s.image?.key ? sceneThumb(s.image.key, tlRefreshSoon) : null;
     const sel = s.id === state.selected;
     const moving = type !== 'face' && animatedOn(p) && !s.still && (animReady(s) ? 'anim' : state.cache.animating?.has(s.id) ? 'animating' : '');
-    return `<div class="clip ${type} ${st} ${moving || ''} ${sel ? 'sel' : ''}" data-id="${s.id}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
+    return `<div class="clip ${type} ${st} ${moving || ''} ${sel ? 'sel' : ''}" data-id="${s.id}" role="button" tabindex="${sel ? '0' : '-1'}" aria-pressed="${sel}" aria-label="Shot ${i + 1}, ${type === 'face' ? 'your face' : 'illustrated scene'}, ${fmtTime(s.start)} to ${fmtTime(s.end)}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
       <div class="thumbs" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
       <span class="cap">${type === 'face' ? icon('user') : ''}${esc(shotText(s).split(' ').slice(0, 4).join(' '))}</span>
       ${sel ? `${i > 0 ? '<b class="trim l" data-edge="l"></b>' : ''}${i < p.segments.length - 1 ? '<b class="trim r" data-edge="r"></b>' : ''}` : ''}
@@ -1890,6 +1970,11 @@ const isPhone = () => matchMedia('(max-width: 720px)').matches;
 const TAB_TITLES = { shot: 'Edit', sound: 'Audio', captions: 'Text', filters: 'Filters', trans: 'Transitions', export: 'Export' };
 
 const editorOpen = () => document.body.classList.contains('ed-full') || document.body.classList.contains('ed-app');
+let sheetTrigger = null;
+
+function sheetBackground(inert) {
+  $$('.ed-top, .ed-view, .tl, #ed-tabs').forEach((el) => { el.inert = inert; });
+}
 
 /** Step 5 takes over the screen: a sheet-based layout on phones, an app layout on computers. */
 function setFullEditor(on) {
@@ -1908,17 +1993,38 @@ function setFullEditor(on) {
 }
 function openSheet(name) {
   if (!document.body.classList.contains('ed-full')) return;
+  if (!$('#ed-sheet').classList.contains('open')) sheetTrigger = document.activeElement;
   $('#sheet-title').textContent = TAB_TITLES[name] || '';
+  $('#ed-sheet').inert = false;
+  $('#ed-sheet').setAttribute('role', 'dialog');
+  $('#ed-sheet').setAttribute('aria-modal', 'true');
+  $('#ed-sheet').setAttribute('aria-labelledby', 'sheet-title');
   $('#ed-sheet').classList.add('open');
   document.body.classList.add('sheet-open');
+  $('#ed-scrim').hidden = false;
+  sheetBackground(true);
+  // Wait for the sheet's visible state before transferring focus.
+  requestAnimationFrame(() => {
+    if ($('#ed-sheet').classList.contains('open') && !document.body.classList.contains('work-open')) $('#sheet-done').focus({ preventScroll: true });
+  });
 }
 function closeSheet() {
+  const wasOpen = $('#ed-sheet').classList.contains('open');
   $('#ed-sheet').classList.remove('open');
+  $('#ed-sheet').removeAttribute('role');
+  $('#ed-sheet').removeAttribute('aria-modal');
+  $('#ed-sheet').removeAttribute('aria-labelledby');
+  $('#ed-sheet').inert = document.body.classList.contains('ed-full');
   document.body.classList.remove('sheet-open');
-  if (document.body.classList.contains('ed-full')) $$('#ed-tabs button').forEach((b) => b.classList.remove('on'));
+  $('#ed-scrim').hidden = true;
+  sheetBackground(false);
+  if (document.body.classList.contains('ed-full')) $$('#ed-tabs button').forEach((b) => { b.classList.remove('on'); b.setAttribute('aria-selected', 'false'); b.tabIndex = 0; });
   else showTab(state.tab || 'shot', { open: false });
+  if (wasOpen && sheetTrigger?.isConnected) sheetTrigger.focus({ preventScroll: true });
+  sheetTrigger = null;
 }
 $('#sheet-done').addEventListener('click', closeSheet);
+$('#ed-scrim').addEventListener('click', closeSheet);
 $('#btn-test-relay').addEventListener('click', async (e) => {
   e.preventDefault();
   const out = $('#relay-result');
@@ -1930,21 +2036,39 @@ $('#ed-close').addEventListener('click', () => goStep(4));
 $('#ed-export').addEventListener('click', () => showTab('export'));
 window.addEventListener('resize', () => { if (state.step === 5) setFullEditor(true); });
 document.addEventListener('keydown', (e) => {
+  if (document.body.classList.contains('work-open') || $('dialog[open]')) return;
+  if (document.body.classList.contains('sheet-open')) {
+    if (e.key === 'Escape') { e.preventDefault(); closeSheet(); }
+    if (e.key === 'Tab') {
+      const controls = [...$('#ed-sheet').querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, a[href]')].filter((el) => el.getClientRects().length && !el.closest('[hidden]'));
+      const first = controls[0], last = controls.at(-1);
+      if (!$('#ed-sheet').contains(document.activeElement) || (e.shiftKey && document.activeElement === first)) { e.preventDefault(); (e.shiftKey ? last : first)?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+    return;
+  }
   if (!editorOpen() || e.target.closest('input, textarea, select, [contenteditable]')) return;
   const mod = e.ctrlKey || e.metaKey;
-  if (e.code === 'Space') { e.preventDefault(); if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur(); togglePlay(); }
+  const control = e.target.closest('button, a, summary, [role="button"]');
+  if (e.code === 'Space' && !control) { e.preventDefault(); togglePlay(); }
   else if (mod && e.code === 'KeyZ') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if (mod && e.code === 'KeyY') { e.preventDefault(); redo(); }
   else if (!mod && !e.altKey && e.code === 'KeyS') { e.preventDefault(); splitAtPlayhead(); }
-  else if (e.key === 'ArrowRight') { e.preventDefault(); nextCut(1); }
-  else if (e.key === 'ArrowLeft') { e.preventDefault(); nextCut(-1); }
+  else if (e.key === 'ArrowRight' && !control) { e.preventDefault(); nextCut(1); }
+  else if (e.key === 'ArrowLeft' && !control) { e.preventDefault(); nextCut(-1); }
 });
 
 function showTab(name, { open = true } = {}) {
   state.tab = name;
   $('#sheet-title').textContent = TAB_TITLES[name] || '';
   if (open) openSheet(name);
-  $$('#ed-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+  $('#ed-tabs').setAttribute('aria-orientation', isPhone() ? 'horizontal' : 'vertical');
+  $$('#ed-tabs button').forEach((b) => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on || isPhone() ? 0 : -1;
+  });
   $$('.ed-panel').forEach((p) => { p.hidden = p.dataset.pane !== name; });
   if (name === 'sound') renderSoundPane();
   if (name === 'captions') renderTextPane();
@@ -1953,6 +2077,29 @@ function showTab(name, { open = true } = {}) {
   requestAnimationFrame(updateSegThumbs);
 }
 $('#ed-tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
+$('#ed-tabs').addEventListener('keydown', (e) => {
+  const tabs = $$('#ed-tabs button').filter((b) => b.getClientRects().length);
+  const i = tabs.indexOf(e.target.closest('button'));
+  if (i < 0) return;
+  const dir = ['ArrowRight', 'ArrowDown'].includes(e.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(e.key) ? -1 : 0;
+  const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs.at(-1) : dir ? tabs[(i + dir + tabs.length) % tabs.length] : null;
+  if (!next) return;
+  e.preventDefault(); e.stopPropagation();
+  showTab(next.dataset.tab, { open: !isPhone() });
+  next.focus();
+});
+$('#timeline').addEventListener('keydown', async (e) => {
+  const clip = e.target.closest('.clip');
+  if (!clip) return;
+  const clips = $$('#timeline .clip');
+  const i = clips.indexOf(clip);
+  const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+  const next = dir ? clips[Math.max(0, Math.min(clips.length - 1, i + dir))] : clip;
+  if (!dir && !['Enter', ' '].includes(e.key)) return;
+  e.preventDefault(); e.stopPropagation();
+  await select(next.dataset.id, true);
+  if (!isPhone()) $(`#timeline .clip[data-id="${CSS.escape(next.dataset.id)}"]`)?.focus({ preventScroll: true });
+});
 
 // sound effects pane
 function selectFx(id) {
@@ -2244,12 +2391,16 @@ function renderInspector() {
   const el = $('#inspector');
   const i = p.segments.findIndex((s) => s.id === state.selected);
   const seg = p.segments[i];
+  const draft = el.dataset.seg === seg?.id ? captureEditing(el) : null;
+  const requestNote = el.dataset.seg === seg?.id ? el.querySelector('#redo-note')?.value : '';
+  releaseImageUrls(el);
   if (!seg) { el.innerHTML = '<p class="muted">Click a shot on the timeline below to edit it.</p>'; return; }
   const type = shotType(seg, p.settings);
   const sc = seg.scene;
   const types = p.settings.faceMode === 'bubble' ? ['face', 'scene', 'scene_bubble'] : ['face', 'scene'];
   const pending = state.cache.pending?.has(seg.id);
-  el.classList.toggle('fresh', el.dataset.seg !== seg.id);
+  const selectedChanged = el.dataset.seg !== seg.id;
+  el.classList.toggle('fresh', selectedChanged);
   el.dataset.seg = seg.id;
   el.innerHTML = `
     <div class="insp-head"><strong>Shot ${i + 1} <span class="muted">of ${p.segments.length}</span></strong><span class="time-chip">${fmtTime(seg.start)}–${fmtTime(seg.end)} · ${(seg.end - seg.start).toFixed(1)}s</span></div>
@@ -2302,6 +2453,9 @@ function renderInspector() {
     </details>`;
   const img = el.querySelector('.shot-img img');
   if (img) fillImg(img, seg.image.key);
+  if (el.querySelector('#redo-note')) el.querySelector('#redo-note').value = requestNote || '';
+  restoreEditing(el, draft);
+  if (selectedChanged) el.closest('.ed-panel').scrollTop = 0;
 }
 
 function defaultSceneFor(seg) {
@@ -2426,8 +2580,8 @@ async function doExport() {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { toast('This browser can\'t record video. Please use Chrome or Edge.', 6000); return; }
   const btn = $('#btn-export');
   if (state.exporting) { state.exporting.abort(); return; }
-  const undrawn = sceneSegs().filter((sg) => !sg.image?.key).length;
-  if (undrawn && !confirm(`${undrawn} scene${undrawn > 1 ? 's aren\'t' : ' isn\'t'} drawn yet and will show as a placeholder. Export anyway?`)) return;
+  const undrawn = sceneSegs().filter(needsImage).length;
+  if (undrawn && !confirm(`${undrawn} scene${undrawn > 1 ? 's still need' : ' still needs'} drawing or updating. Export with the current pictures or placeholders?`)) return;
   const ac = new AbortController();
   state.exporting = ac;
   btn.querySelector('span').textContent = 'Cancel export';
@@ -2514,6 +2668,7 @@ $('#load-project').addEventListener('change', (e) => e.target.files[0] && loadPr
 $('#btn-keys').addEventListener('click', openSettings);
 $('#btn-undo').addEventListener('click', undo);
 document.addEventListener('keydown', (e) => {
+  if (!editorOpen() || document.body.classList.contains('work-open') || document.body.classList.contains('sheet-open') || $('dialog[open]')) return;
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
   if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && state.selectedFx && state.project) {
     e.preventDefault(); snapshot();
@@ -2697,6 +2852,7 @@ function renderMarquee() {
   const v = $('#hero-talk');
   const screen = v?.closest('.phone-screen');
   if (!v || !screen) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { v.pause(); v.removeAttribute('autoplay'); screen.classList.add('cut'); return; }
   const inCut = (t) => t > 3.4 && t < 6.2;
   let usingClock = false;
   const tick = () => {
