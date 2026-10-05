@@ -10,7 +10,7 @@ import {
 import {
   VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay, checkAnimationSetup,
 } from './animate.js';
-import { showLoader } from './loader.js';
+import { showWork } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
@@ -430,6 +430,7 @@ function refresh() {
   renderStepper();
   if (p.characters.length) renderChars();
   if (p.approved) { renderTimeline(); renderInspector(); ensurePeaks(); }
+  $('.ed-title').textContent = p.title || 'Untitled story';
   renderTranscript();
   renderPrep();
   renderSummary();
@@ -1001,11 +1002,16 @@ const TIPS = {
 
 const LOADER_KIND = { transcribe: 'listen', plan: 'plan', cast: 'draw', scenes: 'draw' };
 
+const LIVE_STEPS = ['Listening to your story', 'Planning the edit', 'Checking every scene'];
+
+/** Full-screen progress while the story is transcribed and planned. */
 function liveStart(stage, title) {
-  state.live?.stop();
   const p = state.project;
-  const eta = stage === 'transcribe' ? Math.max(20, (p?.duration || 60) * 0.5) : stage === 'plan' ? 40 : 30;
-  state.live = showLoader($('#create-live'), { kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], eta });
+  const eta = stage === 'transcribe' ? Math.max(20, (p?.duration || 60) * 0.5) : stage === 'plan' ? 50 : 30;
+  const step = stage === 'transcribe' ? 0 : 1;
+  if (state.live) { state.live.update({ kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], step, eta }); return; }
+  state.live = showWork({ kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], eta, steps: LIVE_STEPS, note: 'This usually takes a minute or two.' });
+  state.live.update({ step });
 }
 
 function liveStop() {
@@ -1030,20 +1036,16 @@ function updateCosts() {
     const todo = sceneSegs().filter(needsImage).length;
     const animTodo = animated && !todo ? animSegs().length : 0;
     const busy = !!state.genAbort;
-    const animating = busy && state.genMode === 'animate';
-    $('#dc-title').textContent = busy ? (animating ? 'Animating your scenes' : 'Drawing your scenes') : todo ? 'Scenes to draw' : animTodo ? 'Scenes to animate' : animated ? 'All scenes animated' : 'All scenes drawn';
-    $('#scenes-cost').textContent = busy ? `${state.genDone || 0} of ${state.genTotal} done${animating ? ' · about a minute each' : ''}`
-      : todo ? `${todo} scene${todo === 1 ? '' : 's'} · about ${fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key) + (animated ? estimateAnimCost(sceneSegs().filter(needsImage), s.videoModel) : 0))}${animated ? ' incl. animation' : ''}`
-        : animTodo ? `${animTodo} scene${animTodo === 1 ? '' : 's'} · about ${fmtUSD(estimateAnimCost(animSegs(), s.videoModel))}`
-          : `${sceneSegs().length} scenes, ready to watch`;
+    const costNow = fmtUSD(estimateImageCost(todo, s, s.qc && !!s.key));
+    const mins = Math.max(1, Math.round(Math.ceil(todo / 2) * 35 / 60));
+    $('#dc-title').textContent = todo ? `${todo} scene${todo === 1 ? ' isn\'t' : 's aren\'t'} drawn yet` : animTodo ? `${animTodo} scene${animTodo === 1 ? '' : 's'} to animate` : 'All scenes drawn';
+    $('#scenes-cost').textContent = todo ? `About ${costNow} · takes about ${mins} minute${mins === 1 ? '' : 's'}` : animTodo ? `About ${fmtUSD(estimateAnimCost(animSegs(), s.videoModel))}` : '';
+    $('#draw-card').hidden = false;
     $('#draw-card').classList.toggle('busy', busy);
     $('#draw-card').classList.toggle('done', !busy && !todo && !animTodo);
+    $('#btn-redraw-all').hidden = busy || !!todo || !sceneSegs().length;
     const btn = $('#btn-gen-scenes');
-    const pending = todo || animTodo;
-    btn.classList.toggle('primary', !busy && !!pending);
-    btn.classList.toggle('glass', busy || !pending);
-    btn.querySelector('svg use').setAttribute('href', busy ? '#i-close' : pending ? '#i-spark' : '#i-redo');
-    btn.querySelector('span').textContent = busy ? 'Stop' : todo ? `Draw ${todo === 1 ? 'it' : 'all'}` : animTodo ? `Animate ${animTodo === 1 ? 'it' : 'all'}` : 'Redraw all';
+    btn.querySelector('span').textContent = todo ? `Draw ${todo === 1 ? 'it' : `${todo} scenes`}` : animTodo ? 'Animate' : 'Redraw all';
   }
 }
 
@@ -1093,7 +1095,7 @@ async function createVideo() {
       try {
         const raw = await planWithClaude(s.key, p.words, p.duration, {
           model: s.model, notes, pacing: p.settings.pacing, cast: p.settings.castHints || [],
-          onStage: () => state.live?.update({ title: 'Checking every scene for continuity', tips: ['Making sure everyone is only where they really are…', 'Texts and calls get one shot per side…', 'Matching each scene to the right place…'] }),
+          onStage: () => state.live?.update({ step: 2, eta: 25, title: 'Checking every scene for continuity', tips: ['Making sure everyone is only where they really are…', 'Texts and calls get one shot per side…', 'Matching each scene to the right place…'] }),
         });
         snapshot();
         p.title = raw.title || p.title;
@@ -1121,7 +1123,6 @@ async function createVideo() {
     liveStop();
     setStage('cast', 'wait');
     setStatus('#create-status', '');
-    toast(`Your story has ${p.characters.length} character${p.characters.length === 1 ? '' : 's'}. Check their details, then draw them.`, 5000);
     scrollTo('#cast');
   } finally {
     state.busy = false;
@@ -1227,7 +1228,7 @@ function renderChars() {
   el.innerHTML = p.characters.map((c, i) => `
     <div class="char" data-i="${i}">
       <div class="char-art">
-        ${c.image?.key ? '<img alt="">' : `<div class="empty"><span class="avatar">${esc((c.name || '?').trim()[0] || '?')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
+        ${c.image?.key ? '<img alt="">' : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Not drawn yet'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
       </div>
@@ -1236,8 +1237,8 @@ function renderChars() {
         <textarea data-k="description" rows="3" placeholder="What they look like: age, hair, clothes, a signature detail">${esc(c.description)}</textarea>
         ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
         <div class="char-row">
-          <button class="btn glass sm" data-redraw="${i}" ${busy.has(c.id) ? 'disabled' : ''}>${icon('redo')}${c.image?.key ? 'Redraw' : 'Draw'}</button>
-          ${c.id === 'me' ? '<small>This is you</small>' : `<button class="btn link sm danger" data-del="${i}">Remove</button>`}
+          <button class="btn sm" data-redraw="${i}" ${busy.has(c.id) ? 'disabled' : ''}>${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Redraw' : 'Draw'}</button>
+          ${c.id === 'me' ? '<small>This is you</small>' : `<button class="icon-btn sm" data-del="${i}" aria-label="Remove ${esc(c.name)}" data-tip="Remove">${icon('trash')}</button>`}
         </div>
       </div>
     </div>`).join('');
@@ -1315,8 +1316,9 @@ async function drawCharacters(list) {
   const job = imageJobOpts();
   state.charBusy = new Set(list.map((c) => c.id));
   renderChars();
-  const ld = showLoader($('#cast-loader'), {
-    kind: 'draw', title: `Drawing ${list.length === 1 ? list[0].name : `your ${list.length} characters`}`, total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
+  const ld = showWork({
+    kind: 'draw', title: `Drawing ${list.length === 1 ? list[0].name : `your ${list.length} characters`}`, short: 'Drawing characters', total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
+    background: 'Watch them appear',
     tips: ['Each character is designed once and reused in every scene.', 'Picking faces, hair, outfits and colours from your descriptions…', 'Every picture is checked for mistakes like extra fingers, and redrawn if needed.', 'You can keep editing the other descriptions while this runs.'],
   });
   let drawnN = 0;
@@ -1435,8 +1437,8 @@ async function animateScenes(list) {
   state.cache.animating = new Set(list.map((sg) => sg.id));
   state.genDone = 0; state.genTotal = list.length;
   updateCosts(); renderTimeline();
-  const ld = showLoader($('#draw-loader'), {
-    kind: 'film', compact: true, title: `Animating ${list.length === 1 ? 'this scene' : `${list.length} scenes`}`, total: list.length, perItem: 100, parallel: 2,
+  const ld = showWork({
+    kind: 'film', background: 'Back to editor', short: 'Animating', title: `Animating ${list.length === 1 ? 'this scene' : `${list.length} scenes`}`, total: list.length, perItem: 100, parallel: 2,
     tips: ['Each picture becomes the first frame of a short animated clip.', 'Animation takes one to two minutes per scene.', 'Finished scenes switch to animation as soon as they arrive.', 'You can keep editing while this runs.'],
   });
   setStatus('#scenes-status', '');
@@ -1488,9 +1490,11 @@ async function generateScenes(list, note = '') {
   let done = 0;
   state.genDone = 0; state.genTotal = list.length;
   updateCosts();
-  const ld = showLoader($('#draw-loader'), {
-    kind: 'draw', compact: true, title: `Drawing ${list.length === 1 ? 'this scene' : `${list.length} scenes`}`, total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
-    tips: ['You can keep editing while this runs.', 'Each scene uses your approved characters, so they look the same every time.', 'Scenes in the same place are drawn to match each other.', 'Every picture is checked and redrawn automatically if something looks off.'],
+  const ld = showWork({
+    kind: 'draw', title: `Drawing ${list.length === 1 ? 'this scene' : `${list.length} scenes`}`, short: 'Drawing scenes', total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
+    background: 'Back to editor',
+    actions: [{ label: 'Stop', onClick: (b) => { ac.stop = true; b.disabled = true; ld.update({ title: 'Finishing the scenes in progress' }); } }],
+    tips: ['Press "Back to editor" to keep editing while this runs.', 'Each scene uses your approved characters, so they look the same every time.', 'Scenes in the same place are drawn to match each other.', 'Every picture is checked and redrawn automatically if something looks off.'],
   });
   const aspect = state.aspect === 'vertical' ? '9:16' : '16:9';
   setStatus('#scenes-status', '');
@@ -1537,6 +1541,7 @@ async function generateScenes(list, note = '') {
   }
 }
 
+$('#btn-redraw-all').addEventListener('click', () => $('#btn-gen-scenes').click());
 $('#btn-gen-scenes').addEventListener('click', () => {
   if (state.genAbort) { state.genAbort.stop = true; toast(state.genMode === 'animate' ? 'Finishing the animations already in progress…' : 'Finishing the images already in progress…'); return; }
   const todo = sceneSegs().filter(needsImage);
@@ -2415,8 +2420,11 @@ async function doExport() {
   btn.querySelector('span').textContent = 'Cancel export';
   const bar = $('#ex-progress');
   const secs = Math.ceil(state.project.duration);
-  const ld = showLoader($('#ex-loader'), {
+  const ld = showWork({
     kind: 'film', title: 'Exporting your video', total: secs, perItem: 1, parallel: 1,
+    actions: [{ label: 'Cancel export', onClick: () => ac.abort() }],
+    countText: (d, t) => `${fmtTime(d)} of ${fmtTime(t)}`,
+    note: 'Keep this tab open and visible until it finishes.',
     tips: ['Your video plays once in real time while it records.', 'Keep this tab open and in front until it finishes.', 'Music, sound effects, captions and transitions are all included.'],
   });
   setStatus('#ex-status', '');
@@ -2661,19 +2669,6 @@ $('#pay-demo').addEventListener('click', () => { $('#paywall').close(); loadDemo
   }), { rootMargin: '-45% 0px -50% 0px' });
   links.forEach((a) => { const t = $(a.getAttribute('href')); if (t) spy.observe(t); });
 }());
-
-// tactile ripple on every button
-document.addEventListener('pointerdown', (e) => {
-  const b = e.target.closest('.btn:not(.link), .play, .choices button, .pay-plan');
-  if (!b || b.disabled) return;
-  const r = b.getBoundingClientRect();
-  const size = Math.max(r.width, r.height) * 2.2;
-  const dot = document.createElement('span');
-  dot.className = 'ripple';
-  dot.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px`;
-  b.appendChild(dot);
-  setTimeout(() => dot.remove(), 650);
-}, { passive: true });
 
 // style strip under the hero
 function renderMarquee() {
