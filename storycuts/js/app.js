@@ -467,7 +467,7 @@ function goStep(n, { scroll = true } = {}) {
   });
   renderStepper();
   if (n === 2) requestAnimationFrame(() => layoutStyles(true));
-  if (n === 4) { renderSummary(); if (state.project?.characters.length) checkCastPictures(); }
+  if (n === 4) { renderSummary(); renderPipeline(); if (state.project?.characters.length) { renderChars(); checkCastPictures(); } }
   setFullEditor(n === 5);
   if (n === 5 && state.project?.approved && !state.project.segments.some((sg) => sg.id === state.selected)) state.selected = state.project.segments[0]?.id;
   if (n === 5 && state.project?.approved) {
@@ -523,8 +523,21 @@ function renderPipeline() {
   $('#create-start').classList.toggle('hidden', started);
   $('#run').classList.toggle('hidden', phase !== 'running');
   $('#ready-card').classList.toggle('hidden', phase !== 'ready');
-  $('#cast').classList.toggle('hidden', !p0?.characters.length || phase === 'start' || (phase === 'ready' && !state.showCast));
-  $('#cast').classList.toggle('reviewed', phase === 'ready');
+  // be honest when pictures are missing (never drawn, or cleared by the browser)
+  const missChars = p0?.characters.filter((c) => !c.image?.key).length || 0;
+  const missScenes = phase === 'ready' ? p0.segments.filter((sg) => sg.type !== 'face' && sg.scene && (!sg.image?.key || sg.image.stale)).length : 0;
+  if (phase === 'ready') {
+    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    $('#ready-card h4').textContent = missChars ? `${plural(missChars, 'character')} need${missChars === 1 ? 's' : ''} a picture` : missScenes ? `${plural(missScenes, 'scene')} still need${missScenes === 1 ? 's' : ''} drawing` : 'Your video is ready to edit';
+    $('#ready-card p').textContent = missChars ? 'Draw your characters first. Every scene is drawn from them, so they need to look right before the scenes are drawn.'
+      : missScenes ? 'Open the editor and press "Draw scenes" at the top. You can watch and edit while they are drawn.'
+        : 'Your characters and scenes are drawn. Open the editor to watch it, change any shot, add music and export.';
+    $('#ready-card .rc-ico').hidden = !!(missChars || missScenes);
+  }
+  // missing characters: the cast and its Draw button are the only next step
+  if (missChars) $('#ready-card').classList.add('hidden');
+  $('#cast').classList.toggle('hidden', !p0?.characters.length || phase === 'start' || (phase === 'ready' && !state.showCast && !missChars));
+  $('#cast').classList.toggle('reviewed', phase === 'ready' && !missChars);
   $('#btn-reset').hidden = !p0?.segments.length || !!state.busy;
   $('#btn-show-cast').textContent = state.showCast ? 'Hide your characters' : 'See or change your characters';
   const btn = $('#btn-create');
