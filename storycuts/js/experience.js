@@ -23,7 +23,10 @@ export function syncStyleShowcase(style) {
 export function syncCastNavigation(characters) {
   const host = $('#cast-jump');
   const active = document.activeElement?.closest('[data-cast-jump]')?.dataset.castJump;
-  host.innerHTML = characters.map((c) => `<button data-cast-jump="${esc(c.id)}" class="${c.image?.key && !c.image.stale ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true"></i>${esc(c.name)}</button>`).join('');
+  host.innerHTML = characters.map((c) => {
+    const drawn = c.image?.key && !c.image.stale;
+    return `<button data-cast-jump="${esc(c.id)}" class="${drawn ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true">${drawn ? '<svg><use href="#i-check"/></svg>' : esc([...String(c.name ?? "").trim()][0] || '?')}</i>${esc(c.name)}</button>`;
+  }).join('');
   if (active) host.querySelector(`[data-cast-jump="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
 }
 function initShowreel() {
@@ -45,6 +48,7 @@ function initShowreel() {
     if (renderedSecond !== second) {
       renderedSecond = second;
       $('#showreel-time').textContent = `0:0${second} / 0:08`;
+      scrub.setAttribute('aria-valuetext', `${second} of 8 seconds`);
     }
     if (renderedPlaying !== playing) {
       renderedPlaying = playing;
@@ -52,6 +56,12 @@ function initShowreel() {
       button.innerHTML = `<svg><use href="#i-${playing ? 'pause' : 'play'}"/></svg>`;
     }
     reel.dataset.playing = String(playing && visible && !document.hidden);
+  }
+  function syncFrames() {
+    const story = STORIES[current];
+    $$('#story-showreel [data-showreel-frame]').forEach((img) => {
+      img.src = img.dataset.showreelFrame === 'face' || reel.dataset.demoView === 'original' ? story.poster : story.art;
+    });
   }
   function tick(now) {
     frame = 0;
@@ -78,6 +88,7 @@ function initShowreel() {
     $('#showreel-art').src = story.art; $('#showreel-art').alt = story.alt;
     $('#showreel-bubble').src = story.poster;
     $('#showreel-caption').innerHTML = story.caption;
+    syncFrames();
     videos.forEach((v) => {
       v.pause(); v.poster = story.poster;
       v.src = `${story.clip}.${v.canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4'}`;
@@ -95,6 +106,7 @@ function initShowreel() {
     const view = e.target.closest('button[data-demo-view]');
     if (view) {
       reel.dataset.demoView = view.dataset.demoView; userSelectedView = true;
+      syncFrames();
       $$('#story-showreel button[data-demo-view]').forEach((b) => {
         const on = b === view; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
       });
@@ -111,6 +123,29 @@ function initShowreel() {
   document.addEventListener('visibilitychange', updatePlayback);
   motion.addEventListener('change', () => { if (motion.matches) { playing = false; updatePlayback(); } });
   render();
+}
+function initSettingsPreview() {
+  const panel = $('#panel-settings');
+  const button = $('#btn-settings-preview');
+  let paused = motion.matches || !!navigator.connection?.saveData;
+  const render = () => {
+    panel.dataset.previewPaused = String(paused || motion.matches);
+    button.disabled = motion.matches;
+    button.setAttribute('aria-label', motion.matches ? 'Example motion is off in your device settings' : paused ? 'Play settings example' : 'Pause settings example');
+    button.innerHTML = `<svg><use href="#i-${paused || motion.matches ? 'play' : 'pause'}"/></svg><span>${motion.matches ? 'Motion paused' : paused ? 'Play example' : 'Pause example'}</span>`;
+  };
+  button.addEventListener('click', () => { paused = !paused; render(); });
+  motion.addEventListener('change', () => { if (motion.matches) paused = true; render(); });
+  render();
+}
+function initChoiceAccessibility() {
+  const groups = $$('#seg-format, #seg-pacing, #seg-motion, #seg-face');
+  const sync = () => groups.forEach((group) => group.querySelectorAll('button').forEach((button) => {
+    const pressed = String(button.classList.contains('on'));
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+  }));
+  groups.forEach((group) => new MutationObserver(sync).observe(group, { subtree: true, attributes: true, attributeFilter: ['class'] }));
+  sync();
 }
 function initPortraitReview() {
   const dialog = $('#character-preview');
@@ -147,4 +182,4 @@ function initPortraitReview() {
     clearTimeout(card.flashTimer); card.flashTimer = setTimeout(() => card.classList.remove('focus-flash'), 1100);
   });
 }
-export function initExperience() { initShowreel(); initPortraitReview(); }
+export function initExperience() { initShowreel(); initSettingsPreview(); initChoiceAccessibility(); initPortraitReview(); }

@@ -35,6 +35,13 @@ const check = (ok, what, detail = '') => {
   if (!ok) failures++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const shotStripFits = () => {
+  const card = document.querySelector('#story-showreel');
+  const style = getComputedStyle(card);
+  const strip = document.querySelector('.showreel-timeline').getBoundingClientRect();
+  const usableWidth = card.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  return Math.abs(strip.width - usableWidth) < 1 && document.querySelector('#example-scrub').getBoundingClientRect().height >= 40;
+};
 const sdk = fs.readFileSync(path.join(HERE, 'fixtures/anthropic-sdk.mjs'));
 const storyText = fs.readFileSync(path.join(HERE, 'fixtures/story.txt'), 'utf8').trim();
 const pngs = ['red', 'blue', 'green', 'orange'].map((c) => fs.readFileSync(path.join(HERE, `fixtures/mock_${c}.png`)).toString('base64'));
@@ -157,13 +164,16 @@ try {
   watch(p, 'desktop');
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
+  check(await p.evaluate(shotStripFits), 'the desktop shot strip fills its preview card and is easy to scrub');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
   check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
   await p.click('#btn-example-play');
   await p.click('[data-showcase=rain]');
   check(await p.getAttribute('#story-showreel', 'data-demo-story') === 'rain' && (await p.getAttribute('#example-original', 'poster')).endsWith('man.jpg') && (await p.getAttribute('#showreel-art', 'src')).endsWith('rain.jpg'), 'choosing another story changes both the creator footage and illustration');
+  check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith(img.dataset.showreelFrame === 'face' ? 'man.jpg' : 'rain.jpg'))), 'the landing shot strip shows the footage and artwork for the selected story');
   await p.click('button[data-demo-view=original]');
   check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && await p.getAttribute('button[data-demo-view=original]', 'aria-pressed') === 'true', 'Original shows camera footage and marks the comparison choice');
+  check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith('man.jpg'))), 'the Original comparison also shows original footage in the shot strip');
   await p.click('button[data-demo-view=result]');
   check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'StoryCuts shows the illustrated comparison');
   await p.locator('#example-scrub').evaluate((el) => { el.value = '6.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -193,8 +203,9 @@ try {
   await p.locator('#drop').focus(); await p.keyboard.press('Enter');
   check(!!(await chooser), 'upload can be opened with the keyboard');
   await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
-  check(await step() === '1' && await p.isVisible('#toast'), 'video upload asks for ownership confirmation');
+  check(await step() === '1' && await p.isVisible('#upload-rights-note') && await p.evaluate(() => document.activeElement?.id === 'rights'), 'video upload puts its permission reminder beside the checkbox and focuses the correction');
   await p.locator('label:has(#rights)').click();
+  check(!(await p.isVisible('#upload-rights-note')) && await p.getAttribute('#rights', 'aria-invalid') === null, 'confirming video permission clears the inline reminder');
   await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
   await p.waitForFunction(() => window.__storycuts.state.step === 2);
   check(await p.evaluate(() => window.__storycuts.state.file?.name === 'upload.webm' && document.querySelector('#video').src.startsWith('blob:')), 'a real local video opens the style step without uploading the video');
@@ -218,8 +229,14 @@ try {
   check(await step() === '3', 'continue goes to settings');
   check(await p.getAttribute('#seg-motion button.on', 'data-motion') === 'living', 'living pictures is the default');
   await shot(p, '03-settings');
+  check(await p.evaluate(() => [...document.querySelectorAll('#seg-pacing .cut-example i')].every((el) => getComputedStyle(el).backgroundImage.includes('url(') && el.getBoundingClientRect().height >= 40)), 'all pacing choices show actual photo and illustration previews instead of color bars');
+  await p.click('#btn-settings-preview');
+  check(await p.evaluate(() => [...document.querySelectorAll('.example-player img, .option-preview img')].every((img) => getComputedStyle(img).animationPlayState === 'paused')) && await p.getAttribute('#btn-settings-preview', 'aria-label') === 'Play settings example', 'Pause example stops all settings preview motion');
+  await p.click('#btn-settings-preview');
+  check(await p.getAttribute('#panel-settings', 'data-preview-paused') === 'false' && await p.getAttribute('#btn-settings-preview', 'aria-label') === 'Pause settings example', 'Play example resumes the settings previews');
   await p.click('#seg-pacing [data-pacing=bookends]');
   check(await p.getAttribute('#example-player', 'data-pacing') === 'bookends' && await p.locator('#example-sequence .face').count() === 2, 'pacing choice shows an intro-and-outro shot example');
+  check(await p.getAttribute('#seg-pacing [data-pacing=bookends]', 'aria-pressed') === 'true' && await p.getAttribute('#seg-pacing [data-pacing=mostly]', 'aria-pressed') === 'false', 'settings choices announce the selected option to assistive technology');
   await p.click('#seg-format [data-aspect=horizontal]'); await p.click('#seg-face [data-face=bubble]'); await p.click('#seg-motion [data-motion=still]');
   check(await p.getAttribute('#example-player', 'data-format') === 'horizontal' && await p.getAttribute('#example-player', 'data-face') === 'bubble' && await p.getAttribute('#example-player', 'data-motion') === 'still', 'settings preview follows format, face bubble and motion choices');
   await p.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(400); await shot(p, '03b-settings-example');
@@ -246,6 +263,7 @@ try {
   await p.locator('#chars .char:last-child [data-k=name]').fill('Grandma');
   await p.locator('#chars .char:last-child [data-k=description]').fill('Gray bob, round glasses, cream cardigan');
   check(await p.evaluate(() => window.__storycuts.state.project.characters.at(-1).name === 'Grandma'), 'character edits save without a dialog');
+  check(await p.locator('#chars .char:last-child .avatar').textContent() === 'G', 'editing a character name updates its undrawn portrait label');
   await p.locator('#chars .char:last-child [data-del]').click();
   check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 3, 'inline character can be removed');
   for (let i = 0; i < 6; i++) await p.click('#btn-add-char');
@@ -319,6 +337,13 @@ try {
     const st = window.__storycuts.state;
     return !st.project.segments.find((s) => s.id === st.selected).image.stale;
   }), 'redrawing the latest scene clears its update warning');
+  const zoomWidth = await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width);
+  const zoomTime = await p.evaluate(() => window.__storycuts.state.media.time);
+  await p.click('#zoom-in');
+  check(await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) > zoomWidth && await p.evaluate((time) => Math.abs(window.__storycuts.state.media.time - time) < .03, zoomTime), 'desktop timeline zoom increases detail without moving the video position');
+  await p.click('#zoom-out');
+  check(Math.abs(await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - zoomWidth) < 1, 'desktop zoom out restores the previous timeline scale');
+  await p.locator('#timeline .clip.face').first().click(); await sleep(400); await shot(p, '09b-editor-demo');
   await p.locator('#timeline .clip.scene').nth(1).click(); await sleep(400);
   await shot(p, '09-editor');
   // trim
@@ -420,6 +445,7 @@ try {
   const m = await mctx.newPage();
   watch(m, 'phone');
   await m.goto(URL0); await sleep(700); await shot(m, 'p01-landing');
+  check(await m.evaluate(shotStripFits), 'the phone shot strip fills its preview card and is easy to scrub');
   const noSideScroll = async (where) => check(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, `no sideways scroll on phone: ${where}`);
   await noSideScroll('landing');
   await m.click('[data-showcase=rain]');
@@ -433,12 +459,15 @@ try {
   await m.click('#btn-keys'); await sleep(200); await shot(m, 'p01h-connections');
   await m.keyboard.press('Escape');
   await m.click('#cta-demo'); await sleep(900); await shot(m, 'p02-style'); await noSideScroll('style');
-  check(await m.locator('#btn-style-next').evaluate((el) => el.scrollWidth <= el.clientWidth), 'style Continue label fits its phone button');
+  check(await m.locator('#btn-style-next').evaluate((el) => el.innerText.trim() === 'Set up video' && el.scrollWidth <= el.clientWidth), 'the style action names the next step and fits its phone button');
   check(await m.evaluate(() => {
     const card = document.querySelector('.style-card.on').getBoundingClientRect();
     return card.bottom <= document.querySelector('#style-track').getBoundingClientRect().bottom && card.bottom <= document.querySelector('#panel-style .wiz-nav').getBoundingClientRect().top;
   }), 'selected style details stay above the phone footer');
   await m.click('#btn-style-next'); await sleep(800); await shot(m, 'p03-settings'); await noSideScroll('settings');
+  await m.click('#btn-settings-preview');
+  check(await m.getAttribute('#panel-settings', 'data-preview-paused') === 'true', 'phone creators can pause the settings example');
+  await m.click('#btn-settings-preview');
   await m.click('#seg-pacing [data-pacing=story]'); await m.click('#seg-face [data-face=bubble]');
   await m.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(300); await shot(m, 'p03b-settings-example'); await noSideScroll('settings example');
   await m.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(m, 'p03c-motion-examples'); await noSideScroll('motion examples');
@@ -458,6 +487,7 @@ try {
   await m.click('#btn-review-continue');
   await m.waitForFunction(() => !document.querySelector('#btn-gen-chars').hidden, null, { timeout: 30000 });
   await sleep(500); await shot(m, 'p05-characters'); await noSideScroll('characters');
+  check(await m.locator('#btn-add-char').evaluate((el) => el.innerText.trim() === 'Add' && el.getBoundingClientRect().width >= 60) && await m.locator('#cast-bar').evaluate((el) => el.getBoundingClientRect().height < 120), 'phone cast has a labelled Add action and a compact drawing dock');
   await m.click('#btn-gen-chars');
   await sleep(400); await shot(m, 'p05c-drawing-cast');
   await m.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
@@ -477,6 +507,12 @@ try {
   check(await m.evaluate(() => document.body.classList.contains('ed-full')), 'editor is full-screen on phone');
   check(await m.evaluate(editorOrder), 'phone editor keeps the timeline, playback controls, and tools below the video');
   await shot(m, 'p06-editor');
+  check(await m.isVisible('#zoom-in') && await m.isVisible('#zoom-out') && await m.locator('#zoom-in').evaluate((el) => { const r = el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }), 'timeline zoom controls are reachable on the phone');
+  const phoneZoomWidth = await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width);
+  await m.click('#zoom-in');
+  check(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) > phoneZoomWidth, 'phone Zoom in shows more shot detail');
+  await m.click('#zoom-out');
+  check(Math.abs(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - phoneZoomWidth) < 1, 'phone Zoom out restores the timeline scale');
   await m.click('#ed-tabs button[data-tab=shot]'); await sleep(600);
   check(await m.evaluate(() => document.querySelector('#ed-sheet').classList.contains('open')), 'phone tool sheet slides up');
   await shot(m, 'p07-sheet');
@@ -636,6 +672,7 @@ try {
   await r.evaluate(() => window.testWork.stop());
   await r.click('#cta-demo'); await r.click('#btn-style-next');
   check(await r.evaluate(() => getComputedStyle(document.querySelector('.example-scene')).animationName === 'none'), 'settings examples respect reduced motion');
+  check(await r.isDisabled('#btn-settings-preview') && await r.getAttribute('#panel-settings', 'data-preview-paused') === 'true', 'the settings motion control honors the device reduced-motion preference');
   await r.evaluate(async () => { const { showWork } = await import('./js/loader.js'); window.testWork = showWork({ kind: 'cast', title: 'Drawing your cast' }); });
   check(await r.evaluate(() => getComputedStyle(document.querySelector('.cast-head-ink')).opacity === '1' && getComputedStyle(document.querySelector('.cast-check')).opacity === '1'), 'reduced motion leaves the character drawing illustration complete and readable');
   await shot(r, 'p13-reduced-motion-cast');

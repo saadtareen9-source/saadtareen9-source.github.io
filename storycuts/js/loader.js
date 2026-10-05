@@ -86,7 +86,7 @@ function buildOverlay(job) {
   overlay.innerHTML = `
     <div class="work-card">
       <div class="work-brand">StoryCuts studio</div>
-      <div class="work-visual">${VISUALS[job.kind] || VISUALS.draw}</div>
+      <div class="work-visual" aria-hidden="true">${VISUALS[job.kind] || VISUALS.draw}</div>
       <h2 class="work-title" id="work-title-${job.id}"></h2>
       <p class="work-tip" id="work-tip-${job.id}"></p>
       ${job.steps.length ? `<ol class="work-steps">${job.steps.map((s) => `<li><i></i>${s}</li>`).join('')}</ol>` : ''}

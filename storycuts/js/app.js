@@ -632,8 +632,10 @@ async function loadFile(file, { reopen = false } = {}) {
   if (!file) return;
   if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v|mkv)$/i.test(file.name)) { toast('That doesn\'t look like a video file.'); return; }
   if (!reopen && !$('#rights').checked) {
-    toast('Please tick the box confirming you have the rights to this video.');
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('#rights').closest('.check').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 300 });
+    $('#upload-rights-note').hidden = false;
+    $('#rights').setAttribute('aria-invalid', 'true');
+    $('#rights').closest('.check').scrollIntoView({ block: 'center', behavior: 'auto' });
+    $('#rights').focus({ preventScroll: true });
     $('#file').value = '';
     return;
   }
@@ -661,6 +663,13 @@ async function loadFile(file, { reopen = false } = {}) {
   if (video.duration > 600) toast('Long video: StoryCuts works best on stories under 5 minutes.', 6000);
   setTimeout(() => goStep(state.project.approved ? 5 : 2), 500);
 }
+
+$('#rights').addEventListener('change', () => {
+  if ($('#rights').checked) {
+    $('#upload-rights-note').hidden = true;
+    $('#rights').removeAttribute('aria-invalid');
+  }
+});
 
 function showFileChip(...parts) {
   const el = $('#video-info');
@@ -752,8 +761,8 @@ function layoutStyles() {
   syncStyleShowcase(id === 'custom' ? { label: 'Your own style', blurb: 'Describe a world of your own, or bring a reference image.' } : STYLES[id]);
   const btn = $('#btn-style-next');
   if (btn) {
-    btn.firstChild.textContent = 'Continue';
-    btn.setAttribute('aria-label', `Continue with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`);
+    btn.firstChild.textContent = 'Set up video';
+    btn.setAttribute('aria-label', `Set up video with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`);
   }
 }
 
@@ -1537,18 +1546,18 @@ function renderChars() {
     <div class="char ${c.image?.stale ? 'stale' : ''}" data-i="${i}" data-character="${esc(c.id)}">
       <div class="char-top"><span class="char-number">${i + 1}</span><b class="char-name">${esc(c.name)}</b><span class="char-state ${characterNeedsDrawing(c) ? 'waiting' : 'complete'}">${busy.has(c.id) ? 'Drawing…' : c.image?.stale ? 'Update needed' : c.image?.key ? 'Ready to review' : 'Not drawn yet'}</span></div><div class="char-main">
       <div class="char-art">
-        ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
+        ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar" aria-hidden="true">${esc([...String(c.name ?? "").trim()][0] || '?')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Your drawing appears here'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
         ${c.image?.key ? `<button class="icon-btn portrait-zoom" data-character-preview="${i}" aria-label="View ${esc(c.name)} larger">${icon('plus')}</button>` : ''}
       </div>
       <div class="char-fields">
-        <label class="field">Name<input data-k="name" value="${esc(c.name)}" maxlength="24" ${busy.has(c.id) ? 'disabled' : ''}></label>
-        <label class="field">Appearance<textarea data-k="description" rows="3" maxlength="140" placeholder="Age, hair, clothes, a signature detail" ${busy.has(c.id) ? 'disabled' : ''}>${esc(c.description)}</textarea></label>
+        <label class="field">Character name<input data-k="name" value="${esc(c.name)}" maxlength="24" ${busy.has(c.id) ? 'disabled' : ''}></label>
+        <label class="field">What they look like<textarea data-k="description" rows="3" maxlength="140" placeholder="Hair, clothes, one recognizable detail" ${busy.has(c.id) ? 'disabled' : ''}>${esc(c.description)}</textarea></label>
         ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''} ${busy.has(c.id) ? 'disabled' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
         <p class="char-edit-note" ${c.image?.stale ? '' : 'hidden'}>Details changed. Redraw to update this look.</p>
         <div class="char-row">
-          <button class="btn sm char-draw" data-redraw="${i}" ${busy.size ? 'disabled' : ''} aria-label="${c.image?.key ? 'Redraw' : 'Draw'} ${esc(c.name)}">${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Try a new look' : 'Draw this character'}</button>
+          <button class="btn sm char-draw" data-redraw="${i}" ${busy.size ? 'disabled' : ''} aria-label="${c.image?.key ? 'Redraw' : 'Draw'} ${esc(c.name)}">${icon(c.image?.key ? 'redo' : 'edit')}${c.image?.key ? 'Try a new look' : 'Draw this character'}</button>
           ${c.id === 'me' ? '<small>This is you</small>' : `<button class="icon-btn sm" data-del="${i}" aria-label="Remove ${esc(c.name)}" data-tip="Remove" ${busy.size ? 'disabled' : ''}>${icon('trash')}</button>`}
         </div>
       </div>
@@ -1584,7 +1593,7 @@ function renderCastBar() {
     sub = 'This takes about a minute. When the pictures are ready, check each look before continuing.';
   } else if (missing) {
     title = changed ? `Update ${missing} character${missing === 1 ? '' : 's'} before continuing` : drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Check the details, then draw your cast';
-    sub = changed ? 'The details have changed. Redraw these characters so your scenes use the right look.' : drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Edit the names and appearances above. These designs will be reused throughout your story.';
+    sub = changed ? 'Redraw the updated characters so your scenes use the right look.' : drawn ? 'Each character needs a picture before we draw the scenes.' : 'Your edits save as you type. Draw everyone when the details look right.';
   } else {
     title = 'Do these look like your characters?';
     sub = `Check each picture. Try a new look if you need to, then approve your cast to draw the scenes.`;
@@ -1690,7 +1699,11 @@ $('#chars').addEventListener('input', (e) => {
   card.querySelector('[data-redraw]').setAttribute('aria-label', `${ch.image?.key ? 'Redraw' : 'Draw'} ${ch.name || 'your character'}`);
   card.querySelector('[data-del]')?.setAttribute('aria-label', `Remove ${ch.name || 'your character'}`);
   card.querySelector('[data-character-preview]')?.setAttribute('aria-label', `View ${ch.name || 'your character'} larger`);
-  if (k === 'name') syncCastNavigation(state.project.characters);
+  if (k === 'name') {
+    syncCastNavigation(state.project.characters);
+    const avatar = card.querySelector('.avatar');
+    if (avatar) avatar.textContent = [...String(ch.name ?? "").trim()][0] || '?';
+  }
   const portrait = card.querySelector('.char-art img');
   if (portrait) portrait.alt = `Design for ${ch.name || 'your character'}`;
   if (ch.image?.key && k !== 'name') {
@@ -2130,14 +2143,12 @@ function drawWave() {
   const x0 = TL.pad, mid = h / 2;
   if (!state.peaks) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.font = '500 11px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(state.file ? 'Reading audio…' : 'The demo has no voice track (sound effects still play)', w / 2 + 30, mid + 4);
+    ctx.fillText(state.file ? 'Reading audio…' : 'Demo: no recorded voice', w / 2 + 30, mid + 4);
     return;
   }
-  const g = ctx.createLinearGradient(0, 0, w, 0);
-  g.addColorStop(0, '#2dd4bf'); g.addColorStop(1, '#22d3ee');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#84bca5';
   for (let px = 0; px < w; px += 2) {
     const t = (px + sc.scrollLeft - x0) / TL.pps;
     if (t < 0 || t > p.duration) continue;
