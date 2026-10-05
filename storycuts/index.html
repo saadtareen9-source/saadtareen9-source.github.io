@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=39; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=40; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=39">
+  <link rel="stylesheet" href="style.css?v=40">
 </head>
 <body>
   <!-- icon sprite -->
@@ -37,6 +37,7 @@
     <symbol id="i-wand" viewBox="0 0 24 24"><path d="M4 20L15 9m2-5v3m0 6v-1m4-4h-3m-6 0h1m6.5-4.5l-2 2m-7 7l-1 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="12" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3m-3 0h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="16" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -253,6 +254,15 @@
       <!-- 3 SETTINGS -->
       <div class="panel" id="panel-settings" data-step="3">
         <div class="panel-head"><span class="num">3</span><div><h3>Made for where you share.</h3><p>Choose your format. The recommended settings make a great starting point for the rest.</p></div></div>
+        <div class="settings-example" id="settings-example" aria-label="Example of your video settings">
+          <div class="example-player" id="example-player" data-format="vertical" data-face="full" data-motion="living">
+            <img class="example-scene" id="example-scene" src="assets/styles/stick.jpg" alt="Example illustrated story scene">
+            <img class="example-face" src="assets/hero/talk.jpg" alt="Example creator on camera">
+            <span class="example-caption">AND THEN THIS HAPPENED</span>
+            <span class="example-badge">Example preview</span>
+          </div>
+          <div class="example-explain"><span class="kicker">Picture your story</span><h4 id="example-title">Your face. A world around it.</h4><p id="example-description">Scenes carry the story. Your face returns for reactions.</p><div class="example-sequence" id="example-sequence" aria-label="Example shot sequence"></div><div class="example-legend"><span><i class="legend-face"></i>You on camera</span><span><i class="legend-scene"></i>Illustrated story</span></div><small>Tap the options below to see the difference. Your story gets its own edit.</small></div>
+        </div>
         <div class="opt-group">
           <span class="opt-label">Format</span>
           <div class="choices two" id="seg-format">
@@ -263,23 +273,23 @@
         <div class="opt-group">
           <span class="opt-label">Edit pacing</span>
           <div class="choices three" id="seg-pacing">
-            <button data-pacing="mostly" class="on"><span class="ct"><b>Normal <em class="rec">Recommended</em></b><small>Mostly scenes, with quick cuts back to your face during the story</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-pacing="bookends"><span class="ct"><b>Intro &amp; outro</b><small>Your face only at the start and the end, scenes everywhere in between</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-pacing="story"><span class="ct"><b>Voice-over</b><small>Scenes the whole way through, with your voice over them</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="mostly" class="on"><span class="ct"><b>Story + you <em class="rec">Recommended</em></b><small>Mostly illustrated scenes. Your face returns for the best reactions.</small><span class="cut-example" aria-hidden="true"><i class="ex-you"></i><i></i><i></i><i class="ex-you"></i><i></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="bookends"><span class="ct"><b>Intro &amp; outro</b><small>You open and close the story. Illustrations fill the middle.</small><span class="cut-example" aria-hidden="true"><i class="ex-you"></i><i></i><i></i><i></i><i class="ex-you"></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="story"><span class="ct"><b>Mostly story</b><small>A quick opening with you, then illustrations follow your voice.</small><span class="cut-example" aria-hidden="true"><i class="ex-you ex-short"></i><i></i><i></i><i></i><i></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
           <span class="opt-label">Scenes</span>
           <div class="choices two" id="seg-motion">
-            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Camera moves plus steam, sparkles, rain, glow and shakes that match each scene. Included.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Illustrations with a slow, simple zoom. Calmer look.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Camera moves and small effects that match the scene, like steam or rain. Included.</small><span class="option-preview motion-demo living" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>Movement &amp; scene effects</span><svg><use href="#i-spark"/></svg></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Illustrations with a slow, simple zoom. Calmer look.</small><span class="option-preview motion-demo still" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>A gentle, slow zoom</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
           <span class="opt-label">During scenes</span>
           <div class="choices two" id="seg-face">
-            <button data-face="full" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Full-frame cuts</b><small>Show the scene or your face</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-face="full" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Full-frame cuts</b><small>Show the scene or your face</small><span class="option-preview face-demo full" aria-hidden="true"><img class="demo-you" src="assets/hero/talk.jpg" alt=""><svg><use href="#i-right"/></svg><img data-example-scene src="assets/styles/stick.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small><span class="option-preview face-demo bubble" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><img class="demo-you" src="assets/hero/talk.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="wiz-nav"><button class="btn ghost lg" data-back="2"><svg><use href="#i-left"/></svg>Back</button><button class="btn primary lg" data-next="4">Continue<svg><use href="#i-right"/></svg></button></div>
@@ -287,43 +297,60 @@
 
       <!-- 3 CREATE -->
       <div class="panel" id="panel-create" data-step="4">
-        <div class="panel-head"><span class="num">4</span><div><h3>Let's meet the people in your story.</h3><p>We'll find your characters and plan the scenes. You'll check every look before we bring it to life.</p></div></div>
+        <div class="panel-head"><span class="num">4</span><div><h3>Your story, understood.</h3><p>Give us the words. We'll find the people, places and moments that bring them to life.</p></div></div>
 
         <div class="create-start" id="create-start">
-          <div class="summary" id="create-summary"></div>
-          <button class="btn primary xl create-btn" id="btn-create"><svg><use href="#i-spark"/></svg><span>Find my characters</span></button>
-          <p class="create-note"><span id="create-cost"></span><br>Takes a few minutes. You'll approve your characters before any scenes are drawn.</p>
+          <section class="story-input" id="story-input" aria-labelledby="story-input-title">
+            <div class="story-section-head"><h4 id="story-input-title" tabindex="-1">How should we understand your story?</h4><p>Choose what works for you. You'll approve the characters before we draw your scenes.</p></div>
+            <div class="choices two story-choices" id="seg-story" role="group" aria-label="How to understand your story">
+              <button class="on" data-story-mode="auto" aria-pressed="true"><span class="ci story-mode-icon"><svg><use href="#i-mic"/></svg></span><span class="ct"><em class="rec">Recommended</em><b>Let AI find everything</b><small>AI listens to your video and finds the story, characters and places.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+              <button data-story-mode="transcript" aria-pressed="false"><span class="ci story-mode-icon"><svg><use href="#i-text"/></svg></span><span class="ct"><em class="rec">Most accurate</em><b>I'll add my transcript</b><small>Use your script, captions or subtitles so we get your words right.</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            </div>
+            <div class="story-auto-note" id="story-auto-note"><svg><use href="#i-shield"/></svg><span>Your video stays on your device. You can check the words before planning.</span></div>
+            <div class="status" id="story-input-status" role="status"></div>
+            <div class="extra-row transcript-entry hidden" id="prep-transcript">
+              <div><b>Add the words you say</b><p class="muted small">A subtitle file gives us your exact caption timing. Plain text is lined up with your voice automatically.</p><small class="file-types">Text .txt · Subtitles .srt or .vtt</small></div>
+              <div class="tool-row">
+                <label class="btn glass" id="btn-transcript-upload" tabindex="0" role="button"><svg><use href="#i-upload"/></svg>Upload transcript<input type="file" id="transcript-file" accept=".txt,.srt,.vtt,text/plain,text/vtt" hidden></label>
+                <button class="btn glass" id="btn-paste-open"><svg><use href="#i-edit"/></svg>Paste text</button>
+                <button class="btn link sm" id="btn-transcript-clear" hidden>Use automatic</button>
+              </div>
+              <p id="transcript-state" role="status">Add a transcript to continue.</p>
+              <div class="paste hidden" id="paste-box">
+                <label class="field" for="paste-text" id="paste-msg">Paste what you say in the video</label>
+                <textarea id="paste-text" rows="6" placeholder="So my dad walks into the kitchen, sees the smoke, and just freezes…"></textarea>
+                <div class="tool-row"><button class="btn primary" id="btn-use-paste">Use this transcript<svg><use href="#i-check"/></svg></button><button class="btn ghost" id="btn-paste-cancel">Cancel</button></div>
+              </div>
+            </div>
+            <details class="listening-options" id="listening-options"><summary>Listening options <span>Optional</span></summary><label class="field">Listening quality<select id="asr-quality"><option value="fast">Quick</option><option value="accurate">More careful (takes longer)</option></select></label></details>
+            <button class="btn link sm" id="btn-check-transcript" hidden><svg><use href="#i-text"/></svg>Check the transcript</button>
+          </section>
 
-          <details class="extras" id="extras">
-            <summary>Optional: add your own transcript or characters</summary>
+          <details class="extras story-guidance" id="extras">
+            <summary><span><svg><use href="#i-user"/></svg>Tell the AI about your story</span><em>Optional</em></summary>
             <div class="extras-body">
-              <div class="extra-row" id="prep-transcript">
-                <div><b>Transcript</b><p class="muted small" id="transcript-state">We'll transcribe your video automatically.</p></div>
-                <div class="tool-row">
-                  <label class="btn glass sm"><svg><use href="#i-upload"/></svg>Upload file<input type="file" id="transcript-file" accept=".txt,.srt,.vtt,text/plain,text/vtt" hidden></label>
-                  <button class="btn glass sm" id="btn-paste-open">Paste text</button>
-                  <button class="btn link sm" id="btn-transcript-clear" hidden>Use automatic</button>
-                </div>
-              </div>
+              <p class="guidance-intro">A few details help characters look right the first time and save redraws.</p>
               <div class="extra-row" id="prep-cast">
-                <div><b>Characters</b><p class="muted small">The AI finds everyone in your story. Add people only if you want to describe them yourself.</p></div>
+                <div><b>Who's in it?</b><p class="muted small">Add anyone whose name or appearance you want us to get right. People and pets are welcome.</p></div>
                 <div class="cast-pre" id="cast-pre"></div>
-                <div class="tool-row"><button class="btn glass sm" id="btn-cast-pre-add">+ Add a person</button></div>
+                <div class="tool-row"><button class="btn glass" id="btn-cast-pre-add"><svg><use href="#i-plus"/></svg>Add person or pet</button></div>
               </div>
-              <label class="field">Notes for the AI editor
-                <input id="plan-notes" placeholder="e.g. my dad is very tall, the dog is called Biscuit">
-              </label>
-              <label class="field">Transcription quality
-                <select id="asr-quality"><option value="fast">Fast</option><option value="accurate">More accurate (slower)</option></select>
+              <label class="field">Anything else the AI should know
+                <textarea id="plan-notes" rows="3" maxlength="2000" placeholder="e.g. Jake is my cousin, not my friend. This happens at school."></textarea>
               </label>
             </div>
           </details>
+          <div class="summary" id="create-summary"></div>
+          <div class="create-action" id="create-action"><button class="btn primary xl create-btn" id="btn-create"><svg><use href="#i-spark"/></svg><span>Find my characters</span></button><p class="create-note"><span id="create-cost"></span><span class="create-after-note">First, we'll find your cast. You'll review every look before drawing scenes.</span></p></div>
         </div>
 
-        <div class="paste hidden" id="paste-box">
-          <p id="paste-msg"><b>Paste what you say in the video.</b> We'll line the words up with your audio.</p>
-          <textarea id="paste-text" rows="4" placeholder="So my dad walks into the kitchen, sees the smoke, and just freezes…"></textarea>
-          <div class="tool-row"><button class="btn primary" id="btn-use-paste">Use this transcript</button><button class="btn ghost" id="btn-paste-cancel">Cancel</button></div>
+        <div class="transcript-review hidden" id="transcript-review" aria-labelledby="review-title">
+          <div class="review-head"><span class="review-symbol"><svg><use href="#i-text"/></svg></span><span class="kicker">A quick check, a better story</span><h4 id="review-title" tabindex="-1">Did we hear you right?</h4><p>Check names and any unusual words. These words shape your characters, scenes and captions.</p></div>
+          <label class="field" for="review-text">Your story <span id="review-count"></span></label><textarea id="review-text" rows="8" readonly></textarea>
+          <p class="review-edit-note" id="review-edit-note" hidden>Fix the words below. We'll line the corrected text up with your voice again.</p>
+          <div class="status" id="review-status" role="status"></div>
+          <div class="review-actions"><button class="btn primary lg" id="btn-review-continue">Looks right, continue<svg><use href="#i-right"/></svg></button><button class="btn ghost" id="btn-review-edit"><svg><use href="#i-edit"/></svg>Fix a few words</button></div>
+          <label class="check small"><input type="checkbox" id="skip-transcript-review"><span class="box"><svg><use href="#i-check"/></svg></span>Skip checks next time</label>
         </div>
 
         <div class="run hidden" id="run">
@@ -348,9 +375,10 @@
           <div class="cast-head">
             <div><h4 id="cast-title">Meet your cast</h4><p id="cast-sub">Every scene is drawn from these designs. Edit a description and redraw anyone you don't love.</p></div>
             <div class="cast-actions">
-              <button class="btn glass sm" id="btn-add-char" title="Add a person or pet">+ Add character</button>
+              <button class="btn glass sm" id="btn-add-char" title="Add a person or pet"><svg><use href="#i-plus"/></svg>Add character</button>
             </div>
           </div>
+          <div class="cast-guide" id="cast-guide"><div><span>1</span><b>Make them recognizable</b><small>Edit names and appearances.</small></div><div><span>2</span><b>Draw your cast</b><small>One button brings everyone to life.</small></div><div><span>3</span><b>Approve the looks</b><small>Then we'll draw your scenes.</small></div></div>
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
           <div class="cast-bar" id="cast-bar">
@@ -625,7 +653,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=39", "./js/app.js": "./js/app.js?v=39", "./js/billing.js": "./js/billing.js?v=39", "./js/constants.js": "./js/constants.js?v=39", "./js/draw.js": "./js/draw.js?v=39", "./js/images.js": "./js/images.js?v=39", "./js/loader.js": "./js/loader.js?v=39", "./js/planner.js": "./js/planner.js?v=39", "./js/qc.js": "./js/qc.js?v=39", "./js/render.js": "./js/render.js?v=39", "./js/sfx.js": "./js/sfx.js?v=39", "./js/transcribe.js": "./js/transcribe.js?v=39"}}</script>
-  <script type="module" src="js/app.js?v=39"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=40", "./js/app.js": "./js/app.js?v=40", "./js/billing.js": "./js/billing.js?v=40", "./js/constants.js": "./js/constants.js?v=40", "./js/draw.js": "./js/draw.js?v=40", "./js/images.js": "./js/images.js?v=40", "./js/loader.js": "./js/loader.js?v=40", "./js/planner.js": "./js/planner.js?v=40", "./js/qc.js": "./js/qc.js?v=40", "./js/render.js": "./js/render.js?v=40", "./js/sfx.js": "./js/sfx.js?v=40", "./js/transcribe.js": "./js/transcribe.js?v=40"}}</script>
+  <script type="module" src="js/app.js?v=40"></script>
 </body>
 </html>

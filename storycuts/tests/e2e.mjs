@@ -36,6 +36,7 @@ const check = (ok, what, detail = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sdk = fs.readFileSync(path.join(HERE, 'fixtures/anthropic-sdk.mjs'));
+const storyText = fs.readFileSync(path.join(HERE, 'fixtures/story.txt'), 'utf8').trim();
 const pngs = ['red', 'blue', 'green', 'orange'].map((c) => fs.readFileSync(path.join(HERE, `fixtures/mock_${c}.png`)).toString('base64'));
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
 const sse = (obj) => {
@@ -83,8 +84,9 @@ const REVIEW = {
 // ---------- run ----------
 const browser = await chromium.launch();
 const errors = [];
-async function newContext(opts) {
+async function newContext(opts, { mockListening = false, failListening = false } = {}) {
   const ctx = await browser.newContext(opts);
+  ctx.plannerRequests = [];
   // Keep the suite offline: use the site's system font fallback in tests.
   await ctx.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ body: '', contentType: 'text/css' }));
   await ctx.addInitScript(() => {
@@ -93,6 +95,22 @@ async function newContext(opts) {
     localStorage.setItem('storycuts:owner', 'true');
   });
   await ctx.route('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm', (r) => r.fulfill({ body: sdk, contentType: 'application/javascript', headers: cors }));
+  // Stub only the downloaded model. Keep transcribeInBrowser, audio decoding,
+  // speechSpans, wordsFromText and subtitle parsing as the real site modules.
+  if (mockListening) {
+    const chunks = storyText.split(/\s+/).map((text, i, all) => ({ text, timestamp: [+(i * 44 / all.length).toFixed(3), +((i + 1) * 44 / all.length).toFixed(3)] }));
+    await ctx.route('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm', (r) => r.fulfill({ contentType: 'application/javascript', headers: cors, body: `
+      export const env = {};
+      export async function pipeline() {
+        window.__speechModelLoads = (window.__speechModelLoads || 0) + 1;
+        return async () => {
+          window.__speechCalls = (window.__speechCalls || 0) + 1;
+          await new Promise(resolve => setTimeout(resolve, 650));
+          ${failListening ? "throw new Error('Test speech model unavailable');" : `return { chunks: ${JSON.stringify(chunks)} };`}
+        };
+      }
+    ` }));
+  }
   let n = 0;
   await ctx.route('https://api.openai.com/**', async (r) => {
     if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
@@ -106,7 +124,7 @@ async function newContext(opts) {
     let out;
     if (/art director/.test(sys)) out = { pass: true, score: 8, issues: [], fix_instructions: '' };
     else if (/continuity supervisor/.test(sys)) out = REVIEW;
-    else { out = PLAN; await sleep(800); }
+    else { ctx.plannerRequests.push(body); out = PLAN; await sleep(800); }
     r.fulfill({ status: 200, headers: { ...cors, 'content-type': 'text/event-stream' }, body: sse(out) });
   });
   return ctx;
@@ -116,6 +134,21 @@ const watch = (page, tag) => {
   page.on('console', (m) => { if (m.type() === 'error' && !/favicon|ERR_CERT|fonts\.g/.test(m.text())) errors.push(`${tag} console: ${m.text()}`); });
 };
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, `${name}.png`) });
+const waitForCast = (page) => page.waitForFunction(() => window.__storycuts.state.project.segments.length && !window.__storycuts.state.busy && !document.querySelector('#cast').classList.contains('hidden'), null, { timeout: 30000 });
+async function openStory(page, name = 'story.webm') {
+  await page.goto(`${URL0}#studio`);
+  if (await page.evaluate(() => !!window.__storycuts?.state.project)) await page.reload();
+  if (!(await page.locator('#rights').isChecked())) await page.locator('label:has(#rights)').click();
+  await page.locator('#file').setInputFiles({ name, mimeType: 'video/webm', buffer: fs.readFileSync(path.join(HERE, 'fixtures/story.webm')) });
+  await page.waitForFunction((name) => window.__storycuts.state.step === 2 && window.__storycuts.state.file?.name === name, name);
+  await page.click('#btn-style-next');
+  await page.click('#panel-settings [data-next="4"]');
+  await page.waitForSelector('#create-start:not(.hidden)');
+}
+const timedSpeech = (words) => words.length > 100 && words[0].s > .9 && words.at(-1).e <= 43.05 && words.every((w, i) => Number.isFinite(w.s) && Number.isFinite(w.e) && w.e > w.s && (!i || w.s >= words[i - 1].s)) && !words.some((w) => w.s > 20.4 && w.s < 21.7);
+async function fitsPhone(page, name) {
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= 390 && [...document.querySelectorAll('#panel-create button, #panel-create textarea, #panel-create input, #panel-create .row')].filter((el) => el.getClientRects().length).every((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1; })), `story controls fit the phone: ${name}`);
+}
 
 try {
   // ===== desktop: the full flow =====
@@ -168,10 +201,21 @@ try {
   check(await step() === '3', 'continue goes to settings');
   check(await p.getAttribute('#seg-motion button.on', 'data-motion') === 'living', 'living pictures is the default');
   await shot(p, '03-settings');
+  await p.click('#seg-pacing [data-pacing=bookends]');
+  check(await p.getAttribute('#example-player', 'data-pacing') === 'bookends' && await p.locator('#example-sequence .face').count() === 2, 'pacing choice shows an intro-and-outro shot example');
+  await p.click('#seg-format [data-aspect=horizontal]'); await p.click('#seg-face [data-face=bubble]'); await p.click('#seg-motion [data-motion=still]');
+  check(await p.getAttribute('#example-player', 'data-format') === 'horizontal' && await p.getAttribute('#example-player', 'data-face') === 'bubble' && await p.getAttribute('#example-player', 'data-motion') === 'still', 'settings preview follows format, face bubble and motion choices');
+  await p.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(400); await shot(p, '03b-settings-example');
+  await p.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(p, '03c-motion-examples');
+  await p.locator('#seg-face').scrollIntoViewIfNeeded(); await shot(p, '03d-face-examples');
+  await p.click('#seg-format [data-aspect=vertical]'); await p.click('#seg-face [data-face=full]'); await p.click('#seg-motion [data-motion=living]'); await p.click('#seg-pacing [data-pacing=mostly]');
   await p.click('#panel-settings [data-next="4"]'); await sleep(800);
   check(await step() === '4', 'continue goes to create');
   await shot(p, '04-create');
-  await p.click('#btn-create'); await sleep(500);
+  await p.click('#btn-create');
+  await p.waitForSelector('#transcript-review:not(.hidden)'); await sleep(300); await shot(p, '04b-check-transcript');
+  check(ctx.plannerRequests.length === 0, 'default flow checks the words before sending them to the planner');
+  await p.click('#btn-review-continue'); await sleep(500);
   check(await p.isVisible('.work'), 'full-screen progress shows while planning');
   await shot(p, '05-planning');
   await p.waitForFunction(() => !document.querySelector('#cast').classList.contains('hidden') && !document.querySelector('#btn-gen-chars').hidden, null, { timeout: 30000 });
@@ -191,8 +235,10 @@ try {
   check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 8, 'character limit prevents an extra character being silently discarded');
   for (let i = 0; i < 5; i++) await p.locator('#chars .char:last-child [data-del]').click();
   await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad the cook');
+  check(await p.getAttribute('#chars [data-character=dad] [data-redraw]', 'aria-label') === 'Draw Dad the cook', 'renaming a character also updates its accessible drawing button label');
   await p.click('#btn-gen-chars'); await sleep(400);
   check(await p.isVisible('.work'), 'progress screen shows while drawing characters');
+  await shot(p, '06b-drawing-cast');
   await p.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await sleep(600);
   const dadKey = await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.key);
@@ -363,16 +409,27 @@ try {
     return card.bottom <= document.querySelector('#style-track').getBoundingClientRect().bottom && card.bottom <= document.querySelector('#panel-style .wiz-nav').getBoundingClientRect().top;
   }), 'selected style details stay above the phone footer');
   await m.click('#btn-style-next'); await sleep(800); await shot(m, 'p03-settings'); await noSideScroll('settings');
+  await m.click('#seg-pacing [data-pacing=story]'); await m.click('#seg-face [data-face=bubble]');
+  await m.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(300); await shot(m, 'p03b-settings-example'); await noSideScroll('settings example');
+  await m.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(m, 'p03c-motion-examples'); await noSideScroll('motion examples');
+  await m.locator('#seg-face button').last().scrollIntoViewIfNeeded(); await sleep(300); await shot(m, 'p03d-face-examples'); await noSideScroll('face examples');
+  await m.click('#seg-pacing [data-pacing=mostly]'); await m.click('#seg-face [data-face=full]');
   await m.click('#panel-settings [data-next="4"]'); await sleep(800); await shot(m, 'p04-create'); await noSideScroll('create');
+  await m.locator('#btn-create').scrollIntoViewIfNeeded();
   check(await m.locator('#btn-create').evaluate((el) => {
     const rect = el.getBoundingClientRect();
     const hit = document.elementFromPoint(rect.x + rect.width / 2, Math.min(innerHeight - 1, rect.y + rect.height / 2));
     return rect.bottom <= innerHeight && (hit === el || el.contains(hit));
   }), 'Create action is visible above the phone footer');
   await m.click('#btn-create');
+  await m.waitForSelector('#transcript-review:not(.hidden)'); await sleep(300); await shot(m, 'p04b-check-transcript'); await noSideScroll('transcript check');
+  await m.click('#btn-review-edit');
+  await m.locator('#review-text').fill(storyText.replace('friend Jake', 'cousin Jake'));
+  await m.click('#btn-review-continue');
   await m.waitForFunction(() => !document.querySelector('#btn-gen-chars').hidden, null, { timeout: 30000 });
   await sleep(500); await shot(m, 'p05-characters'); await noSideScroll('characters');
   await m.click('#btn-gen-chars');
+  await sleep(400); await shot(m, 'p05c-drawing-cast');
   await m.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await sleep(350); await shot(m, 'p05b-characters-drawn');
   await m.click('#btn-approve'); await sleep(600);
@@ -409,6 +466,128 @@ try {
   await noSideScroll('editor');
   await mctx.close();
 
+  // ===== creator transcripts: real local audio and real timing helpers =====
+  for (const phone of [false, true]) {
+    const tag = phone ? 'phone transcript' : 'desktop transcript';
+    const tctx = await newContext({ viewport: { width: phone ? 390 : 1300, height: phone ? 844 : 1000 }, isMobile: phone, hasTouch: phone }, { mockListening: true });
+    const t = await tctx.newPage(); watch(t, tag);
+    await openStory(t);
+    check(await t.getAttribute('#seg-story [data-story-mode=auto]', 'aria-pressed') === 'true' && !(await t.getAttribute('#extras', 'open')), `${tag}: automatic listening is the default and story guidance is optional`);
+    await t.click('#seg-story [data-story-mode=transcript]');
+    check(await t.isVisible('#prep-transcript') && !(await t.isVisible('#create-action')), `${tag}: choosing a transcript makes adding words the next action`);
+    await t.locator('#story-input').scrollIntoViewIfNeeded(); await sleep(250); await shot(t, phone ? 'p10-transcript-choice' : '20-transcript-choice');
+    if (phone) await fitsPhone(t, 'transcript choice');
+    await t.click('#btn-paste-open');
+    await t.locator('#paste-text').fill(storyText);
+    await shot(t, phone ? 'p11-paste-transcript' : '21-paste-transcript');
+    if (phone) await fitsPhone(t, 'pasting');
+    await t.click('#btn-use-paste');
+    await t.waitForFunction(() => !window.__storycuts.state.transcriptBusy && window.__storycuts.state.project.transcriptSource === 'text');
+    const pasted = await t.evaluate(() => window.__storycuts.state.project.words);
+    check(timedSpeech(pasted), `${tag}: pasted text gets timed words across the real audio's speech and pauses`);
+    check(await t.evaluate(() => {
+      const { file, project } = window.__storycuts.state;
+      const saved = JSON.parse(localStorage.getItem(`storycuts:${file.name}:${file.size}`));
+      return saved.transcriptSource === 'text' && saved.transcriptReviewed && saved.settings.storyMode === 'transcript' && saved.words.length === project.words.length;
+    }), `${tag}: saving keeps the transcript source, review state and story choice`);
+    check(await t.locator('#create-summary').textContent().then((s) => s.includes(`Your transcript, ${pasted.length} words`)), `${tag}: summary shows the chosen transcript and word count`);
+    await t.click('#create-summary [data-story-change]');
+    await t.waitForFunction(() => document.activeElement.id === 'story-input-title');
+    check(await t.evaluate(() => document.activeElement.id) === 'story-input-title', `${tag}: summary Change returns focus to the story choice`);
+    await t.click('#seg-story [data-story-mode=auto]');
+    check(await t.evaluate(() => !window.__storycuts.state.project.words.length), `${tag}: switching to automatic doesn't reuse manual words as automatic speech`);
+    await t.click('#seg-story [data-story-mode=transcript]');
+    check(await t.evaluate(() => window.__storycuts.state.project.words.length) === pasted.length, `${tag}: switching back keeps the creator's transcript`);
+    await t.click('#extras > summary');
+    await t.click('#btn-cast-pre-add');
+    await t.locator('#cast-pre [data-k=name]').fill('Jake');
+    await t.locator('#cast-pre [data-k=description]').fill('Curly hair, glasses and a green hoodie');
+    await t.click('#btn-cast-pre-add');
+    await t.locator('#cast-pre .row').last().locator('[data-k=name]').fill('Biscuit');
+    await t.locator('#cast-pre .row').last().locator('[data-k=description]').fill('Golden puppy with a blue collar');
+    await t.click('#btn-cast-pre-add');
+    await t.locator('#cast-pre .row').last().locator('[data-del]').click();
+    check(await t.locator('#cast-pre .row').count() === 2 && await t.evaluate(() => window.__storycuts.state.project.settings.castHints.length) === 2, `${tag}: removing a hint updates the visible fields and saved cast together`);
+    await t.locator('#plan-notes').fill('Jake is my cousin, not my friend. This happens at school.');
+    await t.locator('#extras').scrollIntoViewIfNeeded(); await sleep(250); await shot(t, phone ? 'p12-story-guidance' : '22-story-guidance');
+    if (phone) await fitsPhone(t, 'people, pets and notes');
+    await openStory(t);
+    check(await t.evaluate(() => {
+      const p = window.__storycuts.state.project;
+      return p.settings.storyMode === 'transcript' && p.transcriptSource === 'text' && p.words.length > 100 && p.settings.castHints.length === 2 && p.settings.planNotes.includes('This happens at school.');
+    }) && !(await t.isDisabled('#btn-create')), `${tag}: reopening the video restores its ready transcript, cast hints and notes`);
+    await t.click('#btn-create'); await waitForCast(t);
+    const request = JSON.stringify(tctx.plannerRequests[0]?.messages);
+    check(request?.includes('Jake: Curly hair, glasses and a green hoodie') && request?.includes('Biscuit: Golden puppy with a blue collar') && request?.includes('Jake is my cousin, not my friend. This happens at school.'), `${tag}: people, pets and story notes reach the actual Anthropic planner request`);
+    check(await t.evaluate(() => !(window.__speechCalls || window.__speechModelLoads)) && tctx.plannerRequests.length === 1 && !(await t.isVisible('#transcript-review')), `${tag}: creator transcript skips automatic transcription and goes straight to planning`);
+    if (phone) { await sleep(650); await fitsPhone(t, 'character cards for a real video'); await shot(t, 'p14-video-characters'); }
+    await tctx.close();
+  }
+
+  const sctx = await newContext({ viewport: { width: 1300, height: 1000 } }, { mockListening: true });
+  const s = await sctx.newPage(); watch(s, 'subtitle import');
+  await openStory(s);
+  await s.click('#seg-story [data-story-mode=transcript]');
+  const subtitleChooser = s.waitForEvent('filechooser');
+  await s.locator('#btn-transcript-upload').focus(); await s.keyboard.press('Enter');
+  check(!!(await subtitleChooser), 'subtitle upload is reachable with the keyboard');
+  await s.locator('#transcript-file').setInputFiles(path.join(HERE, 'fixtures/story.srt'));
+  await s.waitForFunction(() => !window.__storycuts.state.transcriptBusy && window.__storycuts.state.project.transcriptSource === 'subtitles');
+  const subtitles = await s.evaluate(() => window.__storycuts.state.project.words);
+  check(subtitles[0].s === 2 && [14, 26, 37].every((time) => subtitles.some((w) => w.s === time)) && subtitles.at(-1).e === 42.98, 'subtitle file keeps all four cue boundaries instead of retiming across the video');
+  await s.locator('#prep-transcript').scrollIntoViewIfNeeded(); await shot(s, '23-subtitle-timing');
+  await s.click('#btn-create'); await waitForCast(s);
+  check(await s.evaluate(() => !window.__speechCalls && window.__storycuts.state.project.transcriptSource === 'subtitles'), 'subtitle import skips automatic transcription through planning');
+  await openStory(s, 'plain-text-story.webm'); await s.click('#seg-story [data-story-mode=transcript]');
+  await s.locator('#transcript-file').setInputFiles(path.join(HERE, 'fixtures/story.txt'));
+  await s.waitForFunction(() => !window.__storycuts.state.transcriptBusy && window.__storycuts.state.project.transcriptSource === 'text');
+  check(timedSpeech(await s.evaluate(() => window.__storycuts.state.project.words)), 'plain text file upload uses the same real speech timing as pasted text');
+  await openStory(s, 'webvtt-story.webm'); await s.click('#seg-story [data-story-mode=transcript]');
+  await s.locator('#transcript-file').setInputFiles({ name: 'story.vtt', mimeType: 'text/vtt', buffer: Buffer.from('WEBVTT\n\n' + fs.readFileSync(path.join(HERE, 'fixtures/story.srt'), 'utf8').replace(/,(\d{3})/g, '.$1')) });
+  await s.waitForFunction(() => !window.__storycuts.state.transcriptBusy && window.__storycuts.state.project.transcriptSource === 'subtitles');
+  check(await s.evaluate(() => window.__storycuts.state.project.words[0].s === 2 && window.__storycuts.state.project.words.at(-1).e === 42.98), 'WebVTT subtitle uploads also keep the creator\'s caption timing');
+  await sctx.close();
+
+  // ===== automatic listening: review, correct, then plan; skip is remembered =====
+  const actx = await newContext({ viewport: { width: 1300, height: 1000 } }, { mockListening: true });
+  const a = await actx.newPage(); watch(a, 'automatic transcript');
+  await openStory(a);
+  await a.click('#extras > summary'); await a.click('#btn-cast-pre-add');
+  await a.locator('#cast-pre [data-k=name]').fill('Jake');
+  await a.locator('#cast-pre [data-k=description]').fill('Short curly hair and a green jacket');
+  await a.locator('#plan-notes').fill('Jake is my cousin. We are at school.');
+  await a.click('#btn-create'); await sleep(250); await shot(a, '24-listening');
+  await a.waitForSelector('#transcript-review:not(.hidden)');
+  check(await a.evaluate(() => window.__speechCalls) === 1 && actx.plannerRequests.length === 0, 'automatic transcription pauses for review before Claude sees the words');
+  await a.click('#btn-review-edit');
+  await a.locator('#review-text').fill(''); await a.click('#btn-review-continue');
+  check(await a.isVisible('#transcript-review') && actx.plannerRequests.length === 0 && await a.locator('#review-status').textContent().then((x) => x.includes('Add')), 'an empty transcript stays editable and cannot start planning');
+  const fixedText = storyText.replace('friend Jake', 'cousin Jay');
+  await a.locator('#review-text').fill(fixedText);
+  await a.locator('label:has(#skip-transcript-review)').click();
+  await shot(a, '25-fix-transcript');
+  await a.click('#btn-review-continue'); await waitForCast(a);
+  const edited = await a.evaluate(() => ({ words: window.__storycuts.state.project.words, source: window.__storycuts.state.project.transcriptSource, reviewed: window.__storycuts.state.project.transcriptReviewed }));
+  check(edited.source === 'text' && edited.reviewed && timedSpeech(edited.words) && edited.words.some((w) => w.w === 'Jay'), 'corrected transcript reuses real speech spans, gets new timings and records text as its source');
+  const autoRequest = JSON.stringify(actx.plannerRequests[0]?.messages);
+  check(autoRequest?.includes('Jay') && !autoRequest?.includes('|friend') && autoRequest?.includes('Jake: Short curly hair and a green jacket') && autoRequest?.includes('Jake is my cousin. We are at school.'), "corrected words and optional story guidance reach the automatic path's planner request");
+  check(await a.evaluate(() => JSON.parse(localStorage.getItem('storycuts:skip-transcript-review')) === true), 'skip checks next time is saved on this device');
+  await openStory(a, 'next-story.webm');
+  await a.click('#btn-create'); await waitForCast(a);
+  check(await a.evaluate(() => window.__speechCalls) === 1 && actx.plannerRequests.length === 2 && !(await a.isVisible('#transcript-review')), 'the next video uses automatic listening and honors the saved skip preference');
+  await actx.close();
+
+  const fctx = await newContext({ viewport: { width: 390, height: 844 } }, { mockListening: true, failListening: true });
+  const f = await fctx.newPage(); watch(f, 'listening fallback');
+  await openStory(f); await f.click('#btn-create');
+  await f.waitForSelector('#story-input-status.err');
+  check(await f.isVisible('#prep-transcript') && !(await f.isDisabled('#btn-paste-open')) && !(await f.isDisabled('#transcript-file')), 'listening failure opens usable upload and paste controls instead of leaving them disabled');
+  await f.click('#btn-paste-open'); await f.locator('#paste-text').fill(storyText); await f.click('#btn-use-paste');
+  await f.waitForFunction(() => !window.__storycuts.state.transcriptBusy && window.__storycuts.state.project.words.length);
+  await f.click('#btn-create'); await waitForCast(f);
+  check(fctx.plannerRequests.length === 1, 'a creator can finish planning with pasted words after listening fails');
+  await fctx.close();
+
   // Reduced motion still leaves the landing and progress visuals readable.
   const rctx = await newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const r = await rctx.newPage(); watch(r, 'reduced motion');
@@ -421,6 +600,12 @@ try {
   await shot(r, 'p09-reduced-motion-progress');
   check(await r.isVisible('.work-title') && await r.evaluate(() => getComputedStyle(document.querySelector('.wv-plan .card')).opacity === '1'), 'reduced motion keeps the progress illustration visible');
   await r.evaluate(() => window.testWork.stop());
+  await r.click('#cta-demo'); await r.click('#btn-style-next');
+  check(await r.evaluate(() => getComputedStyle(document.querySelector('.example-scene')).animationName === 'none'), 'settings examples respect reduced motion');
+  await r.evaluate(async () => { const { showWork } = await import('./js/loader.js'); window.testWork = showWork({ kind: 'cast', title: 'Drawing your cast' }); });
+  check(await r.evaluate(() => getComputedStyle(document.querySelector('.cast-head-ink')).opacity === '1' && getComputedStyle(document.querySelector('.cast-check')).opacity === '1'), 'reduced motion leaves the character drawing illustration complete and readable');
+  await shot(r, 'p13-reduced-motion-cast');
+  await r.evaluate(() => window.testWork.stop());
   await rctx.close();
   const dctx = await newContext({ viewport: { width: 390, height: 844 } });
   const d = await dctx.newPage(); watch(d, 'studio deep link');
@@ -428,7 +613,7 @@ try {
   check(await d.isVisible('#panel-upload') && !(await d.isVisible('.hero')), 'a direct studio link opens the upload workspace');
   await dctx.close();
 } catch (e) {
-  check(false, 'test run finished', e.message.split('\n')[0]);
+  check(false, 'test run finished', e.message);
 }
 
 check(errors.length === 0, 'no errors in the browser console', errors.slice(0, 5).join(' | '));

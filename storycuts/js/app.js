@@ -217,6 +217,7 @@ function save() {
   store.set(storageKey(), {
     v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx,
     segments: p.segments, settings: p.settings, approved: p.approved,
+    transcriptSource: p.transcriptSource || 'auto', transcriptReviewed: !!p.transcriptReviewed, transcriptDrafts: p.transcriptDrafts,
   });
 }
 
@@ -390,7 +391,7 @@ function defaultSettings() {
     aspect: 'vertical',
     faceMode: 'full',
     pacing: 'mostly',
-    castHints: [],
+    castHints: [], storyMode: 'auto', planNotes: '',
     captions: true, captionStyle: { upper: true, preset: 'bold', pos: 'low', size: 1, highlight: '#ffd60a' }, punchIn: true,
     filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], sceneMotion: 'living', faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
@@ -405,8 +406,19 @@ function loadProject(duration) {
   state.future = [];
   state.selected = null;
   state.cache = {};
+  state.reviewingTranscript = false;
+  state.reviewOriginalText = null;
+  state.speechCache = null;
+  state.transcriptTask = (state.transcriptTask || 0) + 1;
+  state.transcriptBusy = false;
+  $('#paste-box').classList.add('hidden');
+  $('#paste-text').value = '';
+  $('#transcript-file').value = '';
+  setStatus('#story-input-status', '');
+  setStatus('#review-status', '');
   if (saved && Math.abs((saved.duration || 0) - duration) < 0.5) {
     Object.assign(state.project, saved, { duration, settings: { ...defaultSettings(), ...saved.settings } });
+    if (!saved.settings?.storyMode) state.project.settings.storyMode = ['text', 'subtitles'].includes(saved.transcriptSource) ? 'transcript' : 'auto';
     // animated video scenes were retired (the video API was discontinued)
     if (state.project.settings.sceneMotion === 'animated') state.project.settings.sceneMotion = 'living';
     if (!['mostly', 'bookends', 'story'].includes(state.project.settings.pacing)) state.project.settings.pacing = 'mostly';
@@ -434,6 +446,7 @@ function refresh() {
   renderTranscript();
   renderPrep();
   renderSummary();
+  renderSettingsExample();
   updateCosts();
   sizePreview();
   drawPreview();
@@ -525,7 +538,7 @@ function goStep(n, { scroll = true } = {}) {
   if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
   requestAnimationFrame(updateSegThumbs);
   if (scroll && !editorOpen()) {
-    $('#studio').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    (n === 4 ? $('#panel-create') : $('#studio')).scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     requestAnimationFrame(() => {
       const headings = $$(`.wizard > .panel[data-step="${n}"] .panel-head h3, .wizard > .panel[data-step="${n}"] #cast-title`);
       const heading = headings.find((h) => h.getClientRects().length && !h.closest('[hidden], .hidden'));
@@ -571,8 +584,9 @@ function renderPipeline() {
   const p0 = state.project;
   const started = !!(state.busy || p0?.segments.length || Object.values(state.stages || {}).some(Boolean));
   const failed = Object.values(state.stages || {}).includes('error');
-  const phase = !started ? 'start' : state.busy || failed || !p0?.segments.length ? 'running' : !p0.approved ? 'cast' : 'ready';
-  $('#create-start').classList.toggle('hidden', started);
+  const phase = state.reviewingTranscript ? 'review' : !started ? 'start' : state.busy || failed || !p0?.segments.length ? 'running' : !p0.approved ? 'cast' : 'ready';
+  $('#create-start').classList.toggle('hidden', started || phase === 'review');
+  $('#transcript-review').classList.toggle('hidden', phase !== 'review');
   $('#run').classList.toggle('hidden', phase !== 'running');
   $('#ready-card').classList.toggle('hidden', phase !== 'ready');
   // be honest when pictures are missing (never drawn, or cleared by the browser)
@@ -588,7 +602,7 @@ function renderPipeline() {
   }
   // missing characters: the cast and its Draw button are the only next step
   if (missChars) $('#ready-card').classList.add('hidden');
-  $('#cast').classList.toggle('hidden', !p0?.characters.length || phase === 'start' || (phase === 'ready' && !state.showCast && !missChars));
+  $('#cast').classList.toggle('hidden', !p0?.characters.length || ['start', 'review'].includes(phase) || (phase === 'ready' && !state.showCast && !missChars));
   $('#cast').classList.toggle('reviewed', phase === 'ready' && !missChars);
   $('#btn-reset').hidden = !p0?.segments.length || !!state.busy;
   $('#btn-show-cast').textContent = state.showCast ? 'Hide your characters' : 'See or change your characters';
@@ -596,8 +610,10 @@ function renderPipeline() {
   const p = state.project;
   const label = btn.querySelector('span');
   btn.classList.toggle('busy', state.busy);
-  btn.disabled = state.busy;
+  const needsTranscript = p?.settings.storyMode === 'transcript' && (!p.words.length || !['text', 'subtitles'].includes(p.transcriptSource));
+  btn.disabled = state.busy || state.transcriptBusy || !!needsTranscript;
   if (state.busy) label.textContent = 'Working…';
+  else if (needsTranscript) label.textContent = 'Add your transcript first';
   else if (!p?.segments.length) label.textContent = 'Find my characters';
   else if (!p.approved) label.textContent = 'Continue';
   else label.textContent = 'Open the editor';
@@ -781,6 +797,7 @@ function selectStyleIndex(i) {
   updateCosts();
   renderJourney();
   clearTimeout(selectStyleIndex.t);
+  renderSettingsExample();
   if (hadArt) selectStyleIndex.t = setTimeout(() => toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500), 700);
 }
 
@@ -965,6 +982,7 @@ function setAspect(a) {
   if (drawn) toast('Scenes drawn in the other format are cropped to fit. Redraw them for the best framing.', 4500);
   sizePreview(); drawPreview();
   renderJourney();
+  renderSettingsExample();
 }
 
 $$('#seg-format button, #seg-aspect button').forEach((b) => b.addEventListener('click', () => setAspect(b.dataset.aspect)));
@@ -983,6 +1001,7 @@ function syncMotionUI() {
   if (st.sceneMotion !== 'still') st.sceneMotion = 'living';
   $$('#seg-motion button').forEach((x) => x.classList.toggle('on', x.dataset.motion === st.sceneMotion));
   $('#opt-living').checked = st.sceneMotion === 'living';
+  renderSettingsExample();
 }
 
 $$('#seg-motion button').forEach((b) => b.addEventListener('click', () => {
@@ -998,19 +1017,43 @@ $$('#seg-pacing button').forEach((b) => b.addEventListener('click', () => {
   state.project.settings.pacing = b.dataset.pacing;
   save();
   $$('#seg-pacing button').forEach((x) => x.classList.toggle('on', x === b));
+  renderSettingsExample();
   if (state.project.segments.length) toast('Pacing changed. Press "Start over with new settings" in step 4 to re-plan the edit with it.', 5000);
 }));
 
 // ---------- step 4 summary ----------
+
+function renderSettingsExample() {
+  const s = state.project?.settings;
+  if (!s) return;
+  const still = s.sceneMotion === 'still', bubble = s.faceMode === 'bubble';
+  const pacing = s.pacing || 'mostly';
+  const image = STYLES[s.style]?.thumb || 'assets/styles/stick.jpg';
+  const player = $('#example-player');
+  Object.assign(player.dataset, { format: state.aspect, face: s.faceMode || 'full', motion: still ? 'still' : 'living', pacing });
+  if ($('#example-scene').getAttribute('src') !== image) $('#example-scene').src = image;
+  $$('#panel-settings [data-example-scene]').forEach((img) => { if (img.getAttribute('src') !== image) img.src = image; });
+  $$('#seg-pacing .cut-example i:not(.ex-you)').forEach((el) => { el.style.backgroundImage = `url("${image}")`; });
+  const copy = {
+    mostly: ['Your face. A world around it.', 'Scenes carry the story. Your face returns for reactions.'],
+    bookends: ['Open with you. End with you.', 'You open and close the story. Scenes fill the middle.'],
+    story: ['Let the illustrations tell it.', 'A quick opening with you, then scenes follow your voice.'],
+  }[pacing];
+  $('#example-title').textContent = copy[0];
+  $('#example-description').textContent = `${copy[1]} ${bubble ? 'You stay in a corner of each scene.' : 'Scenes fill the screen.'} ${still ? 'Calm, slow zooms.' : 'Small movements bring scenes to life.'}`;
+  const shots = { mostly: ['face', 'scene', 'scene', 'face', 'scene'], bookends: ['face', 'scene', 'scene', 'scene', 'face'], story: ['face-short', 'scene', 'scene', 'scene', 'scene'] }[pacing];
+  $('#example-sequence').innerHTML = shots.map((kind, i) => `<span class="example-shot ${kind}" style="--shot-index:${i}"><img src="${kind.startsWith('face') ? 'assets/hero/talk.jpg' : esc(image)}" alt=""><small>${kind.startsWith('face') ? 'You' : 'Story'}</small></span>`).join('');
+}
 
 function renderSummary() {
   const p = state.project;
   if (!p) return;
   const s = p.settings;
   const st = s.style === 'custom' ? { label: 'Your custom style' } : STYLES[s.style] || STYLES.stick;
-  const pacing = { mostly: 'Normal', bookends: 'Intro & outro', story: 'Voice-over' }[s.pacing] || 'Normal';
-  const row = (ico, label, value, back) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}">Change</button></div>`;
+  const pacing = { mostly: 'Story + you', bookends: 'Intro & outro', story: 'Mostly story' }[s.pacing] || 'Story + you';
+  const row = (ico, label, value, back, story = false) => `<div class="sum-row"><span class="sum-ico">${ico}</span><span class="sum-txt"><small>${label}</small><b>${esc(value)}</b></span><button class="btn link" data-back="${back}" ${story ? 'data-story-change="1"' : ''} aria-label="Change ${esc(label.toLowerCase())}">Change</button></div>`;
   $('#create-summary').innerHTML = [
+    row(icon('text'), 'Story', s.storyMode === 'transcript' ? p.words.length && ['text', 'subtitles'].includes(p.transcriptSource) ? `Your transcript, ${p.words.length} words` : 'Your transcript — add your words' : 'AI finds everything', 4, true),
     row(st.thumb ? `<img src="${esc(st.thumb)}" alt="">` : icon('palette'), 'Style', st.label + (s.styleNotes?.trim() ? ' + your details' : ''), 2),
     row(icon('film'), 'Format & pacing', `${state.aspect === 'horizontal' ? '16:9' : '9:16'} · ${pacing}${s.faceMode === 'bubble' ? ' · face bubble' : ''}${p.settings.sceneMotion === 'still' ? ' · still pictures' : ' · living pictures'}`, 3),
     row(icon('user'), 'Video', state.file ? state.file.name : 'Demo story', 1),
@@ -1019,30 +1062,71 @@ function renderSummary() {
 
 // ---------- step 3 prep: transcript + your characters ----------
 
-function renderPrep() {
+function renderPrep(forceCast = false) {
   const p = state.project;
   if (!p) return;
-  const custom = p.transcriptSource && p.transcriptSource !== 'auto';
+  const manual = p.settings.storyMode === 'transcript';
+  const custom = ['text', 'subtitles'].includes(p.transcriptSource);
   const n = p.words.length;
-  $('#transcript-state').textContent = n
-    ? `${n} words ready${p.transcriptSource === 'subtitles' ? ' (from your subtitles, with exact timing)' : p.transcriptSource === 'text' ? ' (from your text, timed to your audio)' : state.file ? ' (transcribed)' : ' (demo)'}.`
-    : 'We\'ll transcribe your video automatically.';
-  $('#prep-transcript').classList.toggle('ready', n > 0);
-  $('#btn-transcript-clear').hidden = !(custom && state.file && !p.segments.length);
+  const ready = manual && custom && n > 0;
+  $$('#seg-story button').forEach((b) => { const on = b.dataset.storyMode === p.settings.storyMode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.disabled = !!state.busy || !!state.transcriptBusy || !!p.segments.length; });
+  $('#prep-transcript').classList.toggle('hidden', !manual);
+  $('#story-auto-note').hidden = manual;
+  $('#listening-options').hidden = manual;
+  $('#transcript-state').textContent = state.transcriptBusy ? 'Lining your words up with your voice…' : ready ? `${n} words ready${p.transcriptSource === 'subtitles' ? ' · your subtitle timing is kept' : ' · lined up with your voice'}.` : 'Upload a file or paste your words to continue.';
+  $('#prep-transcript').classList.toggle('ready', !!ready);
+  $('#btn-transcript-clear').hidden = !(manual && !p.segments.length);
+  $('#btn-check-transcript').hidden = !n || !!p.segments.length;
+  $('#btn-paste-open').textContent = ready ? 'Edit your text' : 'Paste text';
+  $('#btn-paste-open').disabled = !!state.transcriptBusy || !!state.busy;
+  $('#transcript-file').disabled = !!state.transcriptBusy || !!state.busy;
+  $('#btn-use-paste').disabled = !!state.transcriptBusy;
+  $('#btn-use-paste').firstChild.textContent = state.transcriptBusy ? 'Preparing your words…' : 'Use this transcript';
+  const pasting = !$('#paste-box').classList.contains('hidden');
+  $('#create-action').hidden = pasting || (manual && !ready);
+  const upload = $('#btn-transcript-upload');
+  upload.classList.toggle('primary', manual && !ready && !pasting);
+  upload.setAttribute('aria-disabled', String(!!state.transcriptBusy || !!state.busy));
+  if (document.activeElement !== $('#plan-notes')) $('#plan-notes').value = p.settings.planNotes || '';
   const hints = p.settings.castHints || [];
   const box = $('#cast-pre');
-  if (document.activeElement?.closest('#cast-pre')) return;
-  box.innerHTML = hints.map((h, i) => `
+  if (forceCast || !document.activeElement?.closest('#cast-pre')) box.innerHTML = hints.map((h, i) => `
     <div class="row" data-i="${i}">
-      <input data-k="name" placeholder="Name (e.g. Dad)" value="${esc(h.name)}" maxlength="30">
-      <input data-k="description" placeholder="Look (e.g. tall, bald, big mustache, red polo)" value="${esc(h.description)}" maxlength="160">
-      <button class="x" data-del="${i}" aria-label="Remove">${icon('close')}</button>
+      <span class="hint-avatar">${icon('user')}</span><label class="field">Name<input data-k="name" placeholder="e.g. Jake, Dad or Biscuit" value="${esc(h.name)}" maxlength="30"></label>
+      <label class="field">What do they look like?<input data-k="description" placeholder="e.g. curly hair, glasses, green hoodie" value="${esc(h.description)}" maxlength="160"></label>
+      <button class="x icon-btn" data-del="${i}" aria-label="Remove ${esc(h.name || 'character details')}">${icon('close')}</button>
     </div>`).join('');
+  $('#btn-cast-pre-add').disabled = hints.length >= 8;
   $('#prep-cast').classList.toggle('ready', hints.some((h) => h.name?.trim()));
 }
 
+function setStoryMode(mode) {
+  const p = state.project;
+  if (!p || state.busy || state.transcriptBusy || transcriptLocked()) return;
+  if (p.settings.storyMode !== mode) {
+    p.transcriptDrafts ||= {};
+    if (p.words.length) p.transcriptDrafts[p.settings.storyMode] = { words: p.words, source: p.transcriptSource, reviewed: p.transcriptReviewed };
+    const draft = p.transcriptDrafts[mode];
+    p.words = draft?.words || [];
+    p.transcriptSource = draft?.source || 'auto';
+    p.transcriptReviewed = draft?.reviewed || false;
+    p.settings.storyMode = mode;
+  }
+  state.stages = {}; state.reviewingTranscript = false;
+  $('#paste-box').classList.add('hidden');
+  setStatus('#story-input-status', '');
+  setStatus('#create-status', '');
+  save(); renderPrep(); renderSummary(); renderPipeline(); updateCosts(); renderTranscript();
+}
+$('#seg-story').addEventListener('click', (e) => { const b = e.target.closest('[data-story-mode]'); if (b && !b.disabled) setStoryMode(b.dataset.storyMode); });
+$('#wizard').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-story-change]')) return;
+  requestAnimationFrame(() => { $('#story-input').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); $('#story-input-title').focus({ preventScroll: true }); });
+});
+$('#plan-notes').addEventListener('input', (e) => { if (state.project) { state.project.settings.planNotes = e.target.value; save(); } });
+
 $('#btn-cast-pre-add').addEventListener('click', () => {
-  if (!state.project) return;
+  if (!state.project || state.project.settings.castHints.length >= 8) return;
   state.project.settings.castHints = [...(state.project.settings.castHints || []), { name: '', description: '' }];
   save(); renderPrep();
   $('#cast-pre .row:last-child input')?.focus();
@@ -1057,8 +1141,10 @@ $('#cast-pre').addEventListener('input', (e) => {
 $('#cast-pre').addEventListener('click', (e) => {
   const d = e.target.closest('[data-del]');
   if (!d) return;
-  state.project.settings.castHints.splice(+d.dataset.del, 1);
-  save(); renderPrep();
+  const i = +d.dataset.del;
+  state.project.settings.castHints.splice(i, 1);
+  save(); renderPrep(true);
+  ($$('#cast-pre .row')[Math.min(i, state.project.settings.castHints.length - 1)]?.querySelector('[data-k=name]') || $('#btn-cast-pre-add')).focus({ preventScroll: true });
 });
 
 function transcriptLocked() {
@@ -1066,47 +1152,116 @@ function transcriptLocked() {
   return false;
 }
 
+async function storySpeechSpans(p) {
+  const file = state.file;
+  if (!file) return null;
+  if (state.speechCache?.project === p && state.speechCache.file === file) return state.speechCache.spans;
+  let spans = null;
+  try { spans = speechSpans(await decodeAudio(file)); } catch { /* videos without audio use the existing duration fallback */ }
+  if (state.project === p && state.file === file) state.speechCache = { project: p, file, spans };
+  return spans;
+}
+
+function acceptTranscript(p, words, source) {
+  p.words = words; p.transcriptSource = source; p.transcriptReviewed = true;
+  p.settings.storyMode = 'transcript';
+  state.stages = {}; state.reviewingTranscript = false;
+  $('#paste-box').classList.add('hidden');
+  setStatus('#story-input-status', '');
+  setStatus('#create-status', '');
+  save(); renderPrep(); renderTranscript(); renderSummary(); renderPipeline(); updateCosts();
+}
+
 $('#transcript-file').addEventListener('change', async (e) => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f || !state.project || transcriptLocked()) return;
-  const text = await f.text();
-  const subs = wordsFromSubtitles(text);
-  let words = subs;
-  if (!words) {
-    let spans = null;
-    try { if (state.file) spans = speechSpans(await decodeAudio(state.file)); } catch { /* no audio */ }
-    words = wordsFromText(text, state.project.duration, spans);
-  }
-  if (!words.length) { toast('That file doesn\'t seem to contain any words.'); return; }
-  state.project.words = words;
-  state.project.transcriptSource = subs ? 'subtitles' : 'text';
-  save(); renderPrep(); renderTranscript();
-  toast(subs ? 'Subtitles loaded with their exact timing.' : 'Transcript loaded and lined up with your audio.');
+  const p = state.project, task = ++state.transcriptTask;
+  state.transcriptBusy = true; renderPrep(); renderPipeline();
+  try {
+    const text = await f.text();
+    const subs = wordsFromSubtitles(text);
+    if (/\.(srt|vtt)$/i.test(f.name) && !subs) { toast('We couldn\'t read that subtitle file. Try another file or paste the words.'); return; }
+    const words = subs || wordsFromText(text, p.duration, await storySpeechSpans(p));
+    if (p !== state.project || task !== state.transcriptTask) return;
+    if (!words.length) { toast('That file doesn\'t seem to contain any words.'); return; }
+    acceptTranscript(p, words, subs ? 'subtitles' : 'text');
+  } catch { toast('We couldn\'t read that file. Try again or paste your words.'); }
+  finally { if (p === state.project && task === state.transcriptTask) { state.transcriptBusy = false; renderPrep(); renderPipeline(); } }
+});
+$('#btn-transcript-upload').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!$('#transcript-file').disabled) $('#transcript-file').click(); }
 });
 $('#btn-paste-open').addEventListener('click', () => {
   if (transcriptLocked()) return;
-  $('#paste-msg').innerHTML = '<b>Paste what you say in the video.</b> We\'ll line the words up with your audio.';
+  if (state.busy || state.transcriptBusy) return;
+  $('#paste-msg').textContent = 'Paste what you say in the video';
+  $('#paste-text').value = ['text', 'subtitles'].includes(state.project.transcriptSource) ? state.project.words.map((w) => w.w).join(' ') : '';
   $('#paste-box').classList.remove('hidden');
-  $('#paste-text').focus();
+  renderPrep();
+  $('#paste-text').focus({ preventScroll: true });
+  $('#paste-box').scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 });
-$('#btn-paste-cancel').addEventListener('click', () => $('#paste-box').classList.add('hidden'));
+$('#btn-paste-cancel').addEventListener('click', () => { $('#paste-box').classList.add('hidden'); renderPrep(); $('#btn-paste-open').focus({ preventScroll: true }); });
 $('#btn-transcript-clear').addEventListener('click', () => {
-  state.project.words = [];
-  state.project.transcriptSource = 'auto';
-  save(); renderPrep(); renderTranscript();
+  setStoryMode('auto');
+});
+
+function showTranscriptReview() {
+  const p = state.project;
+  if (!p?.words.length || p.segments.length) return;
+  liveStop();
+  state.reviewingTranscript = true;
+  state.reviewOriginalText = p.words.map((w) => w.w).join(' ');
+  $('#review-text').value = state.reviewOriginalText;
+  $('#review-text').readOnly = true;
+  $('#review-count').textContent = `${p.words.length} words`;
+  $('#review-edit-note').hidden = true;
+  $('#btn-review-edit').hidden = false;
+  $('#btn-review-continue').firstChild.textContent = 'Looks right, continue';
+  $('#skip-transcript-review').checked = store.get('storycuts:skip-transcript-review', false);
+  setStatus('#review-status', '');
+  renderPipeline();
+  requestAnimationFrame(() => { $('#transcript-review').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); $('#review-title').focus({ preventScroll: true }); });
+}
+$('#btn-check-transcript').addEventListener('click', showTranscriptReview);
+$('#btn-review-edit').addEventListener('click', () => {
+  $('#review-text').readOnly = false; $('#review-edit-note').hidden = false; $('#btn-review-edit').hidden = true;
+  $('#btn-review-continue').firstChild.textContent = 'Save & continue';
+  $('#review-text').focus();
+});
+$('#review-text').addEventListener('input', () => { $('#review-count').textContent = `${$('#review-text').value.trim().split(/\s+/).filter(Boolean).length} words`; });
+$('#btn-review-continue').addEventListener('click', async () => {
+  const p = state.project;
+  if (!state.reviewingTranscript || state.busy || !p) return;
+  const text = $('#review-text').value.trim();
+  if (!text) { setStatus('#review-status', 'Add your words before continuing.', 'err'); $('#review-text').focus(); return; }
+  state.busy = true; $('#btn-review-continue').disabled = true;
+  try {
+    if (text !== state.reviewOriginalText) {
+      setStatus('#review-status', 'Lining the corrected words up with your voice…', 'busy');
+      const words = wordsFromText(text, p.duration, await storySpeechSpans(p));
+      if (p !== state.project) return;
+      p.words = words; p.transcriptSource = 'text';
+    }
+    p.transcriptReviewed = true;
+    store.set('storycuts:skip-transcript-review', $('#skip-transcript-review').checked);
+    state.reviewingTranscript = false;
+    save(); renderTranscript(); renderPrep(); renderSummary();
+  } finally { state.busy = false; $('#btn-review-continue').disabled = false; }
+  if (p === state.project) createVideo();
 });
 
 // ---------- live progress card ----------
 
 const TIPS = {
-  transcribe: ['Listening to every word…', 'Lining each word up with your audio…', 'First run downloads the speech model; after that it\'s faster.'],
+  transcribe: ['Listening to every word…', 'Lining each word up with your audio…', 'The first time sets up the voice reader on your device. Next time starts faster.'],
   plan: ['Finding the hook…', 'Deciding when to show you and when to cut away…', 'Spotting every character and place in your story…', 'Writing a scene for each moment…'],
   cast: ['Sketching your characters…', 'Picking colours and outfits…', 'Checking hands, faces and details…', 'Each character is drawn once and reused in every scene.'],
-  scenes: ['Drawing your scenes…', 'Keeping every character on-model…', 'Checking each frame and redrawing any that slip…'],
+  scenes: ['Drawing your scenes…', 'Keeping every character\'s look consistent…', 'Checking each picture and redrawing any that need it…'],
 };
 
-const LOADER_KIND = { transcribe: 'listen', plan: 'plan', cast: 'draw', scenes: 'draw' };
+const LOADER_KIND = { transcribe: 'listen', plan: 'plan', cast: 'cast', scenes: 'draw' };
 
 const LIVE_STEPS = ['Listening to your story', 'Planning the edit', 'Checking every scene'];
 
@@ -1137,7 +1292,7 @@ function updateCosts() {
   const imgs = estimateImageCost(shots + chars, s, s.qc && !!s.key);
   const animated = animatedOn(p);
   const animEst = animated ? (p.segments.length ? estimateAnimCost(sceneSegs(), s.videoModel) : shots * 5 * videoModelInfo(s.videoModel).perSec) : 0;
-  $('#create-cost').textContent = `Estimated cost about ${fmtUSD(plan + imgs + animEst)}${animated ? ' with animated scenes' : ''}, paid to your own AI accounts.`;
+  $('#create-cost').textContent = `About ${fmtUSD(plan + imgs + animEst)}${animated ? ' with animated scenes' : ''} · billed to your AI accounts`;
   if (p.approved) {
     const todo = sceneSegs().filter(needsImage).length;
     const animTodo = animated && !todo ? animSegs().length : 0;
@@ -1157,8 +1312,10 @@ function updateCosts() {
 
 async function createVideo() {
   const p = state.project;
+  if (state.busy || state.transcriptBusy) return;
   if (!p) { toast('Upload a video first (or try the demo).'); goStep(1); return; }
   if (p.approved) { goStep(5); return; }
+  if (p.settings.storyMode === 'transcript' && (!p.words.length || !['text', 'subtitles'].includes(p.transcriptSource))) { toast('Add your transcript before continuing.'); goStep(4); $('#prep-transcript').scrollIntoView({ block: 'center' }); return; }
   if (state.file && !hasAccess()) { openPaywall(); return; }
   if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
   state.busy = true;
@@ -1173,21 +1330,25 @@ async function createVideo() {
       try {
         const words = await transcribeInBrowser(state.file, {
           quality: $('#asr-quality').value,
-          onStatus: (m) => state.live?.update({ title: m.replace(/…$/, '') }),
+          onStatus: (m) => {
+            const percent = m.match(/(\d+)%/);
+            state.live?.update({ title: percent ? `Getting ready to listen · ${percent[1]}%` : /Loading/.test(m) ? 'Getting ready to listen' : /Reading/.test(m) ? 'Opening your audio' : 'Listening to your story' });
+          },
         });
         if (!words.length) throw new Error('no speech found');
-        p.words = words; p.transcriptSource = 'auto'; save(); renderTranscript(); renderPrep();
+        p.words = words; p.transcriptSource = 'auto'; p.transcriptReviewed = false; save(); renderTranscript(); renderPrep();
       } catch (e) {
-        console.error(e);
-        setStage('transcribe', 'error');
+        console.warn('StoryCuts could not read the speech:', errText(e));
         liveStop();
-        setStatus('#create-status', `Couldn't transcribe automatically (${errText(e)}). Upload or paste your transcript instead.`, 'err');
-        $('#paste-msg').innerHTML = '<b>Automatic transcription didn\'t work on this device.</b> Paste what you say in the video and we\'ll line it up with your audio.';
-        $('#paste-box').classList.remove('hidden');
+        p.settings.storyMode = 'transcript';
+        state.stages = {};
+        setStatus('#story-input-status', 'We couldn\'t hear your words on this device. Upload a transcript or paste what you say to keep going.', 'err');
+        save(); renderPrep(); renderSummary();
         return;
       }
     }
     setStage('transcribe', 'done');
+    if (p.settings.storyMode === 'auto' && !p.transcriptReviewed && !store.get('storycuts:skip-transcript-review', false)) { showTranscriptReview(); return; }
 
     // 2. plan
     if (!p.segments.length) {
@@ -1195,7 +1356,7 @@ async function createVideo() {
       liveStart('plan', 'Planning your edit and characters');
       const s = settingsGet();
       const notes = [
-        $('#plan-notes').value.trim(),
+        p.settings.planNotes?.trim(),
         p.settings.faceMode === 'bubble' ? '' : 'Use only "face" and "scene" shots (no scene_bubble): the creator wants full-frame cuts.',
       ].filter(Boolean).join(' ');
       try {
@@ -1233,23 +1394,22 @@ async function createVideo() {
   } finally {
     state.busy = false;
     liveStop();
-    renderPipeline(); renderStepper();
+    renderPrep(); renderPipeline(); renderStepper();
   }
 }
 
 async function usePaste() {
+  const p = state.project;
+  if (!p || state.busy || state.transcriptBusy || transcriptLocked()) return;
   const text = $('#paste-text').value.trim();
   if (!text) { toast('Paste what you say in the video first.'); return; }
-  setStatus('#create-status', 'Lining the words up with your audio…', 'busy');
-  let spans = null;
-  try { if (state.file) spans = speechSpans(await decodeAudio(state.file)); } catch { /* no audio track */ }
-  state.project.words = wordsFromText(text, state.project.duration, spans);
-  state.project.transcriptSource = 'text';
-  save();
-  $('#paste-box').classList.add('hidden');
-  setStatus('#create-status', '');
-  renderTranscript(); renderPrep();
-  if (stageState('transcribe') === 'error') createVideo();
+  const task = ++state.transcriptTask;
+  state.transcriptBusy = true; renderPrep(); renderPipeline();
+  try {
+    const words = wordsFromText(text, p.duration, await storySpeechSpans(p));
+    if (p !== state.project || task !== state.transcriptTask) return;
+    acceptTranscript(p, words, 'text');
+  } finally { if (p === state.project && task === state.transcriptTask) { state.transcriptBusy = false; renderPrep(); renderPipeline(); } }
 }
 
 function resetPlan() {
@@ -1371,6 +1531,7 @@ function renderChars() {
   releaseImageUrls(el);
   el.innerHTML = p.characters.map((c, i) => `
     <div class="char ${c.image?.stale ? 'stale' : ''}" data-i="${i}" data-character="${esc(c.id)}">
+      <div class="char-top"><span class="char-number">${i + 1}</span><b class="char-name">${esc(c.name)}</b><span class="char-state ${characterNeedsDrawing(c) ? 'waiting' : 'complete'}">${busy.has(c.id) ? 'Drawing…' : c.image?.stale ? 'Update needed' : c.image?.key ? 'Ready to review' : 'Not drawn yet'}</span></div><div class="char-main">
       <div class="char-art">
         ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
@@ -1382,9 +1543,10 @@ function renderChars() {
         ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''} ${busy.has(c.id) ? 'disabled' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
         <p class="char-edit-note" ${c.image?.stale ? '' : 'hidden'}>Details changed. Redraw to update this look.</p>
         <div class="char-row">
-          <button class="btn sm" data-redraw="${i}" ${busy.size ? 'disabled' : ''}>${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Redraw' : 'Draw'}</button>
+          <button class="btn sm char-draw" data-redraw="${i}" ${busy.size ? 'disabled' : ''} aria-label="${c.image?.key ? 'Redraw' : 'Draw'} ${esc(c.name)}">${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Try a new look' : 'Draw this character'}</button>
           ${c.id === 'me' ? '<small>This is you</small>' : `<button class="icon-btn sm" data-del="${i}" aria-label="Remove ${esc(c.name)}" data-tip="Remove" ${busy.size ? 'disabled' : ''}>${icon('trash')}</button>`}
         </div>
+      </div>
       </div>
     </div>`).join('');
   el.querySelectorAll('.char').forEach((card) => {
@@ -1418,15 +1580,15 @@ function renderCastBar() {
     title = changed ? `Update ${missing} character${missing === 1 ? '' : 's'} before continuing` : drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Check the details, then draw your cast';
     sub = changed ? 'The details have changed. Redraw these characters so your scenes use the right look.' : drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Edit the names and appearances above. These designs will be reused throughout your story.';
   } else {
-    title = 'Happy with your cast?';
-    sub = `Look at each picture. Redraw anyone who looks wrong, then press the button to draw your ${scenes} scene${scenes === 1 ? '' : 's'}.`;
+    title = 'Do these look like your characters?';
+    sub = `Check each picture. Try a new look if you need to, then approve your cast to draw the scenes.`;
   }
   $('#cb-title').textContent = title;
   $('#cb-sub').textContent = sub;
   gen.hidden = !missing && !busy;
   gen.disabled = !!busy || state.busy;
   gen.classList.toggle('busy', !!busy);
-  gen.querySelector('span').textContent = busy ? 'Drawing…' : changed ? `Redraw ${missing} character${missing === 1 ? '' : 's'}` : drawn ? `Draw ${missing} missing` : `Draw ${n === 1 ? 'my character' : `all ${n} characters`}`;
+  gen.querySelector('span').textContent = busy ? 'Drawing your cast…' : changed ? `Update ${missing} character${missing === 1 ? '' : 's'}` : drawn ? `Draw ${missing} missing` : 'Draw my cast';
   const sNow = settingsGet();
   $('#cb-cost').textContent = missing && !busy ? `About ${missing > 2 ? Math.ceil(missing / 2) : 1} minute${missing > 2 ? 's' : ''} · about ${fmtUSD(estimateImageCost(missing, sNow, sNow.qc && !!sNow.key))}` : '';
   $('#cb-cost').parentElement.hidden = gen.hidden;
@@ -1441,6 +1603,8 @@ function renderCastBar() {
   $('#cb-step2').className = `cb-step ${missing || busy ? '' : 'on'}`;
   $('#cb-step3').className = 'cb-step';
   $('#cast-bar').classList.toggle('ready', !missing && !busy);
+  $$('#cast-guide > div').forEach((el, i) => { el.classList.toggle('current', busy ? i === 1 : missing ? i === 0 : i === 2); el.classList.toggle('complete', !missing && i < 2); });
+  $('#cast-guide').setAttribute('aria-label', busy ? 'Drawing your cast' : missing ? 'Check the names and appearances, then draw your cast' : 'Review your pictures, then approve your cast');
 }
 
 async function grabSelfFrame() {
@@ -1467,7 +1631,7 @@ async function drawCharacters(list) {
   state.charBusy = new Set(list.map((c) => c.id));
   renderChars();
   const ld = showWork({
-    kind: 'draw', title: `Drawing ${list.length === 1 ? list[0].name : `your ${list.length} characters`}`, short: 'Drawing characters', total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
+    kind: 'cast', title: `Drawing ${list.length === 1 ? list[0].name : `your ${list.length} characters`}`, short: 'Drawing characters', total: list.length, perItem: job.keys.claude ? 40 : 25, parallel: 2,
     background: 'Watch them appear',
     tips: ['Each character is designed once and reused in every scene.', 'Picking faces, hair, outfits and colours from your descriptions…', 'Every picture is checked for mistakes like extra fingers, and redrawn if needed.', 'You can keep editing the other descriptions while this runs.'],
   });
@@ -1516,11 +1680,19 @@ $('#chars').addEventListener('input', (e) => {
   const ch = state.project.characters[+card.dataset.i];
   if (!state._charEditing) { snapshot(); state._charEditing = true; setTimeout(() => { state._charEditing = false; }, 800); }
   ch[k] = k === 'useVideoLook' ? e.target.checked : e.target.value;
+  card.querySelector('.char-name').textContent = ch.name || 'Your character';
+  card.querySelector('[data-redraw]').setAttribute('aria-label', `${ch.image?.key ? 'Redraw' : 'Draw'} ${ch.name || 'your character'}`);
+  card.querySelector('[data-del]')?.setAttribute('aria-label', `Remove ${ch.name || 'your character'}`);
+  const portrait = card.querySelector('.char-art img');
+  if (portrait) portrait.alt = `Design for ${ch.name || 'your character'}`;
   if (ch.image?.key && k !== 'name') {
     ch.image.stale = true;
     invalidateCharacterScenes(ch);
     card.classList.add('stale');
     card.querySelector('.char-edit-note').hidden = false;
+    card.querySelector('.char-state').textContent = 'Update needed';
+    card.querySelector('.char-state').classList.remove('complete');
+    card.querySelector('.char-state').classList.add('waiting');
   }
   save();
   renderPipeline();
@@ -2714,8 +2886,11 @@ async function loadProjectFile(file) {
     if (!state.project) { toast(`Upload the matching video first (${data.video}).`); return; }
     if (Math.abs(data.duration - state.project.duration) > 0.5) toast(`Heads up: this project was made for a different video (${data.video}).`, 6000);
     snapshot();
-    const { words, characters, segments, settings, approved, title, locations = [], sfx = [] } = data;
-    Object.assign(state.project, { words, characters, locations, sfx, segments, settings: { ...state.project.settings, ...settings }, approved, title });
+    const { words, characters, segments, settings, approved, title, locations = [], sfx = [], transcriptSource = 'auto', transcriptReviewed = false, transcriptDrafts = {} } = data;
+    Object.assign(state.project, { words, characters, locations, sfx, segments, settings: { ...state.project.settings, ...settings }, approved, title, transcriptSource, transcriptReviewed, transcriptDrafts });
+    if (!settings?.storyMode) state.project.settings.storyMode = ['text', 'subtitles'].includes(transcriptSource) ? 'transcript' : 'auto';
+    state.reviewingTranscript = false;
+    $('#paste-box').classList.add('hidden');
     runQC(state.project);
     save(); syncOptionsUI(); refresh();
     toast('Project loaded.');
