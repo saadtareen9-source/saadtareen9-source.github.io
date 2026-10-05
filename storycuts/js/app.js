@@ -444,6 +444,48 @@ function refresh() {
 
 const maxStep = () => (!state.project ? 1 : state.project.approved ? 5 : 4);
 
+const JOURNEY_COPY = [
+  ['Start with a story.', 'A phone video is all you need. Your video stays on your device.'],
+  ['Build a world around it.', 'Pick a look you love. The same style follows your cast through every scene.'],
+  ['Make it feel like you.', 'Choose where you share. You can change the creative details again in the editor.'],
+  ['Every character matters.', 'Check the names and appearances. Draw your cast, then approve the looks before the scenes.'],
+  ['The final cut is yours.', 'Select a shot, choose a tool below the timeline, and make the details your own.'],
+];
+
+function enterStudio({ navigate = true } = {}) {
+  document.body.classList.add('studio-open');
+  if (navigate && location.hash !== '#studio') history.pushState(null, '', '#studio');
+}
+
+function leaveStudio() {
+  closeSheet();
+  setFullEditor(false);
+  document.body.classList.remove('studio-open');
+  if (state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
+}
+
+function syncStudioLocation() {
+  if (location.hash === '#studio') {
+    enterStudio({ navigate: false });
+    goStep(state.step || 1, { scroll: false });
+  } else leaveStudio();
+}
+
+function renderJourney() {
+  const cur = state.step || 1;
+  const [title, tip] = JOURNEY_COPY[cur - 1];
+  $('#journey-title').textContent = title;
+  $('#journey-tip').textContent = tip;
+  const position = `Step ${cur} of 5`;
+  if ($('#journey-position').textContent !== position) $('#journey-position').textContent = position;
+  const p = state.project;
+  const box = $('#journey-project');
+  box.hidden = !p;
+  if (!p) return;
+  const style = p.settings.style === 'custom' ? 'Your own style' : STYLES[p.settings.style]?.label || 'Stick figures';
+  box.innerHTML = `<span class="jp-label">Your story</span><b>${esc(state.file?.name || 'Demo story')}</b><span>${esc(style)} · ${p.settings.aspect === 'horizontal' ? '16:9' : '9:16'}</span><small>${icon('shield')}Video stays on this device</small>`;
+}
+
 function renderStepper() {
   const cur = state.step || 1;
   const max = maxStep();
@@ -452,10 +494,16 @@ function renderStepper() {
     li.classList.toggle('active', n === cur);
     li.classList.toggle('done', n < cur);
     li.classList.toggle('reach', n <= max);
+    const button = li.querySelector('button');
+    button.disabled = n > max;
+    if (n === cur) button.setAttribute('aria-current', 'step');
+    else button.removeAttribute('aria-current');
   });
+  renderJourney();
 }
 
 function goStep(n, { scroll = true } = {}) {
+  if (scroll) enterStudio();
   n = Math.max(1, Math.min(maxStep(), n));
   const prev = state.step || 1;
   state.step = n;
@@ -477,8 +525,12 @@ function goStep(n, { scroll = true } = {}) {
   if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
   requestAnimationFrame(updateSegThumbs);
   if (scroll && !editorOpen()) {
-    const top = $('#studio').getBoundingClientRect().top;
-    if (top < 0 || top > window.innerHeight * 0.4) $('#studio').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('#studio').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    requestAnimationFrame(() => {
+      const headings = $$(`.wizard > .panel[data-step="${n}"] .panel-head h3, .wizard > .panel[data-step="${n}"] #cast-title`);
+      const heading = headings.find((h) => h.getClientRects().length && !h.closest('[hidden], .hidden'));
+      if (heading && !document.body.classList.contains('work-open')) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+    });
   }
 }
 
@@ -546,7 +598,7 @@ function renderPipeline() {
   btn.classList.toggle('busy', state.busy);
   btn.disabled = state.busy;
   if (state.busy) label.textContent = 'Working…';
-  else if (!p?.segments.length) label.textContent = 'Create my video';
+  else if (!p?.segments.length) label.textContent = 'Find my characters';
   else if (!p.approved) label.textContent = 'Continue';
   else label.textContent = 'Open the editor';
   if (state.project?.characters) renderCastBar();
@@ -578,6 +630,8 @@ async function loadFile(file, { reopen = false } = {}) {
     });
   } catch (e) { toast(e.message, 6000); return; }
   if (!Number.isFinite(video.duration)) { toast('Could not read the video length.'); return; }
+  clearTimeout(toast.timer);
+  $('#toast').classList.remove('show');
   state.file = file;
   state.media = new VideoMedia(video);
   state.stages = {};
@@ -651,6 +705,7 @@ function layoutStyles() {
   const ids = styleIds();
   const n = ids.length;
   const cards = $$('#style-track .style-card');
+  const gallery = $('#style-track').classList.contains('gallery');
   const step = cfUnit();
   const near = wrapIndex(CF.pos, n);
   cards.forEach((card, i) => {
@@ -659,17 +714,20 @@ function layoutStyles() {
     if (d < -n / 2) d += n;
     const a = Math.abs(d);
     const fade = Math.max(0, Math.min(1, (2.9 - a) / 0.6));
-    card.style.transform = `translate3d(calc(-50% + ${(d * step).toFixed(2)}px), 0, ${(-a * 120).toFixed(1)}px) rotateY(${(Math.max(-1, Math.min(1, -d)) * 18).toFixed(2)}deg) scale(${Math.max(0.6, 1 - a * 0.16).toFixed(4)})`;
-    card.style.zIndex = String(100 - Math.round(a * 10));
-    card.style.opacity = fade.toFixed(3);
-    card.style.visibility = fade ? '' : 'hidden';
-    card.style.setProperty('--dim', Math.min(0.62, a * 0.32).toFixed(3));
-    const center = i === near;
-    if (card.classList.contains('on') !== center) {
-      card.classList.toggle('on', center);
-      card.setAttribute('aria-selected', center);
-      card.tabIndex = center ? 0 : -1;
+    if (gallery) {
+      ['transform', 'z-index', 'opacity', 'visibility'].forEach((prop) => card.style.removeProperty(prop));
+      card.style.setProperty('--dim', 0);
+    } else {
+      card.style.transform = `translate3d(calc(-50% + ${(d * step).toFixed(2)}px), 0, ${(-a * 120).toFixed(1)}px) rotateY(${(Math.max(-1, Math.min(1, -d)) * 18).toFixed(2)}deg) scale(${Math.max(0.6, 1 - a * 0.16).toFixed(4)})`;
+      card.style.zIndex = String(100 - Math.round(a * 10));
+      card.style.opacity = fade.toFixed(3);
+      card.style.visibility = fade ? '' : 'hidden';
+      card.style.setProperty('--dim', Math.min(0.62, a * 0.32).toFixed(3));
     }
+    const center = i === near;
+    card.classList.toggle('on', center);
+    card.setAttribute('aria-selected', center);
+    card.tabIndex = center ? 0 : -1;
   });
   $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === near));
   const id = ids[near];
@@ -707,20 +765,30 @@ function selectStyleIndex(i) {
   if (delta > n / 2) delta -= n;
   if (delta < -n / 2) delta += n;
   CF.target = Math.round(CF.target) + delta;
-  cfKick();
+  if ($('#style-track').classList.contains('gallery') || matchMedia('(prefers-reduced-motion: reduce)').matches) cfSet(CF.target);
+  else cfKick();
   state.styleIndex = wrapIndex(i, n);
   const id = ids[state.styleIndex];
   if (!state.project) { store.set('storycuts:style', id); return; }
   if (id === state.project.settings.style) return;
   const hadArt = state.project.characters.some((c) => c.image?.key);
   state.project.settings.style = id;
+  invalidateStyleArtwork();
   store.set('storycuts:style', id);
   save();
   syncStyleExtras();
   syncMotionUI();
   updateCosts();
+  renderJourney();
   clearTimeout(selectStyleIndex.t);
   if (hadArt) selectStyleIndex.t = setTimeout(() => toast(`Style set to ${id === 'custom' ? 'your custom style' : STYLES[id].label}. Redraw your cast and scenes to apply it.`, 4500), 700);
+}
+
+function invalidateStyleArtwork() {
+  const p = state.project;
+  if (!p) return;
+  [...p.characters, ...p.segments].forEach((item) => { if (item.image?.key) item.image.stale = true; });
+  renderPipeline();
 }
 
 $('#style-prev').addEventListener('click', () => selectStyleIndex(state.styleIndex - 1));
@@ -730,11 +798,23 @@ $('#style-track').addEventListener('click', (e) => {
   const card = e.target.closest('.style-card');
   if (!card || state.styleDragged) return;
   const i = styleIds().indexOf(card.dataset.style);
+  if ($('#style-track').classList.contains('gallery')) {
+    selectStyleIndex(i);
+    if (card.dataset.style === 'custom') requestAnimationFrame(() => { $('#custom-style').scrollIntoView({ block: 'nearest' }); $('#custom-style').focus({ preventScroll: true }); });
+    return;
+  }
   if (i !== state.styleIndex) selectStyleIndex(i);
   else if (card.dataset.style === 'custom') $('#custom-style').focus();
   else { card.classList.remove('chosen'); void card.offsetWidth; card.classList.add('chosen'); setTimeout(() => goStep(3), 260); }
 });
 $('#style-track').addEventListener('keydown', (e) => {
+  if ($('#style-track').classList.contains('gallery')) {
+    const cols = getComputedStyle($('#style-track')).gridTemplateColumns.split(/\s+/).length;
+    const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key];
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? styleIds().length - 1 : delta ? Math.max(0, Math.min(styleIds().length - 1, state.styleIndex + delta)) : null;
+    if (next !== null) { e.preventDefault(); selectStyleIndex(next); $('#style-track .style-card.on')?.focus(); }
+    return;
+  }
   if (e.key === 'ArrowLeft') { e.preventDefault(); selectStyleIndex(state.styleIndex - 1); $('#style-track .style-card.on')?.focus(); }
   if (e.key === 'ArrowRight') { e.preventDefault(); selectStyleIndex(state.styleIndex + 1); $('#style-track .style-card.on')?.focus(); }
 });
@@ -744,6 +824,7 @@ $('#style-track').addEventListener('keydown', (e) => {
   const track = $('#style-track');
   let down = false, x0 = 0, p0 = 0, samples = [];
   track.addEventListener('pointerdown', (e) => {
+    if (track.classList.contains('gallery')) return;
     if (e.button > 0) return;
     down = true; x0 = e.clientX; p0 = CF.pos; samples = [[performance.now(), e.clientX]];
     state.styleDragged = false;
@@ -792,6 +873,7 @@ $('#style-track').addEventListener('keydown', (e) => {
   // two-finger trackpad swipe (and shift + mouse wheel)
   let wheelTimer = 0;
   track.addEventListener('wheel', (e) => {
+    if (track.classList.contains('gallery')) return;
     const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.8;
     let d = horizontal ? e.deltaX : e.shiftKey ? e.deltaY : 0;
     if (!d) return;
@@ -836,6 +918,7 @@ let styleTimer;
 ['#style-notes', '#custom-style'].forEach((sel) => $(sel).addEventListener('input', (e) => {
   if (!state.project) return;
   state.project.settings[sel === '#style-notes' ? 'styleNotes' : 'customStyle'] = e.target.value.slice(0, 400);
+  invalidateStyleArtwork();
   clearTimeout(styleTimer);
   styleTimer = setTimeout(save, 300);
 }));
@@ -848,12 +931,14 @@ $('#style-ref').addEventListener('change', async (e) => {
   const key = `${storageKey()}/styleref/${Date.now().toString(36)}`;
   await putBlob(key, f);
   state.project.settings.styleRef = { key, name: f.name };
+  invalidateStyleArtwork();
   save();
   syncStyleExtras();
   toast('Style reference added. Every character and scene will copy its look.');
 });
 $('#btn-clear-ref').addEventListener('click', () => {
   delete state.project.settings.styleRef;
+  invalidateStyleArtwork();
   save();
   syncStyleExtras();
 });
@@ -879,6 +964,7 @@ function setAspect(a) {
   const drawn = state.project?.segments.some((sg) => sg.image?.key && sg.image.aspect !== (a === 'vertical' ? '9:16' : '16:9'));
   if (drawn) toast('Scenes drawn in the other format are cropped to fit. Redraw them for the best framing.', 4500);
   sizePreview(); drawPreview();
+  renderJourney();
 }
 
 $$('#seg-format button, #seg-aspect button').forEach((b) => b.addEventListener('click', () => setAspect(b.dataset.aspect)));
@@ -1567,6 +1653,8 @@ async function animateScenes(list) {
 async function generateScenes(list, note = '') {
   if (!hasImageKey()) { openSettings(); return; }
   if (!list.length) return;
+  if (state.genAbort) { toast('Your scenes are still being drawn.'); return; }
+  if (state.project.characters.some(characterNeedsDrawing)) { toast('Update your cast before drawing scenes in this style.'); goStep(4); return; }
   if (document.body.classList.contains('sheet-open')) closeSheet();
   const job = imageJobOpts();
   const ac = { stop: false };
@@ -1967,7 +2055,7 @@ async function select(id, seek) {
 // tabs
 // ---------- phone: full-screen editor (CapCut-style) ----------
 const isPhone = () => matchMedia('(max-width: 720px)').matches;
-const TAB_TITLES = { shot: 'Edit', sound: 'Audio', captions: 'Text', filters: 'Filters', trans: 'Transitions', export: 'Export' };
+const TAB_TITLES = { shot: 'Shots', sound: 'Audio', captions: 'Captions', filters: 'Filters', trans: 'Transitions', export: 'Export' };
 
 const editorOpen = () => document.body.classList.contains('ed-full') || document.body.classList.contains('ed-app');
 let sheetTrigger = null;
@@ -2062,7 +2150,7 @@ function showTab(name, { open = true } = {}) {
   state.tab = name;
   $('#sheet-title').textContent = TAB_TITLES[name] || '';
   if (open) openSheet(name);
-  $('#ed-tabs').setAttribute('aria-orientation', isPhone() ? 'horizontal' : 'vertical');
+  $('#ed-tabs').setAttribute('aria-orientation', 'horizontal');
   $$('#ed-tabs button').forEach((b) => {
     const on = b.dataset.tab === name;
     b.classList.toggle('on', on);
@@ -2645,7 +2733,17 @@ const drop = $('#drop');
 drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
 $('#btn-demo').addEventListener('click', loadDemo);
 $('#cta-demo').addEventListener('click', () => { loadDemo(); });
-$$('a[href="#studio"]').forEach((a) => a.addEventListener('click', () => { if (state.project) return; goStep(1, { scroll: false }); }));
+$$('a[href="#studio"]').forEach((a) => a.addEventListener('click', (e) => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  goStep(state.project ? state.step || 1 : 1);
+}));
+$$('a[href="#top"], .nav-links a:not([href="#studio"]), #menu-sheet a:not([href="#studio"])').forEach((a) => a.addEventListener('click', (e) => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || !document.body.classList.contains('studio-open')) return;
+  leaveStudio();
+}));
+window.addEventListener('hashchange', syncStudioLocation);
+window.addEventListener('popstate', syncStudioLocation);
 $('#btn-create').addEventListener('click', createVideo);
 $('#btn-use-paste').addEventListener('click', usePaste);
 $('#btn-reset').addEventListener('click', resetPlan);
@@ -2756,9 +2854,10 @@ function renderPlans() {
   });
   const mine = currentPlan();
   const nav = $('#nav-plan');
-  nav.innerHTML = mine ? `${icon('crown')}<span>${esc(mine.plan.name)}</span>` : '<span>Get started</span>';
-  nav.classList.toggle('primary', !mine);
-  nav.classList.toggle('glass', !!mine);
+  nav.innerHTML = '<span>Open studio</span>';
+  nav.title = mine ? `${mine.plan.name} plan` : '';
+  nav.classList.add('primary');
+  nav.classList.remove('glass');
   const portal = BILLING.portalUrl;
   $$('#manage-sub, .manage-link').forEach((a) => { a.hidden = !(mine && portal); if (portal) a.href = portal; });
 }
@@ -2882,6 +2981,7 @@ $('#year').textContent = new Date().getFullYear();
 renderPlans();
 document.fonts?.ready.then(() => $$('.period').forEach(movePeriodThumb));
 
+if (location.hash === '#studio') enterStudio({ navigate: false });
 goStep(1, { scroll: false });
 renderProjects();
 checkStorage();

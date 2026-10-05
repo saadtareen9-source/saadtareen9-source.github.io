@@ -124,14 +124,46 @@ try {
   watch(p, 'desktop');
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
+  check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
+  for (const [selector, name] of [['#styles', '01c-landing-styles'], ['#how', '01d-landing-how'], ['.story-showcase', '01e-landing-showcase'], ['#pricing', '01f-landing-pricing'], ['#faq', '01g-landing-faq'], ['.cta-band', '01h-landing-footer']]) {
+    await p.locator(selector).scrollIntoViewIfNeeded(); await sleep(450); await shot(p, name);
+  }
   await p.locator('#nav-plan').click(); await sleep(400);
+  await p.click('#btn-keys'); await sleep(200); await shot(p, '01i-connections');
+  await p.keyboard.press('Escape');
+  check(await p.isVisible('#panel-upload') && !(await p.isVisible('.hero')), 'Open studio shows the upload journey');
+  check(await p.getAttribute('#stepper [data-s="1"] button', 'aria-current') === 'step' && await p.isDisabled('#stepper [data-s="2"] button'), 'journey marks the current step and guards unavailable steps');
+  await p.click('.studio-home'); await sleep(350);
+  await p.goBack(); await sleep(350);
+  check(await p.isVisible('#panel-upload') && !(await p.isVisible('.hero')), 'browser Back restores the studio');
+  await p.goForward(); await sleep(350);
+  check(await p.isVisible('.hero') && !(await p.isVisible('#studio')), 'browser Forward restores the landing');
+  await p.locator('#nav-plan').click(); await sleep(350);
   await shot(p, '01b-upload');
   const chooser = p.waitForEvent('filechooser');
   await p.locator('#drop').focus(); await p.keyboard.press('Enter');
   check(!!(await chooser), 'upload can be opened with the keyboard');
-  await p.click('#cta-demo'); await sleep(900);
+  await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
+  check(await step() === '1' && await p.isVisible('#toast'), 'video upload asks for ownership confirmation');
+  await p.locator('label:has(#rights)').click();
+  await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
+  await p.waitForFunction(() => window.__storycuts.state.step === 2);
+  check(await p.evaluate(() => window.__storycuts.state.file?.name === 'upload.webm' && document.querySelector('#video').src.startsWith('blob:')), 'a real local video opens the style step without uploading the video');
+  await p.click('#stepper [data-s="1"] button');
+  await p.click('#btn-demo'); await sleep(900);
   check(await step() === '2', 'demo opens the style step');
+  check(await p.locator('#style-track .style-card:visible').count() === 9, 'all nine art choices are available in the gallery');
+  await p.locator('#style-track [data-style=anime]').click();
+  await p.locator('#style-track [data-style=anime]').click();
+  check(await step() === '2', 'selecting a style waits for the explicit Continue action');
+  await p.locator('#style-track [data-style=anime]').focus(); await p.keyboard.press('End');
+  check(await p.getAttribute('#style-track [data-style=custom]', 'aria-selected') === 'true' && await p.isVisible('#custom-style'), 'gallery keyboard navigation reaches the custom style');
+  await p.keyboard.press('Home');
+  check(await p.getAttribute('#style-track [data-style=stick]', 'aria-selected') === 'true', 'gallery keyboard navigation returns to the first style');
+  await p.click('.studio-home'); await p.locator('#nav-plan').click(); await sleep(350);
+  check(await step() === '2', 'returning to the studio preserves the current story and step');
   await shot(p, '02-style');
+  check(await p.locator('#btn-style-next').evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight), 'style Continue stays visible while browsing the desktop gallery');
   await p.click('#btn-style-next'); await sleep(800);
   check(await step() === '3', 'continue goes to settings');
   check(await p.getAttribute('#seg-motion button.on', 'data-motion') === 'living', 'living pictures is the default');
@@ -191,6 +223,8 @@ try {
   check(await step() === '5' && await p.evaluate(() => document.body.classList.contains('ed-app')), 'editor opens full-screen on desktop');
   const drawn = await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.type !== 'face' && s.scene).every((s) => s.image?.key));
   check(drawn, 'every scene has a picture');
+  const editorOrder = () => document.querySelector('#stage').getBoundingClientRect().bottom <= document.querySelector('.tl').getBoundingClientRect().top + 1 && document.querySelector('.tl').getBoundingClientRect().bottom <= document.querySelector('.transport').getBoundingClientRect().top + 1 && document.querySelector('.transport').getBoundingClientRect().bottom <= document.querySelector('#ed-tabs').getBoundingClientRect().top + 1;
+  check(await p.evaluate(editorOrder), 'desktop editor places the timeline, playback controls, and tools below the video');
   // A scene edited while its picture is in flight must still ask for an update.
   await p.route('https://api.openai.com/**', async (r) => {
     if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
@@ -297,6 +331,17 @@ try {
   await p.click('#stepper li[data-s="3"] button'); await sleep(300);
   await p.click('#stepper li[data-s="4"] button'); await sleep(800);
   check(await p.isVisible('#btn-gen-chars') && !(await p.isVisible('#ready-card')), 'missing character pictures show the Draw button, not "ready"');
+  await p.evaluate(() => {
+    const st = window.__storycuts.state;
+    st.project.characters.forEach((c) => { c.image = { key: 'test/current' }; });
+    st.project.segments.forEach((s) => { if (s.scene && s.type !== 'face') s.image = { key: 'test/current' }; });
+  });
+  await p.click('#stepper [data-s="2"] button');
+  await p.click('#style-track [data-style=anime]');
+  check(await p.evaluate(() => {
+    const p = window.__storycuts.state.project;
+    return p.characters.every((c) => c.image.stale) && p.segments.filter((s) => s.type !== 'face' && s.scene).every((s) => s.image.stale);
+  }), 'changing the art style marks both cast and scenes for updating');
   await ctx.close();
 
   // ===== phone =====
@@ -306,6 +351,11 @@ try {
   await m.goto(URL0); await sleep(700); await shot(m, 'p01-landing');
   const noSideScroll = async (where) => check(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, `no sideways scroll on phone: ${where}`);
   await noSideScroll('landing');
+  for (const [selector, name] of [['#styles', 'p01b-landing-styles'], ['#how', 'p01c-landing-how'], ['.story-showcase', 'p01d-landing-showcase'], ['#pricing', 'p01e-landing-pricing'], ['#faq', 'p01f-landing-faq'], ['.cta-band', 'p01g-landing-footer']]) {
+    await m.locator(selector).scrollIntoViewIfNeeded(); await sleep(350); await shot(m, name); await noSideScroll(name);
+  }
+  await m.click('#btn-keys'); await sleep(200); await shot(m, 'p01h-connections');
+  await m.keyboard.press('Escape');
   await m.click('#cta-demo'); await sleep(900); await shot(m, 'p02-style'); await noSideScroll('style');
   check(await m.locator('#btn-style-next').evaluate((el) => el.scrollWidth <= el.clientWidth), 'style Continue label fits its phone button');
   check(await m.evaluate(() => {
@@ -324,6 +374,7 @@ try {
   await sleep(500); await shot(m, 'p05-characters'); await noSideScroll('characters');
   await m.click('#btn-gen-chars');
   await m.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
+  await sleep(350); await shot(m, 'p05b-characters-drawn');
   await m.click('#btn-approve'); await sleep(600);
   await m.click('.work .btn.primary');
   await sleep(150); await shot(m, 'p06b-background-editor');
@@ -333,6 +384,7 @@ try {
   await m.waitForFunction(() => !window.__storycuts.state.genAbort, null, { timeout: 60000 });
   await sleep(600);
   check(await m.evaluate(() => document.body.classList.contains('ed-full')), 'editor is full-screen on phone');
+  check(await m.evaluate(editorOrder), 'phone editor keeps the timeline, playback controls, and tools below the video');
   await shot(m, 'p06-editor');
   await m.click('#ed-tabs button[data-tab=shot]'); await sleep(600);
   check(await m.evaluate(() => document.querySelector('#ed-sheet').classList.contains('open')), 'phone tool sheet slides up');
@@ -370,6 +422,11 @@ try {
   check(await r.isVisible('.work-title') && await r.evaluate(() => getComputedStyle(document.querySelector('.wv-plan .card')).opacity === '1'), 'reduced motion keeps the progress illustration visible');
   await r.evaluate(() => window.testWork.stop());
   await rctx.close();
+  const dctx = await newContext({ viewport: { width: 390, height: 844 } });
+  const d = await dctx.newPage(); watch(d, 'studio deep link');
+  await d.goto(`${URL0}#studio`); await sleep(400);
+  check(await d.isVisible('#panel-upload') && !(await d.isVisible('.hero')), 'a direct studio link opens the upload workspace');
+  await dctx.close();
 } catch (e) {
   check(false, 'test run finished', e.message.split('\n')[0]);
 }
