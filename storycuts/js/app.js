@@ -1,3 +1,4 @@
+import { initExperience, syncStyleShowcase, syncCastNavigation, exampleSceneForStyle } from './experience.js';
 import {
   drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType, FILTERS, filterCss, TRANSITIONS, CAPTION_STYLES,
 } from './render.js';
@@ -538,7 +539,8 @@ function goStep(n, { scroll = true } = {}) {
   if (n !== 5 && state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
   requestAnimationFrame(updateSegThumbs);
   if (scroll && !editorOpen()) {
-    (n === 4 ? $('#panel-create') : $('#studio')).scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    const target = n === 4 || (n > 1 && innerWidth <= 720) ? $(`.wizard > .panel[data-step="${n}"]`) : $('#studio');
+    target.scrollIntoView({ behavior: 'auto', block: 'start' });
     requestAnimationFrame(() => {
       const headings = $$(`.wizard > .panel[data-step="${n}"] .panel-head h3, .wizard > .panel[data-step="${n}"] #cast-title`);
       const heading = headings.find((h) => h.getClientRects().length && !h.closest('[hidden], .hidden'));
@@ -747,6 +749,7 @@ function layoutStyles() {
   });
   $$('#style-dots .dot').forEach((dot, i) => dot.classList.toggle('on', i === near));
   const id = ids[near];
+  syncStyleShowcase(id === 'custom' ? { label: 'Your own style', blurb: 'Describe a world of your own, or bring a reference image.' } : STYLES[id]);
   const btn = $('#btn-style-next');
   if (btn) {
     btn.firstChild.textContent = 'Continue';
@@ -1028,7 +1031,7 @@ function renderSettingsExample() {
   if (!s) return;
   const still = s.sceneMotion === 'still', bubble = s.faceMode === 'bubble';
   const pacing = s.pacing || 'mostly';
-  const image = STYLES[s.style]?.thumb || 'assets/styles/stick.jpg';
+  const image = exampleSceneForStyle(s.style, STYLES[s.style]?.thumb || 'assets/styles/stick.jpg');
   const player = $('#example-player');
   Object.assign(player.dataset, { format: state.aspect, face: s.faceMode || 'full', motion: still ? 'still' : 'living', pacing });
   if ($('#example-scene').getAttribute('src') !== image) $('#example-scene').src = image;
@@ -1528,6 +1531,7 @@ function renderChars() {
   const p = state.project;
   const busy = state.charBusy || new Set();
   const draft = captureEditing(el);
+  if ($('#character-preview').open) $('#character-preview').close();
   releaseImageUrls(el);
   el.innerHTML = p.characters.map((c, i) => `
     <div class="char ${c.image?.stale ? 'stale' : ''}" data-i="${i}" data-character="${esc(c.id)}">
@@ -1536,6 +1540,7 @@ function renderChars() {
         ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
+        ${c.image?.key ? `<button class="icon-btn portrait-zoom" data-character-preview="${i}" aria-label="View ${esc(c.name)} larger">${icon('plus')}</button>` : ''}
       </div>
       <div class="char-fields">
         <label class="field">Name<input data-k="name" value="${esc(c.name)}" maxlength="24" ${busy.has(c.id) ? 'disabled' : ''}></label>
@@ -1555,6 +1560,7 @@ function renderChars() {
     if (img) fillImg(img, ch.image.key);
   });
   restoreEditing(el, draft);
+  syncCastNavigation(p.characters);
   $('#btn-add-char').disabled = !!busy.size;
   checkCastPictures();
   renderCastBar();
@@ -1575,7 +1581,7 @@ function renderCastBar() {
   let title, sub;
   if (busy) {
     title = `Drawing your characters: ${drawn} of ${n} done`;
-    sub = 'This takes about a minute. You can edit the descriptions while you wait.';
+    sub = 'This takes about a minute. When the pictures are ready, check each look before continuing.';
   } else if (missing) {
     title = changed ? `Update ${missing} character${missing === 1 ? '' : 's'} before continuing` : drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Check the details, then draw your cast';
     sub = changed ? 'The details have changed. Redraw these characters so your scenes use the right look.' : drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Edit the names and appearances above. These designs will be reused throughout your story.';
@@ -1595,7 +1601,7 @@ function renderCastBar() {
   $('#cast-bar').classList.toggle('cta-big', !!missing && !busy && !drawn);
   const firstDraw = !p.characters.some((c) => c.image?.key) && !busy;
   $('#cast-title').textContent = firstDraw ? `Your ${n} character${n === 1 ? '' : 's'}` : 'Meet your cast';
-  $('#cast-sub').textContent = firstDraw ? 'We found these people in your story. Edit their names and looks below before drawing them.' : changed ? 'Redraw the updated characters before drawing your scenes.' : missing || busy ? 'Every scene is drawn from these designs.' : 'Every scene is drawn from these designs. Redraw anyone you don\'t love.';
+  $('#cast-sub').textContent = firstDraw ? 'Check the names and appearances. Then draw your cast.' : changed ? 'Redraw the updated characters before drawing your scenes.' : missing || busy ? 'Every scene is drawn from these designs.' : 'Check each look. Try a new look for anyone you\'d like to change.';
   ok.hidden = !!missing || !!busy;
   ok.disabled = state.busy;
   ok.querySelector('span').textContent = `Approve & draw ${scenes} scene${scenes === 1 ? '' : 's'}`;
@@ -1683,6 +1689,8 @@ $('#chars').addEventListener('input', (e) => {
   card.querySelector('.char-name').textContent = ch.name || 'Your character';
   card.querySelector('[data-redraw]').setAttribute('aria-label', `${ch.image?.key ? 'Redraw' : 'Draw'} ${ch.name || 'your character'}`);
   card.querySelector('[data-del]')?.setAttribute('aria-label', `Remove ${ch.name || 'your character'}`);
+  card.querySelector('[data-character-preview]')?.setAttribute('aria-label', `View ${ch.name || 'your character'} larger`);
+  if (k === 'name') syncCastNavigation(state.project.characters);
   const portrait = card.querySelector('.char-art img');
   if (portrait) portrait.alt = `Design for ${ch.name || 'your character'}`;
   if (ch.image?.key && k !== 'name') {
@@ -3117,33 +3125,12 @@ function renderMarquee() {
   const items = Object.values(STYLES).filter((s) => s.thumb);
   if (!items.length) return;
   const row = items.map((s) => `<figure class="mq-item"><img src="${esc(s.thumb)}" alt="" loading="lazy" decoding="async"><figcaption>${esc(s.label)}</figcaption></figure>`).join('');
-  $('#marquee-row').innerHTML = row + row;
+  $('#marquee-row').innerHTML = row;
   $('#marquee-row').style.setProperty('--mq-count', items.length);
 }
 
-// hero phone: her clip plays, and the middle of each loop cuts to a drawn scene
-(function heroCuts() {
-  const v = $('#hero-talk');
-  const screen = v?.closest('.phone-screen');
-  if (!v || !screen) return;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { v.pause(); v.removeAttribute('autoplay'); screen.classList.add('cut'); return; }
-  const inCut = (t) => t > 3.4 && t < 6.2;
-  let usingClock = false;
-  const tick = () => {
-    if (!usingClock) screen.classList.toggle('cut', inCut(v.currentTime));
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-  // if the browser won't autoplay (e.g. iPhone low power mode), still show the cut
-  setTimeout(() => {
-    if (!v.paused && v.currentTime > 0) return;
-    usingClock = true;
-    let t = 0;
-    setInterval(() => { t = (t + 0.5) % 7; screen.classList.toggle('cut', inCut(t)); }, 500);
-  }, 2500);
-  // save battery: pause when the hero is off screen
-  new IntersectionObserver(([en]) => { if (en.isIntersecting) v.play().catch(() => {}); else v.pause(); }).observe(v);
-}());
+// The showreel pauses completely off screen and in background tabs.
+initExperience();
 
 // staggered reveal for grids
 $$('.stagger').forEach((g) => [...g.children].forEach((c, i) => c.style.setProperty('--i', i)));

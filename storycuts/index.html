@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StoryCuts: turn your storytime into an illustrated video</title>
   <meta name="description" content="Upload a video of yourself telling a story. StoryCuts keeps your face for the best moments and cuts to AI illustrations that act out what you're saying, with the same characters throughout.">
-  <meta name="theme-color" content="#0c1112">
+  <meta name="theme-color" content="#f7f6fb">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23f4f4f5'/><path d='M25 19l21 13-21 13z' fill='%230a0a0b'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=40; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=41; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=40">
+  <link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
   <!-- icon sprite -->
@@ -100,51 +100,58 @@
     <a class="btn primary lg" href="#pricing">See plans</a>
   </div>
 
+  <dialog id="character-preview" class="character-preview" aria-labelledby="portrait-preview-title"><div class="portrait-preview-head"><div><span class="kicker">Character review</span><h3 id="portrait-preview-title">Your character</h3></div><button class="icon-btn" id="btn-portrait-close" aria-label="Close character preview"><svg><use href="#i-close"/></svg></button></div><img id="portrait-preview-image" alt=""><p>Happy with the look? Close this preview and approve your cast. You can try a new look from the character card.</p><button class="btn primary" id="btn-portrait-done">Back to my cast<svg><use href="#i-check"/></svg></button></dialog>
+
   <main id="top">
-    <!-- HERO -->
+    <!-- HERO: a working concept preview, with local licensed footage -->
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow"><i></i> A little imagination goes a long way.</span>
-        <h1>Your story.<br><span class="grad">A whole new world.</span></h1>
-        <p class="lead">Turn a video of you telling a story into a cast of characters, illustrated scenes, and an edit that feels like you.</p>
+        <span class="eyebrow"><i></i> The storytime studio</span>
+        <h1>You tell it.<br>We make it<br><span class="grad">unforgettable.</span></h1>
+        <p class="lead">Turn your storytime into a clip people can picture. Your voice, a cast of characters, and illustrated scenes that bring every moment to life.</p>
         <div class="hero-ctas">
-          <a class="btn primary lg" href="#studio">Create a story<svg><use href="#i-right"/></svg></a>
-          <button class="btn glass ghost lg" id="cta-demo"><svg><use href="#i-play"/></svg>Try the demo story</button>
+          <a class="btn primary lg" href="#studio">Create my story<svg><use href="#i-right"/></svg></a>
+          <button class="btn glass ghost lg" id="cta-demo"><svg><use href="#i-play"/></svg>Explore the demo</button>
         </div>
         <ul class="trust">
           <li><svg><use href="#i-shield"/></svg>Your video stays on your device</li>
-          <li><svg><use href="#i-film"/></svg>Made for your next storytime</li>
-          <li><svg><use href="#i-user"/></svg>You stay the star</li>
+          <li><svg><use href="#i-user"/></svg>Your face. Your voice. Your story.</li>
         </ul>
+        <div class="made-for"><span>Ready for</span><b>TikTok</b><i></i><b>Reels</b><i></i><b>Shorts</b></div>
       </div>
-      <div class="hero-visual" aria-hidden="true">
-        <div class="hero-preview-head"><span><i></i> Your story, reimagined</span><span>Example preview</span></div>
+      <div class="hero-visual" id="story-showreel" data-demo-view="result" data-demo-story="airport">
+        <div class="hero-preview-head"><span><i></i> From storytime to screen time</span><span class="preview-live">Concept preview</span></div>
+        <div class="showreel-tabs" role="group" aria-label="Choose an example story">
+          <button class="on" data-showcase="airport" aria-pressed="true">The mix-up</button>
+          <button data-showcase="rain" aria-pressed="false">The plot twist</button>
+          <button data-showcase="breakfast" aria-pressed="false">The mishap</button>
+        </div>
         <div class="hero-story-surface">
-        <figure class="hero-scene scene-left"><img src="assets/styles/stick.jpg" alt=""><figcaption>A world of your own</figcaption></figure>
-        <div class="phone">
-          <div class="phone-screen">
-            <div class="shot shot-face">
-              <video class="talk" id="hero-talk" autoplay muted loop playsinline preload="auto" poster="assets/hero/talk.jpg" disablepictureinpicture>
-                <source src="assets/hero/talk.webm" type="video/webm">
-                <source src="assets/hero/talk.mp4" type="video/mp4">
-              </video>
-              <span class="shot-tag">YOU</span>
+          <figure class="source-card">
+            <div class="source-frame">
+              <video id="example-original" muted loop playsinline preload="none" poster="assets/hero/talk.jpg" aria-label="Original stock footage of a creator talking to camera" disablepictureinpicture><source src="assets/hero/talk.webm" type="video/webm"><source src="assets/hero/talk.mp4" type="video/mp4"></video>
+              <span class="source-recording"><i></i>Your storytime</span>
             </div>
-            <div class="shot shot-scene">
-              <img class="scene-img" src="assets/styles/stick.jpg" alt="">
-              <span class="shot-tag">SCENE</span>
+            <figcaption><svg><use href="#i-mic"/></svg>You tell the story.</figcaption>
+          </figure>
+          <span class="story-transform" aria-hidden="true"><svg><use href="#i-spark"/></svg></span>
+          <figure class="result-card phone">
+            <div class="phone-screen">
+              <div class="shot shot-face"><video class="talk" id="hero-talk" muted loop playsinline preload="none" poster="assets/hero/talk.jpg" aria-label="Example camera footage in an illustrated edit" disablepictureinpicture><source src="assets/hero/talk.webm" type="video/webm"><source src="assets/hero/talk.mp4" type="video/mp4"></video><span class="shot-tag">YOUR MOMENT</span></div>
+              <div class="shot shot-scene"><img class="scene-img" id="showreel-art" src="assets/examples/airport.jpg" alt="An illustrated suitcase mix-up at an airport" width="840" height="1120" fetchpriority="high"><span class="shot-tag">THE STORY COMES TO LIFE</span><img class="showreel-bubble" id="showreel-bubble" src="assets/hero/talk.jpg" alt=""></div>
+              <div class="cap" id="showreel-caption">THIS WASN'T<br><b>MY SUITCASE.</b></div>
             </div>
-            <div class="cap"><span>WE TOTALLY</span> <b>LOST IT</b></div>
-          </div>
+            <figcaption><svg><use href="#i-spark"/></svg>They see it happen.</figcaption>
+          </figure>
         </div>
-        <figure class="hero-scene scene-right"><img src="assets/styles/anime.jpg" alt=""><figcaption>A look you'll love</figcaption></figure>
+        <div class="showreel-controls">
+          <button class="icon-btn showreel-play" id="btn-example-play" aria-label="Pause example"><svg><use href="#i-pause"/></svg></button>
+          <div class="demo-view-toggle" role="group" aria-label="Compare the example"><button data-demo-view="original" aria-pressed="false">Original</button><button class="on" data-demo-view="result" aria-pressed="true">StoryCuts</button></div>
+          <span class="showreel-time" id="showreel-time">0:00 / 0:08</span>
         </div>
-        <div class="hero-feature-row">
-        <div class="float-card fc1"><svg><use href="#i-user"/></svg><div><b>Your face. Your voice.</b><small>You stay at the heart of it.</small></div></div>
-        <div class="float-card fc2"><svg><use href="#i-check"/></svg><div><b>One consistent cast</b><small>From the first scene to the last.</small></div></div>
-        </div>
-        <div class="hero-mini-tl"><span class="face"></span><span></span><span></span><span class="face"></span><span></span><span class="face"></span><i></i></div>
-        <p class="hero-preview-foot"><span>Your face</span><span>Illustrated scenes</span><span>Captions &amp; sound</span></p>
+        <label class="showreel-scrub"><span class="sr-only">Example playback position</span><input type="range" id="example-scrub" min="0" max="8" step=".05" value="0" aria-label="Example playback position"></label>
+        <div class="hero-mini-tl" aria-hidden="true"><span class="face"></span><span></span><span></span><span class="face"></span><span></span><i id="example-playhead"></i></div>
+        <p class="hero-preview-foot">Illustrative story examples · licensed footage + original artwork</p>
       </div>
     </section>
 
@@ -158,7 +165,7 @@
     <section class="how reveal" id="how">
       <span class="kicker">How it works</span>
       <h2 class="section-title">From “so, here's what happened”<br>to a story worth watching.</h2>
-      <p class="section-lead">A few clear steps. Creative control when you want it.</p>
+      <p class="section-lead">From a phone video to your next post. You get the final say at every step.</p>
       <div class="how-grid stagger">
         <article class="how-card spot"><span class="how-n">01</span><span class="how-ico"><svg><use href="#i-upload"/></svg></span><h3>Tell your story</h3><p>Start with a video of you. We'll find the words and the moments that matter.</p></article>
         <article class="how-card spot"><span class="how-n">02</span><span class="how-ico"><svg><use href="#i-palette"/></svg></span><h3>Find your look</h3><p>Choose an art style, or describe a world that's entirely your own.</p></article>
@@ -168,14 +175,14 @@
     </section>
 
     <section class="story-showcase reveal">
-      <div class="showcase-art"><img src="assets/styles/storybook.jpg" alt="Illustrated characters in a storybook scene" loading="lazy"><span>Bring the moments to life.</span></div>
-      <div class="showcase-copy"><span class="kicker">A creator tool, with room for you</span><h2 class="section-title">Your imagination.<br>Your final say.</h2><p>Keep your face for the best moments. Let your characters carry the rest. Then shape the timing, sound and details in one easy-to-follow editor.</p><ul><li><svg><use href="#i-check"/></svg>Review every character before drawing</li><li><svg><use href="#i-check"/></svg>Change any scene, any time</li><li><svg><use href="#i-check"/></svg>Export vertical or horizontal</li></ul><a href="#studio" class="btn primary lg">Start your story<svg><use href="#i-right"/></svg></a></div>
+      <div class="showcase-art"><img src="assets/examples/breakfast.jpg" alt="A breakfast mishap imagined as a comic scene" width="840" height="1120" loading="lazy"><span>The story behind the storytime.</span></div>
+      <div class="showcase-copy"><span class="kicker">A creator tool, with room for you</span><h2 class="section-title">Keep the personality.<br>Add the picture.</h2><p>The awkward moment. The unexpected guest. That look on your dad's face. Show the details a talking-head video can't, then make the final cut your own.</p><ul><li><svg><use href="#i-check"/></svg>Review every character before drawing</li><li><svg><use href="#i-check"/></svg>Change any scene, any time</li><li><svg><use href="#i-check"/></svg>Export vertical or horizontal</li></ul><a href="#studio" class="btn primary lg">Start your story<svg><use href="#i-right"/></svg></a></div>
     </section>
 
     <!-- STUDIO -->
     <section class="studio" id="studio">
       <div class="studio-head">
-        <div><span class="kicker">StoryCuts studio</span><h2 class="section-title">Create your story.</h2></div>
+        <div><span class="kicker">StoryCuts studio</span><h2 class="section-title">Your workspace.</h2></div>
         <a class="btn ghost sm studio-home" href="#top" aria-label="Back to home"><svg><use href="#i-left"/></svg><span class="home-long">Back to home</span><span class="home-short">Home</span></a>
       </div>
       <div class="journey-layout">
@@ -197,17 +204,18 @@
       <div class="wizard" id="wizard">
       <!-- 1 UPLOAD -->
       <div class="panel" id="panel-upload" data-step="1">
-        <div class="panel-head"><span class="num">1</span><div><h3>Every story starts with you.</h3><p>Choose a video of you telling your story. A 30-second to 5-minute phone video works well.</p></div></div>
+        <div class="panel-head"><span class="num">1</span><div><h3>Start with your storytime.</h3><p>Choose a video of you telling your story. A 30-second to 5-minute phone video works well.</p></div></div>
         <div class="projects" id="projects" hidden>
           <div class="projects-head"><b>Your projects</b><span class="muted small">Saved on this device</span></div>
           <div class="proj-row" id="proj-row"></div>
           <div class="or-line"><span>or start a new video</span></div>
         </div>
+        <div class="upload-layout"><div class="upload-main">
         <label class="drop" id="drop" role="button" tabindex="0" aria-label="Choose a video file" aria-describedby="upload-formats">
           <input type="file" id="file" accept="video/*" hidden>
           <span class="drop-ico"><svg><use href="#i-upload"/></svg></span>
-          <strong>Bring your story into the studio</strong>
-          <span>or <u>choose a file</u></span>
+          <strong>Drop your video here</strong>
+          <span>or <u>browse your files</u></span>
           <small id="upload-formats">MP4, MOV or WebM · edited on your device</small>
         </label>
         <div class="upload-foot">
@@ -215,12 +223,14 @@
           <button class="btn link" id="btn-demo">No video handy? Use the demo story</button>
         </div>
         <div class="file-chip hidden" id="video-info"></div>
+        </div><aside class="upload-inspiration"><div class="upload-sample"><img class="upload-person" src="assets/hero/talk.jpg" alt="A creator telling a story to the camera" width="160" height="284"><span aria-hidden="true"><svg><use href="#i-right"/></svg></span><img class="upload-drawing" src="assets/examples/airport.jpg" alt="An illustrated moment from a story" width="840" height="1120"></div><span class="kicker">A little preview of what's next</span><h4>Your story. A world around it.</h4><p>Choose a look, meet your characters, then shape your video in the editor.</p><small>No studio setup needed. Just you and a story.</small></aside></div>
         <div class="wiz-nav"><span></span><button class="btn primary lg" data-next="2" disabled>Continue<svg><use href="#i-right"/></svg></button></div>
       </div>
 
       <!-- 2 STYLE -->
       <div class="panel" id="panel-style" data-step="2">
-        <div class="panel-head"><span class="num">2</span><div><h3>What does your world look like?</h3><p>Choose a style for your characters and scenes. You can add your own details below.</p></div></div>
+        <div class="panel-head"><span class="num">2</span><div><h3>Give your story a look.</h3><p>Pick a visual world for your story. The same look follows your characters through every scene.</p></div></div>
+        <div class="style-stage" aria-live="polite"><div class="style-stage-art"><img id="style-hero-art" src="assets/styles/stick.jpg" alt="Preview of the selected art style" width="720" height="540"></div><div class="style-stage-copy"><span class="kicker">Your visual world</span><h4 id="style-hero-title">Stick figures</h4><p id="style-hero-description">Simple characters. Big personality.</p><span class="style-stage-note"><svg><use href="#i-user"/></svg>One consistent cast, in every scene</span></div></div>
         <div class="slider">
           <div class="style-browse-nav"><span>Choose your look</span><div>
           <button class="slide-btn prev" id="style-prev" aria-label="Previous style"><svg><use href="#i-left"/></svg></button>
@@ -253,44 +263,47 @@
 
       <!-- 3 SETTINGS -->
       <div class="panel" id="panel-settings" data-step="3">
-        <div class="panel-head"><span class="num">3</span><div><h3>Made for where you share.</h3><p>Choose your format. The recommended settings make a great starting point for the rest.</p></div></div>
-        <div class="settings-example" id="settings-example" aria-label="Example of your video settings">
-          <div class="example-player" id="example-player" data-format="vertical" data-face="full" data-motion="living">
-            <img class="example-scene" id="example-scene" src="assets/styles/stick.jpg" alt="Example illustrated story scene">
-            <img class="example-face" src="assets/hero/talk.jpg" alt="Example creator on camera">
-            <span class="example-caption">AND THEN THIS HAPPENED</span>
-            <span class="example-badge">Example preview</span>
-          </div>
-          <div class="example-explain"><span class="kicker">Picture your story</span><h4 id="example-title">Your face. A world around it.</h4><p id="example-description">Scenes carry the story. Your face returns for reactions.</p><div class="example-sequence" id="example-sequence" aria-label="Example shot sequence"></div><div class="example-legend"><span><i class="legend-face"></i>You on camera</span><span><i class="legend-scene"></i>Illustrated story</span></div><small>Tap the options below to see the difference. Your story gets its own edit.</small></div>
-        </div>
+        <div class="panel-head"><span class="num">3</span><div><h3>Make the edit feel like you.</h3><p>Pick where you post, then choose how your face and illustrations tell the story. Watch the example as you go.</p></div></div>
+        <div class="settings-layout"><div class="settings-controls">
         <div class="opt-group">
-          <span class="opt-label">Format</span>
+          <span class="opt-label"><i>01</i>Where will you share it?</span>
           <div class="choices two" id="seg-format">
             <button data-aspect="vertical" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span><span class="ct"><b>Vertical 9:16</b><small>TikTok, Reels, Shorts</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
             <button data-aspect="horizontal"><span class="ci"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span><span class="ct"><b>Horizontal 16:9</b><small>YouTube</small></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
-          <span class="opt-label">Edit pacing</span>
+          <span class="opt-label"><i>02</i>How much of you should we show?</span>
           <div class="choices three" id="seg-pacing">
-            <button data-pacing="mostly" class="on"><span class="ct"><b>Story + you <em class="rec">Recommended</em></b><small>Mostly illustrated scenes. Your face returns for the best reactions.</small><span class="cut-example" aria-hidden="true"><i class="ex-you"></i><i></i><i></i><i class="ex-you"></i><i></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-pacing="mostly" class="on"><span class="ct"><b>Story + you <em class="rec">Recommended</em></b><small>Your face for reactions. Illustrations for the action.</small><span class="cut-example" aria-hidden="true"><i class="ex-you"></i><i></i><i></i><i class="ex-you"></i><i></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
             <button data-pacing="bookends"><span class="ct"><b>Intro &amp; outro</b><small>You open and close the story. Illustrations fill the middle.</small><span class="cut-example" aria-hidden="true"><i class="ex-you"></i><i></i><i></i><i></i><i class="ex-you"></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
             <button data-pacing="story"><span class="ct"><b>Mostly story</b><small>A quick opening with you, then illustrations follow your voice.</small><span class="cut-example" aria-hidden="true"><i class="ex-you ex-short"></i><i></i><i></i><i></i><i></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
-          <span class="opt-label">Scenes</span>
+          <span class="opt-label"><i>03</i>Bring the pictures to life?</span>
           <div class="choices two" id="seg-motion">
-            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Camera moves and small effects that match the scene, like steam or rain. Included.</small><span class="option-preview motion-demo living" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>Movement &amp; scene effects</span><svg><use href="#i-spark"/></svg></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Illustrations with a slow, simple zoom. Calmer look.</small><span class="option-preview motion-demo still" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>A gentle, slow zoom</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Gentle camera moves, plus details like rain or steam.</small><span class="option-preview motion-demo living" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>Movement &amp; scene effects</span><svg><use href="#i-spark"/></svg></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Simple, slow zooms for a calmer edit.</small><span class="option-preview motion-demo still" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>A gentle, slow zoom</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
-          <span class="opt-label">During scenes</span>
+          <span class="opt-label"><i>04</i>Where does your face go?</span>
           <div class="choices two" id="seg-face">
             <button data-face="full" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Full-frame cuts</b><small>Show the scene or your face</small><span class="option-preview face-demo full" aria-hidden="true"><img class="demo-you" src="assets/hero/talk.jpg" alt=""><svg><use href="#i-right"/></svg><img data-example-scene src="assets/styles/stick.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
             <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small><span class="option-preview face-demo bubble" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><img class="demo-you" src="assets/hero/talk.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
+        </div>
+        </div>
+          <aside class="settings-example" id="settings-example" aria-label="Example of your video settings">
+          <div class="example-player" id="example-player" data-format="vertical" data-face="full" data-motion="living">
+            <img class="example-scene" id="example-scene" src="assets/examples/airport-doodle.jpg" alt="Example illustrated story scene">
+            <img class="example-face" src="assets/hero/talk.jpg" alt="Example creator on camera">
+            <span class="example-caption">THE SUITCASE MIX-UP</span>
+            <span class="example-badge">Example preview</span>
+          </div>
+          <div class="example-explain"><span class="kicker">Your edit, at a glance</span><h4 id="example-title">Your face. A world around it.</h4><p id="example-description">Scenes carry the story. Your face returns for reactions.</p><div class="example-sequence" id="example-sequence" aria-label="Example shot sequence"></div><div class="example-legend"><span><i class="legend-face"></i>You on camera</span><span><i class="legend-scene"></i>Illustrated story</span></div><small>This is a visual example. Your words get their own scenes.</small></div>
+        </aside>
         </div>
         <div class="wiz-nav"><button class="btn ghost lg" data-back="2"><svg><use href="#i-left"/></svg>Back</button><button class="btn primary lg" data-next="4">Continue<svg><use href="#i-right"/></svg></button></div>
       </div>
@@ -379,6 +392,8 @@
             </div>
           </div>
           <div class="cast-guide" id="cast-guide"><div><span>1</span><b>Make them recognizable</b><small>Edit names and appearances.</small></div><div><span>2</span><b>Draw your cast</b><small>One button brings everyone to life.</small></div><div><span>3</span><b>Approve the looks</b><small>Then we'll draw your scenes.</small></div></div>
+          <details class="character-help"><summary><svg><use href="#i-spark"/></svg>What makes a good description?</summary><p>Start with hair, clothes and one detail you'd recognize.</p><div><span><b>A person</b>“Jake: curly hair, green hoodie, round glasses.”</span><span><b>A pet</b>“Milo: orange tabby, white paws, blue collar.”</span></div></details>
+          <nav class="cast-jump" id="cast-jump" aria-label="Jump to a character"></nav>
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
           <div class="cast-bar" id="cast-bar">
@@ -403,12 +418,12 @@
         <div class="ed">
           <div class="ed-top">
             <button class="icon-btn ed-x" id="ed-close" aria-label="Back to create"><svg><use href="#i-left"/></svg></button>
-            <div class="ed-project"><span class="ed-project-label">StoryCuts studio</span><span class="ed-title">Untitled story</span></div>
+            <div class="ed-project"><span class="ed-project-label">StoryCuts <span class="ed-status-dot"></span> Studio</span><span class="ed-title">Untitled story</span></div>
             <button class="btn primary sm ed-export" id="ed-export"><svg><use href="#i-download"/></svg><span>Export video</span></button>
           </div>
           <div class="ed-view">
             <div class="preview-workspace">
-            <div class="view-bar"><span>Preview</span><span class="preview-spec" id="preview-spec">9:16 · Vertical</span></div>
+            <div class="view-bar"><span><i class="preview-dot"></i>Your video</span><span class="preview-spec" id="preview-spec">9:16 · Vertical</span></div>
             <div class="draw-card" id="draw-card" hidden>
               <div class="dc-row">
                 <span class="dc-ico"><svg><use href="#i-spark"/></svg></span>
@@ -517,7 +532,7 @@
           </div>
 
           <div class="tl" id="tl">
-            <div class="timeline-bar"><b>Timeline</b><span class="timeline-help">Select a shot to edit · drag its edges to trim</span><span class="timeline-legend"><i class="legend-face"></i>Your face<i class="legend-scene"></i>Scene</span></div>
+            <div class="timeline-bar"><b>Your story</b><span class="timeline-help">Click a shot to edit · drag its edges to trim</span><span class="timeline-legend"><i class="legend-face"></i>Your face<i class="legend-scene"></i>Scene</span></div>
             <div class="tl-scroll" id="tl-scroll">
               <div class="tl-content" id="tl-content">
                 <div class="tl-ruler" id="tl-ruler"></div>
@@ -653,7 +668,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=40", "./js/app.js": "./js/app.js?v=40", "./js/billing.js": "./js/billing.js?v=40", "./js/constants.js": "./js/constants.js?v=40", "./js/draw.js": "./js/draw.js?v=40", "./js/images.js": "./js/images.js?v=40", "./js/loader.js": "./js/loader.js?v=40", "./js/planner.js": "./js/planner.js?v=40", "./js/qc.js": "./js/qc.js?v=40", "./js/render.js": "./js/render.js?v=40", "./js/sfx.js": "./js/sfx.js?v=40", "./js/transcribe.js": "./js/transcribe.js?v=40"}}</script>
-  <script type="module" src="js/app.js?v=40"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=41", "./js/app.js": "./js/app.js?v=41", "./js/billing.js": "./js/billing.js?v=41", "./js/constants.js": "./js/constants.js?v=41", "./js/draw.js": "./js/draw.js?v=41", "./js/experience.js": "./js/experience.js?v=41", "./js/images.js": "./js/images.js?v=41", "./js/loader.js": "./js/loader.js?v=41", "./js/planner.js": "./js/planner.js?v=41", "./js/qc.js": "./js/qc.js?v=41", "./js/render.js": "./js/render.js?v=41", "./js/sfx.js": "./js/sfx.js?v=41", "./js/transcribe.js": "./js/transcribe.js?v=41"}}</script>
+  <script type="module" src="js/app.js?v=41"></script>
 </body>
 </html>
