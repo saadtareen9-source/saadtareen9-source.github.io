@@ -53,10 +53,11 @@ Long jobs (planning, drawing, exporting) show a full-screen progress screen (`js
 
 ## How to test
 
-1. From the repo root, run `cd storycuts && npx http-server -p 8123 -s .`, then open http://localhost:8123.
-2. Click **Try the demo story** and go through all 5 steps. Drawing needs real API keys; without keys you can still check steps 1 to 4 and the layout.
-3. Check the editor on desktop (1300px wide) and phone (390px wide), every editor tab, and the loading screens.
-4. Open the browser console. There must be **no errors**.
+Run `cd storycuts/tests && npm install && npx playwright install chromium && npm test`.
+
+- The test fakes the AI services and goes through the whole flow on desktop and phone.
+- It must print "All checks passed".
+- Check the screenshots it saves in `storycuts/tests/out/`.
 
 ## JavaScript hooks: do not rename or remove
 
