@@ -158,9 +158,25 @@ try {
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
+  check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
+  await p.click('#btn-example-play');
+  await p.click('[data-showcase=rain]');
+  check(await p.getAttribute('#story-showreel', 'data-demo-story') === 'rain' && (await p.getAttribute('#example-original', 'poster')).endsWith('man.jpg') && (await p.getAttribute('#showreel-art', 'src')).endsWith('rain.jpg'), 'choosing another story changes both the creator footage and illustration');
+  await p.click('button[data-demo-view=original]');
+  check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && await p.getAttribute('button[data-demo-view=original]', 'aria-pressed') === 'true', 'Original shows camera footage and marks the comparison choice');
+  await p.click('button[data-demo-view=result]');
+  check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'StoryCuts shows the illustrated comparison');
+  await p.locator('#example-scrub').evaluate((el) => { el.value = '6.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  check(await p.getAttribute('#btn-example-play', 'aria-label') === 'Play example' && !(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && (await p.locator('#showreel-time').textContent()).startsWith('0:06'), 'scrubbing pauses the example at the camera shot and updates its time');
+  await p.locator('#example-scrub').evaluate((el) => { el.value = '1.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'scrubbing back reaches the illustrated shot');
+  await p.click('[data-showcase=breakfast]'); await sleep(250); await shot(p, '01j-story-example');
+  check((await p.getAttribute('#example-original', 'poster')).endsWith('creator.jpg') && await p.getAttribute('[data-showcase=breakfast]', 'aria-pressed') === 'true', 'the third example uses another licensed camera-facing creator');
+  await p.click('[data-showcase=airport]'); await p.click('#btn-example-play');
   for (const [selector, name] of [['#styles', '01c-landing-styles'], ['#how', '01d-landing-how'], ['.story-showcase', '01e-landing-showcase'], ['#pricing', '01f-landing-pricing'], ['#faq', '01g-landing-faq'], ['.cta-band', '01h-landing-footer']]) {
     await p.locator(selector).scrollIntoViewIfNeeded(); await sleep(450); await shot(p, name);
   }
+  check(await p.evaluate(() => ['#hero-talk', '#example-original'].every((s) => document.querySelector(s).paused) && document.querySelector('#story-showreel').dataset.playing === 'false'), 'both example videos stop playing when the landing preview is offscreen');
   await p.locator('#nav-plan').click(); await sleep(400);
   await p.click('#btn-keys'); await sleep(200); await shot(p, '01i-connections');
   await p.keyboard.press('Escape');
@@ -189,6 +205,7 @@ try {
   await p.locator('#style-track [data-style=anime]').click();
   await p.locator('#style-track [data-style=anime]').click();
   check(await step() === '2', 'selecting a style waits for the explicit Continue action');
+  check(await p.evaluate(() => document.querySelector('#style-hero-art').src === document.querySelector('#style-track [data-style=anime] img').src && document.querySelector('#style-hero-title').textContent.includes('Anime')), 'the larger style preview follows the selected art direction');
   await p.locator('#style-track [data-style=anime]').focus(); await p.keyboard.press('End');
   check(await p.getAttribute('#style-track [data-style=custom]', 'aria-selected') === 'true' && await p.isVisible('#custom-style'), 'gallery keyboard navigation reaches the custom style');
   await p.keyboard.press('Home');
@@ -236,6 +253,9 @@ try {
   for (let i = 0; i < 5; i++) await p.locator('#chars .char:last-child [data-del]').click();
   await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad the cook');
   check(await p.getAttribute('#chars [data-character=dad] [data-redraw]', 'aria-label') === 'Draw Dad the cook', 'renaming a character also updates its accessible drawing button label');
+  check(await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'aria-label') === 'Edit Dad the cook', 'renaming a character updates its cast navigation label');
+  await p.click('#cast-jump [data-cast-jump=jake]');
+  check(await p.evaluate(() => document.activeElement?.matches('#chars [data-character=jake] [data-k=name]')), 'cast navigation takes the creator directly to the chosen name field');
   await p.click('#btn-gen-chars'); await sleep(400);
   check(await p.isVisible('.work'), 'progress screen shows while drawing characters');
   await shot(p, '06b-drawing-cast');
@@ -255,6 +275,11 @@ try {
   await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad');
   check(await p.isVisible('#btn-approve'), 'renaming a character keeps its existing drawing');
   await shot(p, '07-characters-drawn');
+  await p.locator('#chars [data-character=dad] [data-character-preview]').click();
+  check(await p.locator('#character-preview').evaluate((el) => el.open) && await p.locator('#portrait-preview-title').textContent() === 'Dad' && await p.evaluate(() => document.querySelector('#portrait-preview-image').src === document.querySelector('#chars [data-character=dad] .char-art > img').src), 'character review opens the current drawing with the current name');
+  await shot(p, '07c-character-review');
+  await p.keyboard.press('Escape');
+  check(await p.evaluate(() => !document.querySelector('#character-preview').open && document.activeElement?.matches('#chars [data-character=dad] [data-character-preview]')), 'closing character review returns keyboard focus to its preview button');
   await p.click('#btn-approve'); await sleep(800);
   check(await p.isVisible('.work .btn.primary'), 'scene drawing offers "Back to editor"');
   await shot(p, '08-drawing-scenes');
@@ -397,6 +422,11 @@ try {
   await m.goto(URL0); await sleep(700); await shot(m, 'p01-landing');
   const noSideScroll = async (where) => check(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, `no sideways scroll on phone: ${where}`);
   await noSideScroll('landing');
+  await m.click('[data-showcase=rain]');
+  await m.click('button[data-demo-view=original]');
+  await m.click('button[data-demo-view=result]');
+  check(await m.getAttribute('[data-showcase=rain]', 'aria-pressed') === 'true' && await m.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'phone story and comparison controls show the selected illustrated example');
+  await shot(m, 'p01i-story-example'); await noSideScroll('interactive example');
   for (const [selector, name] of [['#styles', 'p01b-landing-styles'], ['#how', 'p01c-landing-how'], ['.story-showcase', 'p01d-landing-showcase'], ['#pricing', 'p01e-landing-pricing'], ['#faq', 'p01f-landing-faq'], ['.cta-band', 'p01g-landing-footer']]) {
     await m.locator(selector).scrollIntoViewIfNeeded(); await sleep(350); await shot(m, name); await noSideScroll(name);
   }
@@ -432,6 +462,10 @@ try {
   await sleep(400); await shot(m, 'p05c-drawing-cast');
   await m.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await sleep(350); await shot(m, 'p05b-characters-drawn');
+  await m.locator('#chars [data-character=me] [data-character-preview]').click();
+  check(await m.locator('#character-preview').evaluate((el) => { const r = el.getBoundingClientRect(); return el.open && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; }), 'the character review dialog fits the phone screen');
+  await shot(m, 'p05d-character-review'); await noSideScroll('character review');
+  await m.click('#btn-portrait-done');
   await m.click('#btn-approve'); await sleep(600);
   await m.click('.work .btn.primary');
   await sleep(150); await shot(m, 'p06b-background-editor');
@@ -592,7 +626,7 @@ try {
   const rctx = await newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const r = await rctx.newPage(); watch(r, 'reduced motion');
   await r.goto(URL0); await sleep(400);
-  check(await r.evaluate(() => document.querySelector('#hero-talk').paused), 'reduced motion pauses the autoplay hero');
+  check(await r.evaluate(() => document.querySelector('#hero-talk').paused && document.querySelector('#example-original').paused && document.querySelector('#story-showreel').dataset.playing === 'false'), 'reduced motion pauses both autoplay examples');
   await r.evaluate(async () => {
     const { showWork } = await import('./js/loader.js');
     window.testWork = showWork({ kind: 'plan', title: 'Planning your story', tips: ['Finding the moments to bring to life.'], steps: ['Plan the edit', 'Check the scenes'] });
