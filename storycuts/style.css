@@ -2795,7 +2795,7 @@ body.ed-full .sb-label small { display: none; }
 body.ed-full .sb-tool { min-width: 56px; }
 @media (max-width: 420px) { body.ed-full .sb-label { display: none; } }
 /* computers: the clip tools take the place of the timeline header, so nothing below moves */
-body:not(.ed-full) .sel-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 8; height: 40px; min-height: 0; padding: 0 10px; gap: 10px; }
+body:not(.ed-full) .sel-bar { position: absolute; top: 0; left: 0; right: 150px; border-right: 1px solid var(--line); z-index: 8; height: 40px; min-height: 0; padding: 0 10px; gap: 10px; }
 body:not(.ed-full) .sb-done { width: 28px; height: 28px; }
 body:not(.ed-full) .sb-done svg { width: 14px; height: 14px; }
 body:not(.ed-full) .sb-label { display: flex; align-items: baseline; gap: 10px; }
