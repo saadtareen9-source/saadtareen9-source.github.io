@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=49; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=50; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=49">
+  <link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
   <a class="skip-link" href="#studio">Skip to the studio</a>
@@ -123,6 +123,8 @@
   </dialog>
 
   <dialog id="asr-help" class="shortcuts-dialog resume-dialog" aria-labelledby="asr-help-title" aria-describedby="asr-help-text"><div class="shortcuts-head"><div><span class="kicker">One more way to listen</span><h3 id="asr-help-title">Let OpenAI write down your words?</h3></div></div><p class="resume-note" id="asr-help-text">This device couldn't run the voice reader. We can send just the sound of your story to OpenAI to write it down. Your video never leaves this device. It costs about 1 cent per minute on your OpenAI account.</p><div class="resume-actions"><button class="btn primary lg" id="btn-asr-cloud"><svg><use href="#i-mic"/></svg>Yes, write down my words</button><button class="btn ghost lg" id="btn-asr-paste">No, I'll paste my transcript</button></div></dialog>
+
+  <dialog id="rights-dialog" class="shortcuts-dialog resume-dialog" aria-labelledby="rights-title" aria-describedby="rights-text"><div class="shortcuts-head"><div><span class="kicker">One quick check</span><h3 id="rights-title">Is this your video?</h3></div></div><div class="resume-card"><b id="rights-file">Your video</b><span>Ready to open</span></div><p class="resume-note" id="rights-text">Confirm you own this video or have permission to edit it. It stays on your device.</p><div class="resume-actions"><button class="btn primary lg" id="btn-rights-yes"><svg><use href="#i-check"/></svg>Yes, it's mine. Continue</button><button class="btn ghost lg" id="btn-rights-no">Cancel</button></div></dialog>
 
   <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title"><div class="shortcuts-head"><div><span class="kicker">A faster way to edit</span><h3 id="shortcuts-title">Keyboard shortcuts</h3></div><form method="dialog"><button class="icon-btn" aria-label="Close shortcuts"><svg><use href="#i-close"/></svg></button></form></div><dl><div><dt>Play / pause</dt><dd><kbd>Space</kbd></dd></div><div><dt>Split at playhead</dt><dd><kbd>S</kbd></dd></div><div><dt>Previous / next cut</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd></div><div><dt>Undo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Z</kbd></dd></div><div><dt>Redo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dd></div></dl><p>Shortcuts pause while you type or have a dialog open.</p></dialog>
 
@@ -739,7 +741,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=49", "./js/app.js": "./js/app.js?v=49", "./js/asr-worker.js": "./js/asr-worker.js?v=49", "./js/billing.js": "./js/billing.js?v=49", "./js/captions.js": "./js/captions.js?v=49", "./js/constants.js": "./js/constants.js?v=49", "./js/draw.js": "./js/draw.js?v=49", "./js/experience.js": "./js/experience.js?v=49", "./js/facetrack.js": "./js/facetrack.js?v=49", "./js/images.js": "./js/images.js?v=49", "./js/loader.js": "./js/loader.js?v=49", "./js/planner.js": "./js/planner.js?v=49", "./js/qc.js": "./js/qc.js?v=49", "./js/render.js": "./js/render.js?v=49", "./js/sfx.js": "./js/sfx.js?v=49", "./js/transcribe.js": "./js/transcribe.js?v=49"}}</script>
-  <script type="module" src="js/app.js?v=49"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=50", "./js/app.js": "./js/app.js?v=50", "./js/asr-worker.js": "./js/asr-worker.js?v=50", "./js/billing.js": "./js/billing.js?v=50", "./js/captions.js": "./js/captions.js?v=50", "./js/constants.js": "./js/constants.js?v=50", "./js/draw.js": "./js/draw.js?v=50", "./js/experience.js": "./js/experience.js?v=50", "./js/facetrack.js": "./js/facetrack.js?v=50", "./js/images.js": "./js/images.js?v=50", "./js/loader.js": "./js/loader.js?v=50", "./js/planner.js": "./js/planner.js?v=50", "./js/qc.js": "./js/qc.js?v=50", "./js/render.js": "./js/render.js?v=50", "./js/sfx.js": "./js/sfx.js?v=50", "./js/transcribe.js": "./js/transcribe.js?v=50"}}</script>
+  <script type="module" src="js/app.js?v=50"></script>
 </body>
 </html>
