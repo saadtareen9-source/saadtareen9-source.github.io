@@ -91,16 +91,20 @@ const REVIEW = {
 // ---------- run ----------
 const browser = await chromium.launch();
 const errors = [];
-async function newContext(opts, { mockListening = false, failListening = false } = {}) {
+async function newContext(opts, { mockListening = false, failListening = false, connectAI = true, owner = true } = {}) {
   const ctx = await browser.newContext(opts);
   ctx.plannerRequests = [];
+  ctx.providerRequests = [];
+  ctx.on('request', (r) => { if (/https:\/\/api\.(anthropic|openai)\.com\//.test(r.url())) ctx.providerRequests.push(r.url()); });
   // Keep the suite offline: use the site's system font fallback in tests.
   await ctx.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ body: '', contentType: 'text/css' }));
-  await ctx.addInitScript(() => {
-    localStorage.setItem('storycuts:key', JSON.stringify('sk-ant-test'));
-    localStorage.setItem('storycuts:okey', JSON.stringify('sk-openai-test'));
-    localStorage.setItem('storycuts:owner', 'true');
-  });
+  await ctx.addInitScript(({ connectAI, owner }) => {
+    if (connectAI) {
+      localStorage.setItem('storycuts:key', JSON.stringify('sk-ant-test'));
+      localStorage.setItem('storycuts:okey', JSON.stringify('sk-openai-test'));
+    }
+    if (owner) localStorage.setItem('storycuts:owner', 'true');
+  }, { connectAI, owner });
   await ctx.route('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm', (r) => r.fulfill({ body: sdk, contentType: 'application/javascript', headers: cors }));
   // Stub only the downloaded model. Keep transcribeInBrowser, audio decoding,
   // speechSpans, wordsFromText and subtitle parsing as the real site modules.
@@ -158,6 +162,74 @@ async function fitsPhone(page, name) {
 }
 
 try {
+  // ===== first visit: useful editor and honest plan previews, no accounts =====
+  for (const phone of [false, true]) {
+    const tag = phone ? 'phone sample' : 'desktop sample';
+    const sampleCtx = await newContext({ viewport: { width: phone ? 390 : 1300, height: phone ? 844 : 1000 }, isMobile: phone, hasTouch: phone, acceptDownloads: true }, { connectAI: false, owner: false });
+    const s = await sampleCtx.newPage(); watch(s, tag);
+    await s.goto(URL0);
+    await s.locator('.plan [data-plan=creator]').click();
+    check(await s.locator('#paywall').evaluate((el) => el.open) && /Checkout isn't open/.test(await s.locator('#pay-selection').textContent()), `${tag}: an unavailable plan opens a clear preview instead of a dead end`);
+    await s.click('#pay-period [data-period=yearly]');
+    check(await s.getAttribute('#pay-plans [data-plan=creator]', 'aria-pressed') === 'true' && /\$336 billed yearly/.test(await s.locator('#pay-selection').textContent()), `${tag}: selected plan and billing period remain clear without taking a payment`);
+    check(await s.locator('#paywall').evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth && [...dialog.querySelectorAll('button, .modal-head, .pay-selection')].every((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && el.scrollWidth <= el.clientWidth + 1; })), `${tag}: plan descriptions and buttons fit without clipped text or sideways scrolling`);
+    await shot(s, phone ? 'p14-plan-preview' : '14-plan-preview');
+    await s.click('#pay-demo');
+    await s.waitForFunction(() => window.__storycuts.state.step === 5 && window.__storycuts.state.sampleEditor && window.__storycuts.state.project.approved, null, { timeout: 15000 });
+    await s.waitForFunction(() => document.querySelector('#timeline .clip.scene .thumbs')?.style.backgroundImage.includes('url('));
+    await sleep(400);
+    check(await s.isVisible('#sample-editor-note') && !(await s.locator('#settings').evaluate((el) => el.open)) && await s.locator('#timeline .clip').count() === 4, `${tag}: a ready-made sample opens the full editor without keys or a subscription`);
+    check(await s.locator('#cast-guide > .complete').count() === 3 && await s.locator('#cast-guide > .current').count() === 0 && await s.locator('#cast-guide > div:last-child b').textContent() === 'Cast ready', `${tag}: an approved cast shows a completed workflow instead of another approval task`);
+    check(await s.evaluate(() => { const st = window.__storycuts.state; return st.project.segments.find((seg) => seg.id === st.selected).start <= st.media.time && st.project.segments.find((seg) => seg.id === st.selected).end > st.media.time; }), `${tag}: the opening sample preview and shot inspector show the same shot`);
+    check(sampleCtx.providerRequests.length === 0 && await s.evaluate(() => !localStorage.getItem('storycuts:key') && !localStorage.getItem('storycuts:okey') && !localStorage.getItem('storycuts:owner')), `${tag}: exploring the sample makes no provider requests and does not grant paid access`);
+    await shot(s, phone ? 'p15-sample-editor' : '15-sample-editor');
+    const start = await s.evaluate(() => window.__storycuts.state.media.time);
+    await s.click('#btn-play'); await sleep(700); await s.click('#btn-play');
+    check(await s.evaluate(() => window.__storycuts.state.media.time) > start + .4, `${tag}: sample playback advances the real editor playhead`);
+    await s.click('#ed-tabs [data-tab=captions]');
+    await s.locator('label:has(#opt-captions)').click();
+    check(await s.evaluate(() => !window.__storycuts.state.project.settings.captions), `${tag}: sample caption controls change the project`);
+    if (phone) await s.click('#sheet-done');
+    await s.click('#btn-undo');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.captions), `${tag}: sample edits use the existing undo history`);
+    await s.click('#ed-tabs [data-tab=filters]');
+    await s.click('#filter-grid [data-filter=warm]');
+    const beforeSlider = await s.evaluate(() => window.__storycuts.state.history.length);
+    await s.locator('#filter-amt').evaluate((input) => {
+      for (const value of [.8, .6, .4]) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    check(await s.evaluate(() => window.__storycuts.state.history.length) === beforeSlider + 1, `${tag}: a continuous settings adjustment makes one undo entry`);
+    if (phone) await s.click('#sheet-done');
+    await s.click('#btn-undo');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.filter === 'warm' && window.__storycuts.state.project.settings.filterAmt === 1) && await s.locator('#filter-amt').inputValue() === '1', `${tag}: undo restores both the picture setting and its control`);
+    await s.click('#btn-undo');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.filter === 'none') && await s.getAttribute('#filter-grid [data-filter=none]', 'class') === 'filter-tile on', `${tag}: filter choices can be undone and the selected tile follows`);
+    if (!phone) {
+      await s.click('#ed-export');
+      const download = s.waitForEvent('download', { timeout: 45000 });
+      await s.click('#btn-export');
+      const exported = await download;
+      check(/storycuts-vertical\.(webm|mp4)$/.test(exported.suggestedFilename()) && fs.statSync(await exported.path()).size > 10000, 'the sample exports a real video using the existing renderer');
+    }
+    check(await s.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: the sample editor has no sideways page scrolling`);
+    await s.click('#btn-sample-start'); await s.click('#btn-demo');
+    check(await s.evaluate(() => !window.__storycuts.state.sampleEditor && window.__storycuts.state.project.duration === 44 && !window.__storycuts.state.project.approved), `${tag}: starting the guided demo keeps sample edits separate`);
+    await sampleCtx.close();
+  }
+
+  // The unfinished subscription service must not block an explicitly connected
+  // advanced preview, and it must not write a fake subscription to the browser.
+  const byokCtx = await newContext({ viewport: { width: 1300, height: 1000 } }, { mockListening: true, owner: false });
+  const byok = await byokCtx.newPage(); watch(byok, 'advanced preview');
+  await openStory(byok);
+  await byok.click('#btn-create');
+  await byok.waitForSelector('#transcript-review:not(.hidden)');
+  check(!(await byok.locator('#paywall').evaluate((el) => el.open)), 'connected advanced preview can create a real-video project while subscriptions are unavailable');
+  await byok.click('#btn-review-continue'); await waitForCast(byok);
+  check(byokCtx.plannerRequests.length === 1, 'advanced preview reaches the existing planner without an owner bypass');
+  await byokCtx.close();
+
   // ===== desktop: the full flow =====
   const ctx = await newContext({ viewport: { width: 1300, height: 1000 } });
   const p = await ctx.newPage();
@@ -227,6 +299,7 @@ try {
   check(await p.locator('#btn-style-next').evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight), 'style Continue stays visible while browsing the desktop gallery');
   await p.click('#btn-style-next'); await sleep(800);
   check(await step() === '3', 'continue goes to settings');
+  check(!(await p.locator('#setup-details').evaluate((el) => el.open)) && !(await p.isVisible('#seg-motion')) && await p.isVisible('#seg-pacing'), 'video setup starts with the two main choices and keeps extra controls optional');
   check(await p.getAttribute('#seg-motion button.on', 'data-motion') === 'living', 'living pictures is the default');
   await shot(p, '03-settings');
   check(await p.evaluate(() => [...document.querySelectorAll('#seg-pacing .cut-example i')].every((el) => getComputedStyle(el).backgroundImage.includes('url(') && el.getBoundingClientRect().height >= 40)), 'all pacing choices show actual photo and illustration previews instead of color bars');
@@ -237,12 +310,15 @@ try {
   await p.click('#seg-pacing [data-pacing=bookends]');
   check(await p.getAttribute('#example-player', 'data-pacing') === 'bookends' && await p.locator('#example-sequence .face').count() === 2, 'pacing choice shows an intro-and-outro shot example');
   check(await p.getAttribute('#seg-pacing [data-pacing=bookends]', 'aria-pressed') === 'true' && await p.getAttribute('#seg-pacing [data-pacing=mostly]', 'aria-pressed') === 'false', 'settings choices announce the selected option to assistive technology');
+  await p.click('#setup-details > summary');
   await p.click('#seg-format [data-aspect=horizontal]'); await p.click('#seg-face [data-face=bubble]'); await p.click('#seg-motion [data-motion=still]');
+  check(await p.locator('#setup-detail-summary').textContent() === 'Still pictures · face bubble', 'the optional setup summary reflects the current camera and motion choices');
   check(await p.getAttribute('#example-player', 'data-format') === 'horizontal' && await p.getAttribute('#example-player', 'data-face') === 'bubble' && await p.getAttribute('#example-player', 'data-motion') === 'still', 'settings preview follows format, face bubble and motion choices');
   await p.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(400); await shot(p, '03b-settings-example');
   await p.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(p, '03c-motion-examples');
   await p.locator('#seg-face').scrollIntoViewIfNeeded(); await shot(p, '03d-face-examples');
-  await p.click('#seg-format [data-aspect=vertical]'); await p.click('#seg-face [data-face=full]'); await p.click('#seg-motion [data-motion=living]'); await p.click('#seg-pacing [data-pacing=mostly]');
+  await p.click('#btn-reset-setup');
+  check(await p.evaluate(() => { const s = window.__storycuts.state.project.settings; return s.aspect === 'vertical' && s.pacing === 'mostly' && s.faceMode === 'full' && s.sceneMotion === 'living'; }), 'one-click recommended settings restores the existing defaults');
   await p.click('#panel-settings [data-next="4"]'); await sleep(800);
   check(await step() === '4', 'continue goes to create');
   await shot(p, '04-create');
@@ -258,6 +334,11 @@ try {
   const segs = await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.scene).map((s) => ({ a: s.scene.actors.map((x) => x.character_id).join(','), off: (s.scene.offscreen || []).join(','), loc: s.scene.location_id })));
   check(segs.some((s) => s.a === 'jake' && s.loc === 'jake_room') && segs.some((s) => s.a === 'me' && s.off === 'jake'), 'texting is split into two shots, one per place', JSON.stringify(segs));
   await shot(p, '06-characters');
+  check(await p.locator('#chars .char:visible').count() === 1 && await p.locator('#cast-position').textContent() === 'Character 1 of 3', 'character review shows one focused card with its position in the cast');
+  await p.locator('#cast-jump [data-cast-jump=me]').focus(); await p.keyboard.press('ArrowRight');
+  check(await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'aria-selected') === 'true' && await p.isVisible('#chars [data-character=dad]'), 'character tabs support arrow-key navigation');
+  await p.keyboard.press('Home');
+  check(await p.getAttribute('#cast-jump [data-cast-jump=me]', 'tabindex') === '0' && await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'tabindex') === '-1', 'only the selected character tab is in the keyboard tab order');
   await p.click('#btn-add-char');
   check(await p.evaluate(() => document.activeElement?.matches('#chars .char:last-child [data-k=name]')), 'adding a character opens an inline name field');
   await p.locator('#chars .char:last-child [data-k=name]').fill('Grandma');
@@ -266,9 +347,11 @@ try {
   check(await p.locator('#chars .char:last-child .avatar').textContent() === 'G', 'editing a character name updates its undrawn portrait label');
   await p.locator('#chars .char:last-child [data-del]').click();
   check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 3, 'inline character can be removed');
+  check(await p.evaluate(() => document.activeElement?.matches('#chars .char:not([hidden]) [data-k=name]')), 'removing the active character returns focus to the next available character');
   for (let i = 0; i < 6; i++) await p.click('#btn-add-char');
   check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 8, 'character limit prevents an extra character being silently discarded');
   for (let i = 0; i < 5; i++) await p.locator('#chars .char:last-child [data-del]').click();
+  await p.click('#cast-jump [data-cast-jump=dad]');
   await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad the cook');
   check(await p.getAttribute('#chars [data-character=dad] [data-redraw]', 'aria-label') === 'Draw Dad the cook', 'renaming a character also updates its accessible drawing button label');
   check(await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'aria-label') === 'Edit Dad the cook', 'renaming a character updates its cast navigation label');
@@ -280,6 +363,7 @@ try {
   await p.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await sleep(600);
   const dadKey = await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.key);
+  await p.click('#cast-jump [data-cast-jump=dad]');
   await p.locator('#chars [data-character=dad] [data-k=description]').fill('Tall bald dad, bushy mustache, red polo and a cream apron');
   check(await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.stale) && !(await p.isVisible('#btn-approve')), 'changing appearance requires a new drawing before approval');
   await shot(p, '07b-character-updated');
@@ -421,6 +505,7 @@ try {
   // missing character pictures are reported honestly
   await p.click('#ed-close'); await sleep(700);
   await p.click('#btn-show-cast');
+  await p.click('#cast-jump [data-cast-jump=dad]');
   await p.locator('#chars [data-character=dad] [data-k=description]').fill('Tall dad in a green sweater');
   check(await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.scene?.actors.some((a) => a.character_id === 'dad') && s.image?.key).every((s) => s.image.stale)), 'a changed character marks its existing scenes for updating');
   await p.evaluate(() => window.__storycuts.state.project.characters.forEach((c) => delete c.image));
@@ -468,6 +553,7 @@ try {
   await m.click('#btn-settings-preview');
   check(await m.getAttribute('#panel-settings', 'data-preview-paused') === 'true', 'phone creators can pause the settings example');
   await m.click('#btn-settings-preview');
+  await m.click('#setup-details > summary');
   await m.click('#seg-pacing [data-pacing=story]'); await m.click('#seg-face [data-face=bubble]');
   await m.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(300); await shot(m, 'p03b-settings-example'); await noSideScroll('settings example');
   await m.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(m, 'p03c-motion-examples'); await noSideScroll('motion examples');

@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=42; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=43; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=42">
+  <link rel="stylesheet" href="style.css?v=43">
 </head>
 <body>
   <!-- icon sprite -->
@@ -85,7 +85,7 @@
       <a href="#faq">FAQ</a>
     </nav>
     <div class="nav-right">
-      <button class="icon-btn nav-keys" id="btn-keys" aria-label="Connect your AI accounts" data-tip="AI accounts"><svg><use href="#i-key"/></svg><i class="dot" id="keys-dot"></i></button>
+      <button class="icon-btn nav-keys" id="btn-keys" aria-label="Advanced preview setup" data-tip="AI accounts"><svg><use href="#i-key"/></svg><i class="dot" id="keys-dot"></i></button>
       <a class="btn primary sm nav-cta" id="nav-plan" href="#studio"><span>Open studio</span></a>
       <button class="icon-btn nav-menu" id="btn-menu" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
     </div>
@@ -108,11 +108,12 @@
       <div class="hero-copy">
         <span class="eyebrow"><i></i> The storytime studio</span>
         <h1>You tell it.<br>We make it<br><span class="grad">unforgettable.</span></h1>
-        <p class="lead">Turn your storytime into a clip people can picture. Your voice, a cast of characters, and illustrated scenes that bring every moment to life.</p>
+        <p class="lead">Record the story. We'll build the world around it. Turn your voice into an illustrated clip with a consistent cast, scenes, captions and an edit you can make your own.</p>
         <div class="hero-ctas">
-          <a class="btn primary lg" href="#studio">Create my story<svg><use href="#i-right"/></svg></a>
-          <button class="btn glass ghost lg" id="cta-demo"><svg><use href="#i-play"/></svg>Explore the demo</button>
+          <button class="btn primary lg" id="btn-editor-demo">Try the sample editor<svg><use href="#i-right"/></svg></button>
+          <a class="btn glass ghost lg" href="#studio">Create my story</a>
         </div>
+        <div class="hero-sample-note">No account needed. A ready-made edit to explore.<button class="btn link sm" id="cta-demo">Walk through creation<svg><use href="#i-right"/></svg></button></div>
         <ul class="trust">
           <li><svg><use href="#i-shield"/></svg>Your video stays on your device</li>
           <li><svg><use href="#i-user"/></svg>Your face. Your voice. Your story.</li>
@@ -265,7 +266,7 @@
 
       <!-- 3 SETTINGS -->
       <div class="panel" id="panel-settings" data-step="3">
-        <div class="panel-head"><span class="num">3</span><div><h3>Make the edit feel like you.</h3><p>Pick where you post, then choose how your face and illustrations tell the story. Watch the example as you go.</p></div></div>
+        <div class="panel-head"><span class="num">3</span><div><h3>Your edit, already set up.</h3><p>Recommended settings are ready. Choose where you'll post and how much of you to show, or just continue. The example updates as you go.</p></div></div>
         <div class="settings-layout"><div class="settings-controls">
         <div class="opt-group">
           <span class="opt-label" id="format-question"><i>01</i>Where will you share it?</span>
@@ -282,6 +283,7 @@
             <button data-pacing="story"><span class="ct"><b>Mostly story</b><small>A quick opening with you, then illustrations follow your voice.</small><span class="cut-example" aria-hidden="true"><i class="ex-you ex-short"><span>You</span></i><i><span>Scene</span></i><i><span>Scene</span></i><i><span>Scene</span></i><i><span>Scene</span></i></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
+        <details class="setup-details" id="setup-details"><summary><span><b>Customize motion &amp; camera</b><small id="setup-detail-summary">Living pictures · full-frame cuts</small></span><svg><use href="#i-plus"/></svg></summary><div class="setup-detail-body">
         <div class="opt-group">
           <span class="opt-label" id="motion-question"><i>03</i>Bring the pictures to life?</span>
           <div class="choices two" id="seg-motion" role="group" aria-labelledby="motion-question">
@@ -296,6 +298,8 @@
             <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small><span class="option-preview face-demo bubble" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><img class="demo-you" src="assets/hero/talk.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
+        <button class="btn link sm" id="btn-reset-setup">Use recommended settings<svg><use href="#i-redo"/></svg></button>
+        </div></details>
         </div>
           <aside class="settings-example" id="settings-example" aria-label="Example of your video settings">
           <div class="example-player" id="example-player" data-format="vertical" data-face="full" data-motion="living">
@@ -395,9 +399,10 @@
           </div>
           <div class="cast-guide" id="cast-guide"><div><span>1</span><b>Check the details</b><small>Names and appearances.</small></div><div><span>2</span><b>Draw your cast</b><small>Draw everyone at once.</small></div><div><span>3</span><b>Review &amp; approve</b><small>Then draw the scenes.</small></div></div>
           <details class="character-help"><summary><svg><use href="#i-edit"/></svg>What should I write?</summary><p>Describe hair, clothes and one detail you'd recognize. Keep it short and specific.</p><div><span><b>A person</b>“Jake: curly hair, green hoodie, round glasses.”</span><span><b>A pet</b>“Milo: orange tabby, white paws, blue collar.”</span></div></details>
-          <nav class="cast-jump" id="cast-jump" aria-label="Jump to a character"></nav>
+          <nav class="cast-jump" id="cast-jump" role="tablist" aria-label="Choose a character to review"></nav>
           <div class="status" id="chars-status"></div>
           <div class="chars" id="chars"></div>
+          <div class="cast-review-nav"><button class="btn ghost sm" id="btn-cast-prev"><svg><use href="#i-left"/></svg>Previous</button><span id="cast-position" role="status" aria-live="polite"></span><button class="btn glass sm" id="btn-cast-next">Next character<svg><use href="#i-right"/></svg></button></div>
           <div class="cast-bar" id="cast-bar">
             <div class="cb-steps" aria-label="Character workflow"><span class="cb-step" id="cb-step1"><i>1</i>Draw</span><span class="cb-line"></span><span class="cb-step" id="cb-step2"><i>2</i>Review</span><span class="cb-line"></span><span class="cb-step" id="cb-step3"><i>3</i>Scenes</span></div>
             <div class="cb-main">
@@ -436,6 +441,7 @@
               <div class="status" id="scenes-status"></div>
             </div>
             <div class="stage" id="stage"><canvas id="preview" role="img" aria-label="Video preview"></canvas></div>
+            <div class="sample-editor-note" id="sample-editor-note" hidden><span><b>Press play, choose a shot, make it yours.</b> Fictional sample · licensed footage · no recorded voice.</span><button class="btn ghost sm" id="btn-sample-start">Start my story<svg><use href="#i-right"/></svg></button></div>
             </div>
             <div class="transport">
               <span id="time" class="tc">0:00.0</span>
@@ -559,8 +565,8 @@
     <section class="pricing reveal" id="pricing">
       <div class="pricing-head">
         <span class="kicker">Pricing</span>
-        <h2 class="section-title">Plans for every story.</h2>
-        <p class="muted">Explore the free demo. Paid plans aren't open yet. When they launch, AI usage will be billed separately by your connected accounts.</p>
+        <h2 class="section-title">One subscription.<br>Your whole story.</h2>
+        <p class="muted">Our planned subscriptions cover AI creation, character consistency, captions and editing within your plan's allowance. Paid plans aren't open yet. Explore the sample editor for free.</p>
         <div class="period" id="period" role="tablist" aria-label="Billing period">
           <button data-period="monthly" class="on" role="tab">Monthly</button>
           <button data-period="yearly" role="tab">Yearly <em>Save 20%</em></button>
@@ -568,7 +574,7 @@
         </div>
       </div>
       <div class="plans stagger" id="plans"></div>
-      <p class="plans-foot muted small"><svg><use href="#i-shield"/></svg>Your video stays on your device. Checkout will be available when plans open. <a href="#" id="manage-sub" hidden>Manage subscription</a></p>
+      <p class="plans-foot muted small"><svg><use href="#i-shield"/></svg>Preview pricing. Final plans will be confirmed at launch. The current advanced preview uses your own AI accounts. <a href="#" id="manage-sub" hidden>Manage subscription</a></p>
     </section>
 
     <!-- FAQ -->
@@ -576,7 +582,7 @@
       <span class="kicker">FAQ</span>
       <h2 class="section-title">Questions</h2>
       <details><summary>Is my video uploaded anywhere?</summary><p>No. Your video is played and edited inside your browser. Only the words you say are sent to the AI editor, and only the scene descriptions (plus your character designs) are sent to the image model.</p></details>
-      <details><summary>What does it cost?</summary><p>The demo is free. Paid plans aren't open yet. StoryCuts uses your own Claude and OpenAI accounts, and those providers charge for AI usage separately. You'll see an estimate before drawing.</p></details>
+      <details><summary>What does it cost?</summary><p>The sample editor is free and needs no account. Our planned subscriptions include AI creation within your plan's allowance, so you won't need separate AI accounts. Paid plans aren't open yet. For now, creating a new story in the advanced preview uses your own Claude and OpenAI accounts, which charge for AI usage. You'll see an estimate before drawing.</p></details>
       <details><summary>Can I cancel anytime?</summary><p>Paid plans aren't open yet. When they launch, you'll be able to cancel or switch plans and keep access until the end of your paid period.</p></details>
       <details><summary>Will my characters look the same in every scene?</summary><p>Yes, that's the point. Each character is designed once, you approve the look, and every scene is drawn with those designs as reference. Every image is also checked automatically and redrawn if a character doesn't match.</p></details>
       <details><summary>Which apps can I post to?</summary><p>Export vertical 9:16 for TikTok, Instagram Reels and YouTube Shorts, or horizontal 16:9 for YouTube, with captions burned in.</p></details>
@@ -601,13 +607,13 @@
   </footer>
 
   <!-- Paywall -->
-  <dialog id="paywall">
+  <dialog id="paywall" aria-labelledby="pay-title" aria-describedby="pay-description">
     <div class="modal pay-modal">
       <button class="icon-btn pay-x" id="pay-close" aria-label="Close"><svg><use href="#i-close"/></svg></button>
       <div class="pay-badge"><svg><use href="#i-crown"/></svg></div>
       <div class="modal-head">
-        <h3>Choose a plan to create your video</h3>
-        <p>Your video and settings are saved. Pick a plan and you'll come right back here.</p>
+        <h3 id="pay-title">Your story. Everything included.</h3>
+        <p id="pay-description">We're preparing subscriptions with AI creation included. Checkout isn't open yet. Your video and settings are saved in this browser.</p>
       </div>
       <div class="period small" id="pay-period" role="tablist" aria-label="Billing period">
         <button data-period="monthly" class="on" role="tab">Monthly</button>
@@ -615,7 +621,9 @@
         <i class="period-thumb"></i>
       </div>
       <div class="pay-plans" id="pay-plans"></div>
-      <button class="btn link sm" id="pay-demo">Not yet? Try the free demo story instead</button>
+      <p class="pay-selection" id="pay-selection" role="status" aria-live="polite">Preview the plans below. No payment will be taken.</p>
+      <button class="btn primary wide" id="pay-demo">Try the free sample editor<svg><use href="#i-right"/></svg></button>
+      <button class="btn link sm" id="btn-advanced-preview">Use my own AI accounts in the advanced preview</button>
     </div>
   </dialog>
 
@@ -623,8 +631,8 @@
   <dialog id="settings">
     <form method="dialog" class="modal">
       <div class="modal-head">
-        <h3>Connect your AI accounts</h3>
-        <p>StoryCuts runs on your own AI accounts. Keys are saved only in this browser and sent straight to each provider.</p>
+        <h3>Advanced preview setup</h3>
+        <p>Creating a new story in this preview uses your own AI accounts. Keys stay in this browser and go straight to each provider. Our planned subscriptions will include AI creation.</p>
       </div>
       <label class="field">Claude API key <span class="hint">plans the edit and checks every image</span>
         <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-…">
@@ -669,7 +677,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=42", "./js/app.js": "./js/app.js?v=42", "./js/billing.js": "./js/billing.js?v=42", "./js/constants.js": "./js/constants.js?v=42", "./js/draw.js": "./js/draw.js?v=42", "./js/experience.js": "./js/experience.js?v=42", "./js/images.js": "./js/images.js?v=42", "./js/loader.js": "./js/loader.js?v=42", "./js/planner.js": "./js/planner.js?v=42", "./js/qc.js": "./js/qc.js?v=42", "./js/render.js": "./js/render.js?v=42", "./js/sfx.js": "./js/sfx.js?v=42", "./js/transcribe.js": "./js/transcribe.js?v=42"}}</script>
-  <script type="module" src="js/app.js?v=42"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=43", "./js/app.js": "./js/app.js?v=43", "./js/billing.js": "./js/billing.js?v=43", "./js/constants.js": "./js/constants.js?v=43", "./js/draw.js": "./js/draw.js?v=43", "./js/experience.js": "./js/experience.js?v=43", "./js/images.js": "./js/images.js?v=43", "./js/loader.js": "./js/loader.js?v=43", "./js/planner.js": "./js/planner.js?v=43", "./js/qc.js": "./js/qc.js?v=43", "./js/render.js": "./js/render.js?v=43", "./js/sfx.js": "./js/sfx.js?v=43", "./js/transcribe.js": "./js/transcribe.js?v=43"}}</script>
+  <script type="module" src="js/app.js?v=43"></script>
 </body>
 </html>

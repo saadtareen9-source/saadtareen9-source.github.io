@@ -20,14 +20,41 @@ export function syncStyleShowcase(style) {
   $('#style-hero-title').textContent = style.label;
   $('#style-hero-description').textContent = style.blurb || 'Describe a world of your own, or bring a reference image.';
 }
+let activeCastId = null, activeCastIndex = 0;
+export function selectCastCharacter(id, { focus = false, scroll = false } = {}) {
+  const cards = $$('#chars .char');
+  const index = cards.findIndex((c) => c.dataset.character === id);
+  if (index < 0) return;
+  activeCastId = id; activeCastIndex = index;
+  cards.forEach((card, i) => { card.hidden = i !== index; });
+  $$('#cast-jump [data-cast-jump]').forEach((button) => {
+    const selected = button.dataset.castJump === id;
+    button.classList.toggle('on', selected);
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
+  $('#cast-position').textContent = `Character ${index + 1} of ${cards.length}`;
+  $('#btn-cast-prev').disabled = index === 0;
+  $('#btn-cast-next').disabled = index === cards.length - 1;
+  const card = cards[index];
+  if (scroll) card.scrollIntoView({ behavior: motion.matches ? 'auto' : 'smooth', block: 'nearest' });
+  if (focus) card.querySelector('[data-k=name]')?.focus({ preventScroll: true });
+}
 export function syncCastNavigation(characters) {
   const host = $('#cast-jump');
-  const active = document.activeElement?.closest('[data-cast-jump]')?.dataset.castJump;
+  const focused = document.activeElement?.closest('[data-cast-jump]')?.dataset.castJump;
+  if (!characters.some((c) => c.id === activeCastId)) activeCastId = characters[Math.min(activeCastIndex, characters.length - 1)]?.id;
   host.innerHTML = characters.map((c) => {
     const drawn = c.image?.key && !c.image.stale;
-    return `<button data-cast-jump="${esc(c.id)}" class="${drawn ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true">${drawn ? '<svg><use href="#i-check"/></svg>' : esc([...String(c.name ?? "").trim()][0] || '?')}</i>${esc(c.name)}</button>`;
+    return `<button id="cast-tab-${esc(c.id)}" role="tab" aria-controls="cast-card-${esc(c.id)}" data-cast-jump="${esc(c.id)}" class="${drawn ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true">${drawn ? '<svg><use href="#i-check"/></svg>' : esc([...String(c.name ?? "").trim()][0] || '?')}</i>${esc(c.name)}</button>`;
   }).join('');
-  if (active) host.querySelector(`[data-cast-jump="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
+  $$('#chars .char').forEach((card) => {
+    card.id = `cast-card-${card.dataset.character}`;
+    card.setAttribute('role', 'tabpanel');
+    card.setAttribute('aria-labelledby', `cast-tab-${card.dataset.character}`);
+  });
+  selectCastCharacter(activeCastId);
+  if (focused) host.querySelector(`[data-cast-jump="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }
 function initShowreel() {
   const reel = $('#story-showreel');
@@ -174,12 +201,23 @@ function initPortraitReview() {
   $('#cast-jump').addEventListener('click', (e) => {
     const b = e.target.closest('[data-cast-jump]');
     if (!b) return;
-    const card = document.querySelector(`#chars [data-character="${CSS.escape(b.dataset.castJump)}"]`);
-    if (!card) return;
-    card.scrollIntoView({ behavior: motion.matches ? 'auto' : 'smooth', block: 'center' });
-    card.querySelector('[data-k=name]')?.focus({ preventScroll: true });
-    card.classList.add('focus-flash');
-    clearTimeout(card.flashTimer); card.flashTimer = setTimeout(() => card.classList.remove('focus-flash'), 1100);
+    selectCastCharacter(b.dataset.castJump, { focus: true, scroll: true });
   });
+  $('#cast-jump').addEventListener('keydown', (e) => {
+    const buttons = $$('#cast-jump [data-cast-jump]');
+    const index = buttons.indexOf(e.target);
+    if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    selectCastCharacter(buttons[next].dataset.castJump);
+    buttons[next].focus({ preventScroll: true });
+  });
+  const move = (direction) => {
+    const cards = $$('#chars .char');
+    const card = cards[activeCastIndex + direction];
+    if (card) selectCastCharacter(card.dataset.character, { focus: true, scroll: true });
+  };
+  $('#btn-cast-prev').addEventListener('click', () => move(-1));
+  $('#btn-cast-next').addEventListener('click', () => move(1));
 }
 export function initExperience() { initShowreel(); initSettingsPreview(); initChoiceAccessibility(); initPortraitReview(); }
