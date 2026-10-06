@@ -18,7 +18,7 @@ html = re.sub(r'  <script type="importmap">.*?</script>\n', '', html, flags=re.S
 html = re.sub(r'(<script type="module" src="js/app\.js)(\?v=\d+)?"', rf'\1?v={v}"', html)
 html = html.replace('  <script type="module" src="js/app.js', imap + '  <script type="module" src="js/app.js', 1)
 html = re.sub(r'href="style\.css(\?v=\d+)?"', f'href="style.css?v={v}"', html)
-html = re.sub(r'var V=\d+;', f'var V={v};', html)
+html = re.sub(r'var V=\d+', f'var V={v}', html)
 open(path, 'w').write(html)
 open(os.path.join(root, 'version.json'), 'w').write('{"v": %s}\n' % v)
 print(f'version {v}: {len(mods)} modules mapped')
