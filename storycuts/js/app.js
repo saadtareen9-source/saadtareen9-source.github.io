@@ -17,7 +17,8 @@ import {
 import { showWork } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
-import { transcribeInBrowser, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
+import { trackFaces } from './facetrack.js';
+import { transcribeInBrowser, transcribeWithOpenAI, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
 import {
   IMAGE_MODELS, STYLES, canAnimate, modelInfo, storageProblem, deleteBlobs, hasBlob, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
@@ -233,6 +234,7 @@ function save() {
     v: 2, title: p.title, duration: p.duration, words: p.words, characters: p.characters, locations: p.locations, sfx: p.sfx,
     segments: p.segments, settings: p.settings, approved: p.approved,
     transcriptSource: p.transcriptSource || 'auto', transcriptReviewed: !!p.transcriptReviewed, transcriptDrafts: p.transcriptDrafts,
+    faceTrack: p.faceTrack || null,
   });
 }
 
@@ -693,6 +695,7 @@ async function loadFile(file, { reopen = false } = {}) {
   keepVideo(file);
   grabPoster(video);
   if (video.duration > 600) toast('Long video: StoryCuts works best on stories under 5 minutes.', 6000);
+  startFaceTracking();
   setTimeout(() => goStep(state.project.approved ? 5 : 2), 500);
 }
 
@@ -1288,7 +1291,7 @@ async function storySpeechSpans(p) {
   if (!file) return null;
   if (state.speechCache?.project === p && state.speechCache.file === file) return state.speechCache.spans;
   let spans = null;
-  try { spans = speechSpans(await decodeAudio(file)); } catch { /* videos without audio use the existing duration fallback */ }
+  try { spans = speechSpans(await decodeAudio(file, 16000, { capture: false })); } catch { /* videos without audio use the existing duration fallback */ }
   if (state.project === p && state.file === file) state.speechCache = { project: p, file, spans };
   return spans;
 }
@@ -1459,25 +1462,40 @@ async function createVideo() {
     if (!p.words.length) {
       setStage('transcribe', 'active');
       liveStart('transcribe', 'Listening to your story');
+      let samples = null, words = null, problem = '';
+      const onStatus = (m) => {
+        const percent = m.match(/(\d+)%/);
+        state.live?.update({ title: percent ? `Getting ready to listen · ${percent[1]}%` : /Loading/.test(m) ? 'Getting ready to listen' : /along/.test(m) ? 'Listening along with your video' : /Reading/.test(m) ? 'Opening your audio' : 'Listening to your story' });
+      };
       try {
-        const words = await transcribeInBrowser(state.file, {
-          quality: $('#asr-quality').value,
-          onStatus: (m) => {
-            const percent = m.match(/(\d+)%/);
-            state.live?.update({ title: percent ? `Getting ready to listen · ${percent[1]}%` : /Loading/.test(m) ? 'Getting ready to listen' : /Reading/.test(m) ? 'Opening your audio' : 'Listening to your story' });
-          },
-        });
+        samples = await decodeAudio(state.file, 16000, { onStatus: (k) => k === 'capture' && onStatus('Listening along with your video') });
+        words = await transcribeInBrowser(state.file, { quality: $('#asr-quality').value, onStatus, samples });
         if (!words.length) throw new Error('no speech found');
-        p.words = words; p.transcriptSource = 'auto'; p.transcriptReviewed = false; save(); renderTranscript(); renderPrep();
       } catch (e) {
-        console.warn('StoryCuts could not read the speech:', errText(e));
+        problem = e.code === 'silent' ? 'silent' : errText(e);
+        console.warn('StoryCuts could not read the speech on this device:', problem);
+        words = null;
+      }
+      // Backup: OpenAI's speech-to-text, with only the sound sent, and only if the creator agrees.
+      if (!words && samples && problem !== 'silent' && settingsGet().openai) {
+        liveStop();
+        if (await askCloudListening()) {
+          liveStart('transcribe', 'Listening to your story');
+          state.live?.update({ tips: ['OpenAI is writing down your words…', 'Only the sound was sent, never your video.'] });
+          try { words = await transcribeWithOpenAI(samples, settingsGet().openai); if (!words.length) words = null; } catch (e) { problem = errText(e); }
+        }
+      }
+      if (!words) {
         liveStop();
         p.settings.storyMode = 'transcript';
         state.stages = {};
-        setStatus('#story-input-status', 'We couldn\'t hear your words on this device. Upload a transcript or paste what you say to keep going.', 'err');
+        setStatus('#story-input-status', problem === 'silent'
+          ? 'We couldn\'t find any sound in this video. Check it has sound, or paste what you say to keep going.'
+          : 'We couldn\'t hear your words this time. Paste what you say (or upload subtitles) to keep going.', 'err');
         save(); renderPrep(); renderSummary();
         return;
       }
+      p.words = words; p.transcriptSource = 'auto'; p.transcriptReviewed = false; save(); renderTranscript(); renderPrep();
     }
     setStage('transcribe', 'done');
     if (p.settings.storyMode === 'auto' && !p.transcriptReviewed && !store.get('storycuts:skip-transcript-review', false)) { showTranscriptReview(); return; }
@@ -2267,7 +2285,7 @@ async function ensurePeaks() {
   if (state.peaks !== undefined || !state.file) return;
   state.peaks = null;
   try {
-    const samples = await decodeAudio(state.file, 8000);
+    const samples = await decodeAudio(state.file, 8000, { capture: false });
     const per = 80; // 10ms buckets at 8kHz
     const peaks = new Float32Array(Math.ceil(samples.length / per));
     for (let i = 0; i < peaks.length; i++) {
@@ -2848,6 +2866,7 @@ function renderFilterPane() {
   $('#opt-punch').checked = !!st.punchIn;
   $('#opt-living').checked = st.sceneMotion !== 'still';
   $('#face-x').value = st.faceX ?? 0.5;
+  syncAutoFrameUI();
 }
 $('#filter-grid').addEventListener('click', (e) => {
   const b = e.target.closest('[data-filter]');
@@ -3171,9 +3190,10 @@ function readExportUI(id) {
   syncMotionUI();
   if (id === 'opt-watermark') s.watermark = $('#opt-watermark').checked;
   if (id === 'face-x') s.faceX = +$('#face-x').value;
+  if (id === 'opt-autoframe') { s.autoFrame = $('#opt-autoframe').checked; syncAutoFrameUI(); }
   save(); drawPreview();
 }
-['#opt-captions', '#opt-upper', '#opt-punch', '#opt-living', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', (e) => {
+['#opt-captions', '#opt-upper', '#opt-punch', '#opt-living', '#opt-watermark', '#face-x', '#opt-autoframe'].forEach((sel) => $(sel).addEventListener('input', (e) => {
   if (!state.project) return;
   snapshotSetting(e.target);
   readExportUI(e.target.id);
@@ -3263,6 +3283,55 @@ $('#btn-demo').addEventListener('click', loadDemo);
 $('#cta-demo').addEventListener('click', () => { loadDemo(); });
 $('#btn-editor-demo').addEventListener('click', openSampleEditor);
 $('#peek-sample').addEventListener('click', () => { $('#peek').close(); openSampleEditor(); });
+// Auto framing: find the speaker once per video (on this device), so vertical,
+// horizontal and the face bubble all keep them nicely in frame.
+function setFramePill(text) {
+  let pill = $('#frame-pill');
+  if (!pill) { pill = Object.assign(document.createElement('span'), { id: 'frame-pill', className: 'pill' }); $('#video-info').append(pill); }
+  pill.textContent = text; pill.hidden = !text;
+}
+function syncAutoFrameUI() {
+  const s = state.project?.settings;
+  if (!s) return;
+  const auto = s.autoFrame !== false, tr = state.project.faceTrack;
+  $('#opt-autoframe').checked = auto;
+  $('#face-x-row').hidden = auto && !!tr?.pts;
+  $('#autoframe-note').textContent = !state.file ? '' : state.faceTask ? 'Finding you in the video…' : tr?.pts ? (auto ? 'Following your face in every format.' : 'Auto framing is off. Use the slider to frame your face.') : tr ? 'No face found, so your video stays centred. Use the slider to adjust.' : '';
+}
+async function startFaceTracking() {
+  const p = state.project;
+  if (!p || !state.file || !state.objectUrl || p.faceTrack || state.faceTask) return;
+  const task = state.faceTask = { p };
+  setFramePill('Finding you for auto framing…'); syncAutoFrameUI();
+  try {
+    const track = await trackFaces(state.objectUrl, p.duration, { onProgress: (k) => { if (state.faceTask === task) setFramePill(`Finding you for auto framing · ${Math.round(k * 100)}%`); } });
+    if (state.project !== p) return;
+    p.faceTrack = track || { v: 1, pts: null };
+    save();
+    setFramePill(track ? 'Auto framing ready' : 'Centred framing');
+    state.cache && drawPreview();
+  } catch (e) {
+    console.warn('StoryCuts auto framing is unavailable:', errText(e));
+    setFramePill('');
+  } finally {
+    if (state.faceTask === task) state.faceTask = null;
+    syncAutoFrameUI();
+  }
+}
+
+// Ask before any sound leaves the device.
+function askCloudListening() {
+  const d = $('#asr-help');
+  return new Promise((resolve) => {
+    const done = (v) => { d.removeEventListener('close', onClose); d.close(); resolve(v); };
+    const onClose = () => resolve(false);
+    $('#btn-asr-cloud').onclick = () => done(true);
+    $('#btn-asr-paste').onclick = () => done(false);
+    d.addEventListener('close', onClose, { once: true });
+    d.showModal();
+  });
+}
+
 // Leave the sample (or the current story) and begin again at step 1.
 function clearWorkspace() {
   if (state.media && !state.media.paused) { state.media.pause(); stopAudio(); }

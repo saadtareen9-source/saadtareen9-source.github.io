@@ -10,23 +10,92 @@ const MODELS = {
   accurate: 'onnx-community/whisper-small_timestamped',
 };
 
-export async function decodeAudio(file, sampleRate = 16000) {
-  const buf = await file.arrayBuffer();
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ac = new AC({ sampleRate });
+// Read the soundtrack as 16 kHz mono samples. Phones record many formats, so
+// this tries the fast way first (decode the file) and, if the browser can't,
+// plays the video silently once and records its sound.
+export async function decodeAudio(file, sampleRate = 16000, { onStatus = () => {}, capture = true } = {}) {
   try {
-    const audio = await ac.decodeAudioData(buf);
-    if (audio.numberOfChannels === 1) return audio.getChannelData(0);
-    const a = audio.getChannelData(0), b = audio.getChannelData(1);
-    const mono = new Float32Array(a.length);
-    for (let i = 0; i < a.length; i++) mono[i] = (a[i] + b[i]) / 2;
-    return mono;
+    return await decodeWhole(file, sampleRate);
+  } catch (e) {
+    if (!capture) throw e;
+    console.warn('StoryCuts: direct audio decode failed, recording the sound instead.', e?.message || e);
+    onStatus('capture');
+    return captureAudio(file, sampleRate);
+  }
+}
+
+async function decodeWhole(file, sampleRate) {
+  const buf = await file.arrayBuffer();
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const probe = new OAC(1, 1, 44100);
+  const audio = await new Promise((resolve, reject) => {
+    const pr = probe.decodeAudioData(buf, resolve, reject);
+    if (pr?.then) pr.then(resolve, reject);
+  });
+  if (!audio || !audio.length) throw new Error('no audio track');
+  if (audio.sampleRate === sampleRate && audio.numberOfChannels === 1) return audio.getChannelData(0);
+  // mix to mono and resample in one go
+  const out = new OAC(1, Math.max(1, Math.ceil(audio.duration * sampleRate)), sampleRate);
+  const src = out.createBufferSource();
+  src.buffer = audio;
+  src.connect(out.destination);
+  src.start();
+  const rendered = await out.startRendering();
+  return rendered.getChannelData(0);
+}
+
+/** Slow but works for anything the browser can play: record the sound in real time. */
+async function captureAudio(file, sampleRate) {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.src = url; video.playsInline = true; video.preload = 'auto';
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  try {
+    await new Promise((resolve, reject) => { video.onloadedmetadata = resolve; video.onerror = () => reject(new Error('This video can\'t be played in this browser.')); });
+    const src = ac.createMediaElementSource(video);
+    const proc = ac.createScriptProcessor(4096, 1, 1);
+    const mute = ac.createGain(); mute.gain.value = 0;
+    const chunks = [];
+    proc.onaudioprocess = (e) => { if (!video.paused) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+    src.connect(proc); proc.connect(mute); mute.connect(ac.destination);
+    if (ac.state === 'suspended') await ac.resume();
+    await new Promise((resolve, reject) => {
+      video.onended = resolve;
+      video.onerror = () => reject(new Error('The video stopped playing.'));
+      video.play().catch(reject);
+    });
+    const total = chunks.reduce((a, c) => a + c.length, 0);
+    const raw = new Float32Array(total);
+    let o = 0; chunks.forEach((c) => { raw.set(c, o); o += c.length; });
+    if (!total) throw new Error('no audio track');
+    // resample to the target rate
+    const ratio = ac.sampleRate / sampleRate;
+    const n = Math.floor(total / ratio);
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = i * ratio, j = Math.floor(x), f = x - j;
+      out[i] = raw[j] * (1 - f) + (raw[j + 1] ?? raw[j]) * f;
+    }
+    return out;
   } finally {
+    video.pause(); video.removeAttribute('src'); video.load();
+    URL.revokeObjectURL(url);
     ac.close();
   }
 }
 
-export async function transcribeInBrowser(file, { quality = 'fast', language = null, onStatus = () => {} } = {}) {
+/** True if the samples contain something louder than silence. */
+export const hasSound = (samples) => {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i += 97) peak = Math.max(peak, Math.abs(samples[i]));
+  return peak > 0.01;
+};
+
+export async function transcribeInBrowser(file, { quality = 'fast', language = null, onStatus = () => {}, samples = null } = {}) {
+  onStatus('Reading the audio…');
+  const audio = samples || await decodeAudio(file, 16000, { onStatus: (k) => k === 'capture' && onStatus('Listening along with your video…') });
+  if (!hasSound(audio)) throw Object.assign(new Error('This video has no sound we can hear.'), { code: 'silent' });
   onStatus('Loading speech model…');
   const { pipeline, env } = await import(`${TRANSFORMERS}/+esm`);
   env.allowLocalModels = false;
@@ -46,19 +115,67 @@ export async function transcribeInBrowser(file, { quality = 'fast', language = n
   } catch {
     asr = await pipeline('automatic-speech-recognition', MODELS[quality], { ...opts, device: 'wasm', dtype: 'q8' });
   }
-  onStatus('Reading the audio…');
-  const audio = await decodeAudio(file);
   onStatus('Transcribing… (about real-time on most laptops)');
   const out = await asr(audio, {
     return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5, task: 'transcribe', ...(language ? { language } : {}),
   });
-  const words = (out.chunks || [])
-    .map((c) => ({ w: c.text.trim(), s: c.timestamp[0], e: c.timestamp[1] ?? c.timestamp[0] + 0.3 }))
-    .filter((w) => w.w);
+  return tidyWords((out.chunks || []).map((c) => ({ w: c.text.trim(), s: c.timestamp[0], e: c.timestamp[1] ?? c.timestamp[0] + 0.3 })));
+}
+
+function tidyWords(list) {
+  const words = list.filter((w) => w.w && Number.isFinite(w.s));
   for (let i = 0; i < words.length; i++) {
     if (!Number.isFinite(words[i].e) || words[i].e <= words[i].s) words[i].e = (words[i + 1]?.s ?? words[i].s + 0.4);
   }
   return words;
+}
+
+/** 16-bit mono WAV, small enough to send (about 2 MB a minute at 16 kHz). */
+export function encodeWav(samples, sampleRate = 16000) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data');
+  v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+/**
+ * Backup when the on-device listener can't run: OpenAI's speech-to-text.
+ * Only the sound is sent (never the video), and only after the creator agrees.
+ */
+export async function transcribeWithOpenAI(samples, key, { signal } = {}) {
+  const maxSamples = 16000 * 60 * 12; // about 24 MB, under the 25 MB limit
+  const parts = [];
+  for (let i = 0; i < samples.length; i += maxSamples) parts.push([i / 16000, samples.subarray(i, i + maxSamples)]);
+  const words = [];
+  for (const [offset, part] of parts) {
+    const form = new FormData();
+    form.append('file', encodeWav(part), 'story.wav');
+    form.append('model', 'whisper-1');
+    form.append('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'word');
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form, signal });
+    if (!res.ok) {
+      let msg = `OpenAI couldn't transcribe the audio (${res.status}).`;
+      try { msg = (await res.json()).error?.message || msg; } catch { /* keep the status message */ }
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    // the word list has no punctuation; borrow it from the full text so captions break naturally
+    const toks = String(data.text || '').trim().split(/\s+/).filter(Boolean);
+    const norm = (x) => x.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+    let k = 0;
+    (data.words || []).forEach((w) => {
+      let text = String(w.word || '').trim();
+      for (let j = k; j < Math.min(toks.length, k + 4); j++) if (norm(toks[j]) === norm(text)) { text = toks[j]; k = j + 1; break; }
+      words.push({ w: text, s: offset + w.start, e: offset + w.end });
+    });
+  }
+  return tidyWords(words);
 }
 
 /** Find spans of speech in the audio using a simple energy gate. */
