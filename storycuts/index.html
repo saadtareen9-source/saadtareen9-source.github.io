@@ -6,15 +6,18 @@
   <title>StoryCuts: turn your storytime into an illustrated video</title>
   <meta name="description" content="Upload a video of yourself telling a story. StoryCuts keeps your face for the best moments and cuts to AI illustrations that act out what you're saying, with the same characters throughout.">
   <meta name="theme-color" content="#f8f8f6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="StoryCuts">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23f4f4f5'/><path d='M25 19l21 13-21 13z' fill='%230a0a0b'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=52; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=53; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=52">
+  <link rel="stylesheet" href="style.css?v=53">
 </head>
 <body>
   <a class="skip-link" href="#studio">Skip to the studio</a>
@@ -742,7 +745,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=52", "./js/app.js": "./js/app.js?v=52", "./js/asr-worker.js": "./js/asr-worker.js?v=52", "./js/billing.js": "./js/billing.js?v=52", "./js/captions.js": "./js/captions.js?v=52", "./js/constants.js": "./js/constants.js?v=52", "./js/draw.js": "./js/draw.js?v=52", "./js/experience.js": "./js/experience.js?v=52", "./js/facetrack.js": "./js/facetrack.js?v=52", "./js/images.js": "./js/images.js?v=52", "./js/loader.js": "./js/loader.js?v=52", "./js/planner.js": "./js/planner.js?v=52", "./js/qc.js": "./js/qc.js?v=52", "./js/render.js": "./js/render.js?v=52", "./js/sfx.js": "./js/sfx.js?v=52", "./js/transcribe.js": "./js/transcribe.js?v=52"}}</script>
-  <script type="module" src="js/app.js?v=52"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=53", "./js/app.js": "./js/app.js?v=53", "./js/asr-worker.js": "./js/asr-worker.js?v=53", "./js/billing.js": "./js/billing.js?v=53", "./js/captions.js": "./js/captions.js?v=53", "./js/constants.js": "./js/constants.js?v=53", "./js/draw.js": "./js/draw.js?v=53", "./js/experience.js": "./js/experience.js?v=53", "./js/facetrack.js": "./js/facetrack.js?v=53", "./js/images.js": "./js/images.js?v=53", "./js/loader.js": "./js/loader.js?v=53", "./js/planner.js": "./js/planner.js?v=53", "./js/qc.js": "./js/qc.js?v=53", "./js/render.js": "./js/render.js?v=53", "./js/sfx.js": "./js/sfx.js?v=53", "./js/transcribe.js": "./js/transcribe.js?v=53"}}</script>
+  <script type="module" src="js/app.js?v=53"></script>
 </body>
 </html>
