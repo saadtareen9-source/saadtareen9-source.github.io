@@ -122,6 +122,8 @@
     <div class="peek-foot"><span>A preview only. Your own video gets the full editor.</span><div><button class="btn ghost" id="peek-sample">Open the sample editor</button><a class="btn primary" href="#studio" id="peek-start">Start my story<svg><use href="#i-right"/></svg></a></div></div>
   </dialog>
 
+  <dialog id="asr-help" class="shortcuts-dialog resume-dialog" aria-labelledby="asr-help-title" aria-describedby="asr-help-text"><div class="shortcuts-head"><div><span class="kicker">One more way to listen</span><h3 id="asr-help-title">Let OpenAI write down your words?</h3></div></div><p class="resume-note" id="asr-help-text">This device couldn't run the voice reader. We can send just the sound of your story to OpenAI to write it down. Your video never leaves this device. It costs about 1 cent per minute on your OpenAI account.</p><div class="resume-actions"><button class="btn primary lg" id="btn-asr-cloud"><svg><use href="#i-mic"/></svg>Yes, write down my words</button><button class="btn ghost lg" id="btn-asr-paste">No, I'll paste my transcript</button></div></dialog>
+
   <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title"><div class="shortcuts-head"><div><span class="kicker">A faster way to edit</span><h3 id="shortcuts-title">Keyboard shortcuts</h3></div><form method="dialog"><button class="icon-btn" aria-label="Close shortcuts"><svg><use href="#i-close"/></svg></button></form></div><dl><div><dt>Play / pause</dt><dd><kbd>Space</kbd></dd></div><div><dt>Split at playhead</dt><dd><kbd>S</kbd></dd></div><div><dt>Previous / next cut</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd></div><div><dt>Undo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Z</kbd></dd></div><div><dt>Redo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dd></div></dl><p>Shortcuts pause while you type or have a dialog open.</p></dialog>
 
   <main id="top">
@@ -565,7 +567,9 @@
               <p class="pane-title">Camera</p>
               <label class="switch"><input type="checkbox" id="opt-living" checked><span></span>Living pictures (motion and effects on scenes)</label>
               <label class="switch"><input type="checkbox" id="opt-punch" checked><span></span>Zoom in on every other face cut</label>
-              <label class="range-field wide-range"><span>Face framing</span><input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
+              <label class="switch"><input type="checkbox" id="opt-autoframe" checked><span></span>Keep me in frame automatically</label>
+              <p class="muted small" id="autoframe-note"></p>
+              <label class="range-field wide-range" id="face-x-row"><span>Face framing</span><input type="range" id="face-x" min="0" max="1" step="0.01" value="0.5"></label>
             </div>
 
             <div class="ed-panel" id="pane-trans" data-pane="trans" role="tabpanel" aria-labelledby="tab-trans" hidden>

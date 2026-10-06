@@ -29,7 +29,9 @@ The site is static. There is **no build step and no framework**: plain HTML, CSS
 | `storycuts/js/planner.js` | The Claude prompts and JSON schemas: plan the edit, then a continuity review that fixes who is where (texts and calls become two shots). `callClaude()` calls the API from the browser via the `@anthropic-ai/sdk` ESM build. |
 | `storycuts/js/qc.js` | Normalises and validates the plan: hook face shot, cut-backs, minimum lengths, staging rules. |
 | `storycuts/js/images.js` | OpenAI `gpt-image-2` drawing, Claude vision quality checks, art styles, and IndexedDB picture storage (`putBlob`, `getBlob`, `hasBlob`). |
-| `storycuts/js/transcribe.js` | In-browser speech-to-text and transcript import. |
+| `storycuts/js/transcribe.js` | In-browser speech-to-text (Whisper via transformers.js), robust audio reading (decode, or record while playing), the opt-in OpenAI backup, and transcript import. |
+| `storycuts/js/captions.js` | Caption styles, fonts and drawing (shared by preview, export and the style tiles). |
+| `storycuts/js/facetrack.js` | Auto framing: finds the speaker's face on the device (MediaPipe face detector; model in `assets/models/`) and gives a smooth track the renderer follows for vertical, horizontal and face-bubble framing. |
 | `storycuts/js/sfx.js` | Sound effects library and players. |
 | `storycuts/js/billing.js` | Subscription plans, prices and the paywall. Prices are based on AI cost per finished minute (see the comment at the top). Stripe links are not filled in yet; `?unlock=owner` gives the owner access. |
 | `storycuts/js/animate.js` and `storycuts/server/video-relay.js` | Dormant code for animated (video) scenes. OpenAI discontinued the Sora video API on 24 Sept 2026, so this option is hidden. Leave it in place. |
@@ -41,7 +43,7 @@ The site is static. There is **no build step and no framework**: plain HTML, CSS
 
 1. **Never rename or remove an `id`, class or `data-` attribute that the JavaScript uses.** The full list is in `storycuts/DESIGN-HANDOFF.md`. It breaks silently: the button just stops working.
 2. API keys are typed by users and stored **only in their browser** (localStorage) and sent straight to Anthropic or OpenAI. Never put keys in code, never log them, and never add a server that sees them.
-3. The video never leaves the user's device. Only text and scene descriptions go to the AI providers.
+3. The video never leaves the user's device. Only text and scene descriptions go to the AI providers. One exception, always opt-in: if on-device listening fails, the app asks before sending **just the sound** (a WAV, never the video) to OpenAI speech-to-text (`transcribeWithOpenAI` in `transcribe.js`). Face tracking also runs on the device and keeps only face positions.
 4. **Changes to the AI pipeline need care.** Keep the JSON schemas and the fields that other modules read in sync. The pipeline files are `planner.js` (prompts and schemas), `qc.js` and `images.js`.
 5. Phone (390px wide, **no sideways scrolling**) and desktop must both work.
 6. Respect `prefers-reduced-motion`. No emojis in the UI.

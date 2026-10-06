@@ -126,9 +126,19 @@ async function newContext(opts, { mockListening = false, failListening = false, 
       }
     ` }));
   }
+  // Face tracking: a stand-in detector that always finds a face right of centre.
+  await ctx.route('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/**', (r) => r.fulfill({ contentType: 'application/javascript', headers: cors, body: `
+    export const FilesetResolver = { forVisionTasks: async () => ({}) };
+    export const FaceDetector = { createFromOptions: async () => ({ detect: () => ({ detections: [{ boundingBox: { originX: 200, originY: 40, width: 80, height: 90 } }] }) }) };
+  ` }));
   let n = 0;
   await ctx.route('https://api.openai.com/**', async (r) => {
     if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
+    if (r.request().url().includes('/audio/transcriptions')) {
+      ctx.cloudListening = (ctx.cloudListening || 0) + 1;
+      const toks = storyText.split(/\s+/);
+      return r.fulfill({ contentType: 'application/json', headers: cors, body: JSON.stringify({ text: storyText, words: toks.map((w, i) => ({ word: w.replace(/[^\w']/g, ''), start: i * 44 / toks.length, end: (i + 1) * 44 / toks.length })) }) });
+    }
     await sleep(600);
     r.fulfill({ contentType: 'application/json', headers: cors, body: JSON.stringify({ created: 1, data: [{ b64_json: pngs[n++ % pngs.length] }] }) });
   });
@@ -356,6 +366,8 @@ try {
   await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
   await p.waitForFunction(() => window.__storycuts.state.step === 2);
   check(await p.evaluate(() => window.__storycuts.state.file?.name === 'upload.webm' && document.querySelector('#video').src.startsWith('blob:')), 'a real local video opens the style step without uploading the video');
+  await p.waitForFunction(() => window.__storycuts.state.project.faceTrack?.pts?.length, null, { timeout: 20000 });
+  check(await p.evaluate(() => { const tr = window.__storycuts.state.project.faceTrack; return Math.abs(tr.pts[0][1] - 240 / 360) < 0.02 && !document.querySelector('#frame-pill').hidden; }), 'auto framing finds the speaker in an uploaded video on the device');
   await p.click('#stepper [data-s="1"] button');
   await p.click('#btn-demo'); await sleep(900);
   check(await step() === '2', 'demo opens the style step');
@@ -811,6 +823,10 @@ try {
   const fctx = await newContext({ viewport: { width: 390, height: 844 } }, { mockListening: true, failListening: true });
   const f = await fctx.newPage(); watch(f, 'listening fallback');
   await openStory(f); await f.click('#btn-create');
+  await f.waitForFunction(() => document.querySelector('#asr-help').open);
+  await shot(f, 'p18-listening-backup');
+  check(/never leaves/.test(await f.locator('#asr-help-text').textContent()) && !fctx.cloudListening, 'when on-device listening fails, the creator is asked before any sound is sent');
+  await f.click('#btn-asr-paste');
   await f.waitForSelector('#story-input-status.err');
   check(await f.isVisible('#prep-transcript') && !(await f.isDisabled('#btn-paste-open')) && !(await f.isDisabled('#transcript-file')), 'listening failure opens usable upload and paste controls instead of leaving them disabled');
   await f.click('#btn-paste-open'); await f.locator('#paste-text').fill(storyText); await f.click('#btn-use-paste');
@@ -818,6 +834,15 @@ try {
   await f.click('#btn-create'); await waitForCast(f);
   check(fctx.plannerRequests.length === 1, 'a creator can finish planning with pasted words after listening fails');
   await fctx.close();
+
+  const cctx = await newContext({ viewport: { width: 1300, height: 1000 } }, { mockListening: true, failListening: true });
+  const c = await cctx.newPage(); watch(c, 'cloud listening');
+  await openStory(c); await c.click('#btn-create');
+  await c.waitForFunction(() => document.querySelector('#asr-help').open);
+  await c.click('#btn-asr-cloud');
+  await c.waitForFunction(() => window.__storycuts.state.project.words.length > 10 && !window.__storycuts.state.busy, null, { timeout: 30000 });
+  check(cctx.cloudListening === 1 && await c.evaluate(() => window.__storycuts.state.project.words.some((w) => /[.,!?]$/.test(w.w))), 'with permission, the backup listener writes down the words (with punctuation) from just the sound');
+  await cctx.close();
 
   // Reduced motion still leaves the landing and progress visuals readable.
   const rctx = await newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });

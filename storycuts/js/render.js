@@ -2,6 +2,7 @@
 // the live preview and the export, so what you review is what you get.
 
 import { drawSoundEffect } from './draw.js';
+import { faceAt } from './facetrack.js';
 import { captionPages, drawCaptions, resolveCaptionStyle, loadCaptionFonts, CAPTION_STYLES } from './captions.js';
 import { bitmapFor, preloadBitmap, canAnimate } from './images.js';
 import { animReady, animVideo, syncAnim, pauseAnimsExcept, preloadAnim } from './animate.js';
@@ -33,9 +34,31 @@ function drawVideoCover(ctx, video, x, y, w, h, focusX = 0.5, focusY = 0.4, zoom
 // A phone (portrait) video in a horizontal frame: show the whole person in the
 // middle over a soft, blurred copy, instead of cropping to a thin strip.
 let blurCanvas = null;
-function drawCameraShot(ctx, video, W, H, focusX, focusY, zoom) {
+// Crop the camera to a frame, keeping a tracked face well placed: centred
+// across, with the eyes a little above the middle (how editors frame a talker).
+function drawFramed(ctx, video, x, y, w, h, face, focusX, focusY, zoom) {
   const vw = video.videoWidth || video.width, vh = video.videoHeight || video.height;
-  if (!vw || !vh || W <= H || vw / vh > 0.9) { drawVideoCover(ctx, video, 0, 0, W, H, focusX, focusY, zoom); return; }
+  if (!face || !vw || !vh) { drawVideoCover(ctx, video, x, y, w, h, focusX, focusY, zoom); return; }
+  const scale = Math.max(w / vw, h / vh) * zoom;
+  const sw = w / scale, sh = h / scale;
+  const sx = Math.min(vw - sw, Math.max(0, face.x * vw - sw / 2));
+  const sy = Math.min(vh - sh, Math.max(0, face.y * vh - sh * 0.4));
+  ctx.drawImage(video, sx, sy, sw, sh, x, y, w, h);
+}
+
+// The face bubble: a square crop around the face, sized so the face fills it nicely.
+function drawFaceCrop(ctx, video, x, y, size, face, focusX, focusY) {
+  const vw = video.videoWidth || video.width, vh = video.videoHeight || video.height;
+  if (!face || !vw || !vh) { drawVideoCover(ctx, video, x, y, size, size, focusX, focusY, 1.35); return; }
+  const side = Math.min(vw, vh, Math.max(face.s * vh * 2.1, Math.min(vw, vh) * 0.3));
+  const sx = Math.min(vw - side, Math.max(0, face.x * vw - side / 2));
+  const sy = Math.min(vh - side, Math.max(0, face.y * vh - side * 0.45));
+  ctx.drawImage(video, sx, sy, side, side, x, y, size, size);
+}
+
+function drawCameraShot(ctx, video, W, H, focusX, focusY, zoom, face) {
+  const vw = video.videoWidth || video.width, vh = video.videoHeight || video.height;
+  if (!vw || !vh || W <= H || vw / vh > 0.9) { drawFramed(ctx, video, 0, 0, W, H, face, focusX, focusY, zoom); return; }
   blurCanvas ||= Object.assign(document.createElement('canvas'), { width: 48, height: 27 });
   const b = blurCanvas.getContext('2d');
   drawVideoCover(b, video, 0, 0, 48, 27, 0.5, 0.5, 1);
@@ -45,7 +68,7 @@ function drawCameraShot(ctx, video, W, H, focusX, focusY, zoom) {
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, W, H);
   ctx.restore();
   const h = H, w = Math.min(W, h * (vw / vh) * zoom);
-  drawVideoCover(ctx, video, (W - w) / 2, 0, w, h, focusX, focusY, zoom);
+  drawFramed(ctx, video, (W - w) / 2, 0, w, h, face, focusX, focusY, zoom);
 }
 
 // ---------- captions (see captions.js) ----------
@@ -323,12 +346,13 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
   const local = t - seg.start;
   const dur = seg.end - seg.start;
   const fx = settings.faceX ?? 0.5, fy = settings.faceY ?? 0.4;
+  const face = settings.autoFrame !== false ? faceAt(project.faceTrack, t) : null;
 
   if (type === 'face' || !seg.scene) {
     // alternate punch-in on consecutive face shots, like a jump-cut zoom
     const faceShots = segments.slice(0, idx).filter((s) => s.type === 'face').length;
     const zoom = settings.punchIn && faceShots % 2 === 1 ? 1.15 : 1;
-    drawCameraShot(ctx, video, W, H, fx, fy, zoom);
+    drawCameraShot(ctx, video, W, H, fx, fy, zoom, face);
   } else {
     const sfxSide = type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
     const bmp = seg.image?.key ? bitmapFor(seg.image.key, cache.onImage) : null;
@@ -346,7 +370,7 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
       drawPlaceholder(ctx, W, H, seg, local, cache.pending?.has(seg.id));
     }
     if (type === 'scene_bubble') {
-      const R = Math.min(W, H) * (H > W ? 0.2 : 0.17);
+      const R = Math.min(W, H) * (H > W ? 0.24 : 0.2);
       const pad = Math.min(W, H) * 0.045;
       const cx = settings.bubbleSide === 'left' ? pad + R : W - pad - R;
       const cy = (H > W ? H * 0.08 : pad) + R;
@@ -355,7 +379,7 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
       ctx.translate(cx, cy); ctx.scale(pop, pop); ctx.translate(-cx, -cy);
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.closePath();
       ctx.save(); ctx.clip();
-      drawVideoCover(ctx, video, cx - R, cy - R, R * 2, R * 2, fx, fy, 1.35);
+      drawFaceCrop(ctx, video, cx - R, cy - R, R * 2, face, fx, fy);
       ctx.restore();
       ctx.lineWidth = R * 0.07; ctx.strokeStyle = '#fff'; ctx.stroke();
       ctx.lineWidth = R * 0.02; ctx.strokeStyle = '#141414';
