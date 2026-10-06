@@ -6,7 +6,7 @@ import {
   SFX_CATS, allSfx, sfxInfo, registerSfx, loadSfxManifest, sfxPeaks, SfxPlayer, MusicPlayer,
 } from './sfx.js';
 import {
-  BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, checkoutUrl, handleReturn,
+  BILLING, planById, monthlyPrice, yearlyTotal, currentPlan, hasAccess, isOwner, checkoutUrl, handleReturn,
 } from './billing.js';
 import {
   VIDEO_MODELS, videoModelInfo, estimateAnimCost, animateScene, animReady, setVideoRelay, checkAnimationSetup,
@@ -170,6 +170,8 @@ const keysReady = (s = settingsGet()) => !!s.key && hasImageKey(s);
 
 function updateKeysDot() {
   $('#keys-dot').classList.toggle('ok', keysReady());
+  // AI keys are the owner's own setup; customers get AI through their plan.
+  $('#btn-keys').hidden = !isOwner();
 }
 
 function openSettings() {
@@ -1437,7 +1439,8 @@ async function createVideo() {
   if (!p) { toast('Upload a video first (or try the demo).'); goStep(1); return; }
   if (p.approved) { goStep(5); return; }
   if (p.settings.storyMode === 'transcript' && (!p.words.length || !['text', 'subtitles'].includes(p.transcriptSource))) { toast('Add your transcript before continuing.'); goStep(4); $('#prep-transcript').scrollIntoView({ block: 'center' }); return; }
-  if (state.file && !hasAccess() && (paidCheckoutOpen() || !keysReady())) { openPaywall(); return; }
+  // Subscription only: creating with AI needs a plan (or the owner switch).
+  if (!hasAccess()) { openPaywall(); return; }
   if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
   state.busy = true;
   state.stages = {};
@@ -1751,6 +1754,7 @@ async function grabSelfFrame() {
 
 /** Draws the given characters. Resolves true if all succeeded. */
 async function drawCharacters(list) {
+  if (!hasAccess()) { openPaywall(); return false; }
   if (state.charBusy?.size) { toast('Your characters are still being drawn.'); return false; }
   if (!hasImageKey()) { openSettings(); return false; }
   if (!list.length) return true;
@@ -1959,6 +1963,7 @@ async function animateScenes(list) {
 }
 
 async function generateScenes(list, note = '') {
+  if (!hasAccess()) { openPaywall(); return; }
   if (!hasImageKey()) { openSettings(); return; }
   if (!list.length) return;
   if (state.genAbort) { toast('Your scenes are still being drawn.'); return; }
@@ -3144,7 +3149,6 @@ $$('.reveal').forEach((el) => io.observe(el));
 
 let billingPeriod = store.get('storycuts:period', 'monthly');
 let previewPlanId = null;
-const paidCheckoutOpen = () => BILLING.plans.some((p) => checkoutUrl(p.id, 'monthly') || checkoutUrl(p.id, 'yearly'));
 
 function planCard(plan, { compact = false } = {}) {
   const mine = currentPlan()?.id === plan.id;
@@ -3153,7 +3157,7 @@ function planCard(plan, { compact = false } = {}) {
   const cta = mine ? 'Your plan' : checkoutUrl(plan.id, billingPeriod) ? `Get ${plan.name}` : `View ${plan.name} plan`;
   if (compact) {
     return `<button class="pay-plan${plan.popular ? ' popular' : ''}${previewPlanId === plan.id ? ' on' : ''}" data-plan="${plan.id}" aria-pressed="${previewPlanId === plan.id}" ${mine ? 'disabled' : ''}>
-      <span class="pp-name"><b>${esc(plan.name)}</b>${plan.popular ? '<em>Most popular</em>' : ''}<small>${plan.videos} videos a month</small></span>
+      <span class="pp-name"><b>${esc(plan.name)}</b>${plan.popular ? '<em>Most popular</em>' : ''}<small>${plan.minutes} minutes of video a month</small></span>
       <span class="pp-price"><b>$${price}</b><small>/mo</small></span>
     </button>`;
   }
@@ -3185,10 +3189,11 @@ function renderPlans() {
   nav.title = mine ? `${mine.plan.name} plan` : '';
   nav.classList.add('primary');
   nav.classList.remove('glass');
+  updateKeysDot();
   const portal = BILLING.portalUrl;
   $$('#manage-sub, .manage-link').forEach((a) => { a.hidden = !(mine && portal); if (portal) a.href = portal; });
   const selected = planById(previewPlanId);
-  $('#pay-selection').textContent = selected ? `${selected.name}: $${monthlyPrice(selected, billingPeriod)}/month${billingPeriod === 'yearly' ? `, $${yearlyTotal(selected)} billed yearly` : ', billed monthly'}. Preview pricing only. Checkout isn't open and no payment will be taken.` : 'Preview the plans below. No payment will be taken.';
+  $('#pay-selection').textContent = selected ? `${selected.name}: $${monthlyPrice(selected, billingPeriod)}/month${billingPeriod === 'yearly' ? `, $${yearlyTotal(selected)} billed yearly` : ', billed monthly'}. Subscriptions open soon. No payment will be taken today.` : 'Choose a plan to see what it includes. Subscriptions open soon.';
 }
 
 function movePeriodThumb(g) {
@@ -3225,7 +3230,8 @@ document.addEventListener('click', (e) => {
 
 function openPaywall() {
   renderPlans();
-  $('#pay-description').textContent = `We're preparing subscriptions with AI creation included. Checkout isn't open yet. ${state.project ? 'Your video and settings are saved in this browser.' : 'Try the free sample editor to explore what you can make.'}`;
+  $('#pay-description').textContent = `Every plan includes the AI drawing, so you don't need any other accounts. Subscriptions open soon. ${state.project ? 'Your video and settings are saved in this browser.' : 'In the meantime, try the free sample editor.'}`;
+  $('#btn-advanced-preview').hidden = true;
   const d = $('#paywall');
   if (!d.open) d.showModal();
   requestAnimationFrame(() => movePeriodThumb($('#pay-period')));

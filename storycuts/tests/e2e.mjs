@@ -169,9 +169,9 @@ try {
     const s = await sampleCtx.newPage(); watch(s, tag);
     await s.goto(URL0);
     await s.locator('.plan [data-plan=creator]').click();
-    check(await s.locator('#paywall').evaluate((el) => el.open) && /Checkout isn't open/.test(await s.locator('#pay-selection').textContent()), `${tag}: an unavailable plan opens a clear preview instead of a dead end`);
+    check(await s.locator('#paywall').evaluate((el) => el.open) && /Subscriptions open soon/.test(await s.locator('#pay-selection').textContent()), `${tag}: an unavailable plan opens a clear preview instead of a dead end`);
     await s.click('#pay-period [data-period=yearly]');
-    check(await s.getAttribute('#pay-plans [data-plan=creator]', 'aria-pressed') === 'true' && /\$336 billed yearly/.test(await s.locator('#pay-selection').textContent()), `${tag}: selected plan and billing period remain clear without taking a payment`);
+    check(await s.getAttribute('#pay-plans [data-plan=creator]', 'aria-pressed') === 'true' && /\$432 billed yearly/.test(await s.locator('#pay-selection').textContent()), `${tag}: selected plan and billing period remain clear without taking a payment`);
     check(await s.locator('#paywall').evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth && [...dialog.querySelectorAll('button, .modal-head, .pay-selection')].every((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && el.scrollWidth <= el.clientWidth + 1; })), `${tag}: plan descriptions and buttons fit without clipped text or sideways scrolling`);
     await shot(s, phone ? 'p14-plan-preview' : '14-plan-preview');
     await s.click('#pay-demo');
@@ -218,16 +218,18 @@ try {
     await sampleCtx.close();
   }
 
-  // The unfinished subscription service must not block an explicitly connected
-  // advanced preview, and it must not write a fake subscription to the browser.
+  // Subscription only: own AI keys without a plan can't create, the key setup
+  // is hidden from the public, and a hand-typed checkout return can't unlock it.
   const byokCtx = await newContext({ viewport: { width: 1300, height: 1000 } }, { mockListening: true, owner: false });
-  const byok = await byokCtx.newPage(); watch(byok, 'advanced preview');
+  const byok = await byokCtx.newPage(); watch(byok, 'subscription lock');
+  await byok.goto(URL0); await sleep(300);
+  check(!(await byok.isVisible('#btn-keys')), 'the public site has no AI key setup button');
   await openStory(byok);
-  await byok.click('#btn-create');
-  await byok.waitForSelector('#transcript-review:not(.hidden)');
-  check(!(await byok.locator('#paywall').evaluate((el) => el.open)), 'connected advanced preview can create a real-video project while subscriptions are unavailable');
-  await byok.click('#btn-review-continue'); await waitForCast(byok);
-  check(byokCtx.plannerRequests.length === 1, 'advanced preview reaches the existing planner without an owner bypass');
+  await byok.click('#btn-create'); await sleep(400);
+  check(await byok.locator('#paywall').evaluate((el) => el.open) && !(await byok.isVisible('#btn-advanced-preview')), 'creating without a subscription opens the plans, with no own-keys option');
+  check(byokCtx.plannerRequests.length === 0 && byokCtx.providerRequests.length === 0, 'no AI requests happen without a subscription, even with keys in the browser');
+  await byok.goto(`${URL0}?checkout=success&plan=studio`); await sleep(400);
+  check(await byok.evaluate(() => !localStorage.getItem('storycuts:plan')), 'a hand-typed checkout return does not unlock creating while checkout is closed');
   await byokCtx.close();
 
   // ===== desktop: the full flow =====

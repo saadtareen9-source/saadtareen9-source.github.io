@@ -13,6 +13,11 @@
 // path but isn't real protection. A small server that checks Stripe (planned
 // next) is what makes access airtight.
 
+// Pricing is based on AI cost per finished minute of video: about $1.65
+// (planning, continuity check, every character and scene picture, quality
+// checks and typical redraws, at the provider prices in planner.js/images.js).
+// Each plan keeps roughly 50% margin even if every included minute is used.
+// Re-check these numbers whenever provider prices or the pipeline change.
 export const BILLING = {
   enforce: true,
   yearlyDiscount: 0.2,
@@ -21,29 +26,29 @@ export const BILLING = {
     {
       id: 'starter',
       name: 'Starter',
-      monthly: 15,
+      monthly: 19,
       blurb: 'For trying StoryCuts on a few stories a month.',
-      videos: 5,
-      features: ['5 videos a month', 'Stories up to 2 minutes', 'All 8 art styles', 'Captions and sound effects', 'HD export, no watermark'],
+      minutes: 5,
+      features: ['5 minutes of video a month (about 3 storytimes)', 'Stories up to 2 minutes', 'All 8 art styles', 'Captions, music and sound effects', 'HD export, no watermark'],
       links: { monthly: '', yearly: '' },
     },
     {
       id: 'creator',
       name: 'Creator',
-      monthly: 35,
+      monthly: 45,
       popular: true,
       blurb: 'For creators posting storytimes every week.',
-      videos: 15,
-      features: ['15 videos a month', 'Stories up to 5 minutes', 'Create your own style', 'Upload your own characters', 'Priority drawing'],
+      minutes: 12,
+      features: ['12 minutes of video a month (about 6 to 8 storytimes)', 'Stories up to 4 minutes', 'Everything in Starter', 'Create your own style', 'Priority drawing'],
       links: { monthly: '', yearly: '' },
     },
     {
       id: 'studio',
       name: 'Studio',
-      monthly: 79,
-      blurb: 'For channels and teams with a busy schedule.',
-      videos: 40,
-      features: ['40 videos a month', 'Stories up to 10 minutes', 'Everything in Creator', 'Commercial use', 'Early access to new styles'],
+      monthly: 95,
+      blurb: 'For channels posting several times a week.',
+      minutes: 25,
+      features: ['25 minutes of video a month (about 12 to 15 storytimes)', 'Stories up to 8 minutes', 'Everything in Creator', 'Commercial use', 'Early access to new styles'],
       links: { monthly: '', yearly: '' },
     },
   ],
@@ -76,6 +81,9 @@ export function checkoutUrl(planId, period) {
   return planById(planId)?.links?.[period] || '';
 }
 
+/** True once at least one Stripe checkout link is filled in. */
+export const checkoutOpen = () => BILLING.plans.some((p) => p.links.monthly || p.links.yearly);
+
 export function signOut() { write(KEY, null); write(OWNER, null); }
 
 /**
@@ -85,7 +93,9 @@ export function signOut() { write(KEY, null); write(OWNER, null); }
 export function handleReturn() {
   const q = new URLSearchParams(location.search);
   let msg = '';
-  if (q.get('checkout') === 'success' && planById(q.get('plan'))) {
+  // A return URL is only honoured once checkout actually exists, so typing it
+  // by hand can't unlock creating while subscriptions aren't open.
+  if (q.get('checkout') === 'success' && planById(q.get('plan')) && checkoutOpen()) {
     write(KEY, { id: q.get('plan'), since: Date.now() });
     msg = `Welcome to StoryCuts ${planById(q.get('plan')).name}! You're all set to create.`;
   }

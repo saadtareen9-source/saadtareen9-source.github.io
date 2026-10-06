@@ -31,7 +31,7 @@ The site is static. There is **no build step and no framework**: plain HTML, CSS
 | `storycuts/js/images.js` | OpenAI `gpt-image-2` drawing, Claude vision quality checks, art styles, and IndexedDB picture storage (`putBlob`, `getBlob`, `hasBlob`). |
 | `storycuts/js/transcribe.js` | In-browser speech-to-text and transcript import. |
 | `storycuts/js/sfx.js` | Sound effects library and players. |
-| `storycuts/js/billing.js` | Subscription plans and the paywall. Stripe links are not filled in yet; `?unlock=owner` gives the owner access. |
+| `storycuts/js/billing.js` | Subscription plans, prices and the paywall. Prices are based on AI cost per finished minute (see the comment at the top). Stripe links are not filled in yet; `?unlock=owner` gives the owner access. |
 | `storycuts/js/animate.js` and `storycuts/server/video-relay.js` | Dormant code for animated (video) scenes. OpenAI discontinued the Sora video API on 24 Sept 2026, so this option is hidden. Leave it in place. |
 | `storycuts/tools/bump-version.py` | Cache busting (see the workflow below). |
 | `storycuts/tests/` | End-to-end test with mocked AI (see Testing). |
@@ -45,6 +45,7 @@ The site is static. There is **no build step and no framework**: plain HTML, CSS
 4. **Changes to the AI pipeline need care.** Keep the JSON schemas and the fields that other modules read in sync. The pipeline files are `planner.js` (prompts and schemas), `qc.js` and `images.js`.
 5. Phone (390px wide, **no sideways scrolling**) and desktop must both work.
 6. Respect `prefers-reduced-motion`. No emojis in the UI.
+7. **StoryCuts is subscription only.** Creating with AI requires a plan (or the owner switch). Don't add any public "use your own AI keys" path; the key setup is owner-only. The free sample editor makes no AI calls and stays open to everyone.
 
 ## Workflow
 
