@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=46; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=47; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=46">
+  <link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
   <a class="skip-link" href="#studio">Skip to the studio</a>
@@ -106,6 +106,22 @@
 
   <dialog id="character-preview" class="character-preview" aria-labelledby="portrait-preview-title"><div class="portrait-preview-head"><div><span class="kicker">Character review</span><h3 id="portrait-preview-title">Your character</h3></div><button class="icon-btn" id="btn-portrait-close" aria-label="Close character preview"><svg><use href="#i-close"/></svg></button></div><img id="portrait-preview-image" alt=""><p>Happy with the look? Close this preview and approve your cast. You can try a new look from the character card.</p><button class="btn primary" id="btn-portrait-done">Back to my cast<svg><use href="#i-check"/></svg></button></dialog>
 
+  <dialog id="resume-dialog" class="shortcuts-dialog resume-dialog" aria-labelledby="resume-title" aria-describedby="resume-detail"><div class="shortcuts-head"><div><span class="kicker">Welcome back</span><h3 id="resume-title">Pick up where you left off?</h3></div><form method="dialog"><button class="icon-btn" aria-label="Close"><svg><use href="#i-close"/></svg></button></form></div><div class="resume-card"><b id="resume-name">My story</b><span id="resume-detail">Step 2 of 5 · Art style</span></div><p class="resume-note">Starting a new story keeps this one saved under Your projects.</p><div class="resume-actions"><button class="btn primary lg" id="btn-resume">Continue my story<svg><use href="#i-right"/></svg></button><button class="btn ghost lg" id="btn-start-new"><svg><use href="#i-plus"/></svg>Start a new story</button></div></dialog>
+
+  <dialog id="peek" class="peek" aria-labelledby="peek-title">
+    <div class="peek-head"><div><span class="kicker">Sneak peek</span><h3 id="peek-title">The finishing touches</h3></div><form method="dialog"><button class="icon-btn" aria-label="Close sneak peek"><svg><use href="#i-close"/></svg></button></form></div>
+    <div class="mini-seg peek-tabs" id="peek-tabs" role="tablist" aria-label="What to preview"><button role="tab" data-peek="captions" aria-selected="true" class="on"><svg><use href="#i-text"/></svg>Captions</button><button role="tab" data-peek="timeline" aria-selected="false"><svg><use href="#i-scissors"/></svg>Timeline</button><button role="tab" data-peek="sound" aria-selected="false"><svg><use href="#i-music"/></svg>Sound</button></div>
+    <div class="peek-body">
+      <div class="peek-stage"><canvas id="peek-canvas" width="540" height="960" role="img" aria-label="Example video frame"></canvas><span class="peek-badge" id="peek-badge" hidden></span></div>
+      <div class="peek-side">
+        <section class="peek-pane" data-peek-pane="captions"><h4>Say it in your style.</h4><p>Pick a look. Each word lights up the moment you say it.</p><div class="peek-chips" id="peek-cap-styles"></div><p class="peek-more">In the editor: 18 styles, 10 fonts, any colour, and you can drag captions anywhere on the video.</p></section>
+        <section class="peek-pane" data-peek-pane="timeline" hidden><h4>Find the perfect beat.</h4><p>Your edit opens on you, cuts to the drawing for the action, then comes back for your reaction. Tap a shot to see it.</p><div class="peek-shots" id="peek-shots"></div><p class="peek-more">In the editor: trim any shot, split it, swap a drawing for your face, and add transitions.</p></section>
+        <section class="peek-pane" data-peek-pane="sound" hidden><h4>Give it a little feeling.</h4><p>Land the punchline with a sound effect. Tap one to hear it.</p><div class="peek-sounds" id="peek-sounds"></div><p class="peek-more">In the editor: 18 built-in effects, your own music, and a simple mix for voice, music and effects.</p></section>
+      </div>
+    </div>
+    <div class="peek-foot"><span>A preview only. Your own video gets the full editor.</span><div><button class="btn ghost" id="peek-sample">Open the sample editor</button><a class="btn primary" href="#studio" id="peek-start">Start my story<svg><use href="#i-right"/></svg></a></div></div>
+  </dialog>
+
   <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title"><div class="shortcuts-head"><div><span class="kicker">A faster way to edit</span><h3 id="shortcuts-title">Keyboard shortcuts</h3></div><form method="dialog"><button class="icon-btn" aria-label="Close shortcuts"><svg><use href="#i-close"/></svg></button></form></div><dl><div><dt>Play / pause</dt><dd><kbd>Space</kbd></dd></div><div><dt>Split at playhead</dt><dd><kbd>S</kbd></dd></div><div><dt>Previous / next cut</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd></div><div><dt>Undo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Z</kbd></dd></div><div><dt>Redo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dd></div></dl><p>Shortcuts pause while you type or have a dialog open.</p></dialog>
 
   <main id="top">
@@ -127,7 +143,7 @@
         <div class="made-for"><span>Ready for</span><b>TikTok</b><i></i><b>Reels</b><i></i><b>Shorts</b></div>
       </div>
       <div class="hero-visual" id="story-showreel" data-demo-view="result" data-demo-story="airport">
-        <div class="hero-preview-head"><span><i></i> See the story take shape</span><span class="preview-live">Interactive preview</span></div>
+        <div class="hero-preview-head"><span><i></i> See the story take shape</span><span class="preview-live">Example edit</span></div>
         <div class="showreel-tabs" role="group" aria-label="Choose an example story">
           <button class="on" data-showcase="airport" aria-pressed="true">The mix-up</button>
           <button data-showcase="rain" aria-pressed="false">The plot twist</button>
@@ -148,20 +164,11 @@
               <div class="shot shot-scene"><img class="scene-img" id="showreel-art" src="assets/examples/airport.jpg" alt="An illustrated suitcase mix-up at an airport" width="840" height="1120" fetchpriority="high"><span class="shot-tag">YOUR STORY, DRAWN</span><img class="showreel-bubble" id="showreel-bubble" src="assets/hero/talk.jpg" alt=""></div>
               <span class="preview-shot-label" id="showreel-shot-label">Illustrated scene</span><canvas id="showreel-captions" width="540" height="930" aria-hidden="true"></canvas><span class="sr-only" id="showreel-caption">I grabbed my suitcase.</span>
             </div>
+            <button class="showreel-play" id="btn-example-play" aria-label="Pause example"><svg><use href="#i-pause"/></svg></button>
             <figcaption><svg><use href="#i-film"/></svg>They see it happen.</figcaption>
           </figure>
         </div>
-        <div class="showreel-controls">
-          <button class="icon-btn showreel-play" id="btn-example-play" aria-label="Pause example"><svg><use href="#i-pause"/></svg></button>
-          <div class="demo-view-toggle" role="group" aria-label="Compare the example"><button data-demo-view="original" aria-pressed="false">Original</button><button class="on" data-demo-view="result" aria-pressed="true">StoryCuts</button></div>
-          <span class="showreel-time" id="showreel-time">0:00 / 0:08</span>
-        </div>
-        <div class="showreel-timeline">
-          <div class="hero-mini-tl" aria-hidden="true"><span class="face" style="flex:2"><img data-showreel-frame="face" src="assets/hero/talk.jpg" alt=""><small>Hook</small></span><span class="reel-scene" style="flex:3"><img data-showreel-frame="scene" src="assets/examples/airport.jpg" alt=""><small>Reveal</small></span><span class="face" style="flex:1.4"><img data-showreel-frame="face" src="assets/hero/talk.jpg" alt=""><small>You</small></span><span class="reel-scene" style="flex:1.6"><img data-showreel-frame="scene" src="assets/examples/airport.jpg" alt=""><small>Payoff</small></span><i id="example-playhead"></i></div>
-          <label class="showreel-scrub"><span class="sr-only">Scrub through the example edit</span><input type="range" id="example-scrub" min="0" max="8" step=".05" value="0" aria-label="Example playback position"></label>
-        </div>
-        <div class="showreel-caption-tools"><span>Make it yours</span><div role="group" aria-label="Example caption style"><button class="on" data-demo-caption="bold" aria-pressed="true">Bold</button><button data-demo-caption="minimal" aria-pressed="false">Clean</button><button data-demo-caption="boxed" aria-pressed="false">Boxed</button></div></div>
-        <p class="hero-preview-foot"><span id="showreel-chapter">The hook</span><span>Fictional story · muted stock footage</span></p>
+        <p class="hero-preview-foot"><span>Fictional story · licensed stock footage · original artwork</span></p>
       </div>
     </section>
 
@@ -172,11 +179,11 @@
     </section>
 
     <section class="editor-features reveal" id="features" aria-labelledby="features-title">
-      <div class="section-intro"><div><p class="kicker">The finishing touches are yours</p><h2 class="section-title" id="features-title">Your story. Your signature.</h2></div><button class="btn ghost" data-editor-tool="captions">Explore the editor<svg><use href="#i-right"/></svg></button></div>
+      <div class="section-intro"><div><p class="kicker">The finishing touches are yours</p><h2 class="section-title" id="features-title">Your story. Your signature.</h2></div><button class="btn ghost" data-peek-open="captions">Take a sneak peek<svg><use href="#i-right"/></svg></button></div>
       <div class="feature-grid">
-        <button class="feature-card feature-caption" data-editor-tool="captions"><div class="feature-art" aria-hidden="true"><span class="caption-demo-line">Make every<br><b>word count.</b></span><span class="feature-small-tag">18 caption styles</span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-text"/></svg></span><h3>Say it in your style.</h3><p>Word highlights, custom fonts and colors. Correct any word and fine-tune its timing.</p><span class="feature-link">Play with captions <svg><use href="#i-right"/></svg></span></div></button>
-        <button class="feature-card" data-editor-tool="shot"><div class="feature-art feature-film" aria-hidden="true"><img src="assets/examples/airport.jpg" alt="" loading="lazy"><img src="assets/hero/talk.jpg" alt="" loading="lazy"><img src="assets/examples/airport-doodle.jpg" alt="" loading="lazy"><span class="feature-playhead"></span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-scissors"/></svg></span><h3>Find the perfect beat.</h3><p>Trim, split, and shape the rhythm of your story. Keep the moments that make it yours.</p><span class="feature-link">Explore your timeline <svg><use href="#i-right"/></svg></span></div></button>
-        <button class="feature-card" data-editor-tool="sound"><div class="feature-art feature-audio" aria-hidden="true"><span class="audio-orbit"><svg><use href="#i-music"/></svg></span><div class="audio-bars"><i style="--bar:12px"></i><i style="--bar:20px"></i><i style="--bar:34px"></i><i style="--bar:26px"></i><i style="--bar:44px"></i><i style="--bar:60px"></i><i style="--bar:46px"></i><i style="--bar:32px"></i><i style="--bar:48px"></i><i style="--bar:62px"></i><i style="--bar:38px"></i><i style="--bar:24px"></i><i style="--bar:46px"></i><i style="--bar:32px"></i><i style="--bar:18px"></i><i style="--bar:10px"></i></div><span class="feature-small-tag">Voice + music + effects</span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-music"/></svg></span><h3>Give it a little feeling.</h3><p>Add your soundtrack, balance the mix, and land the punchline with a sound effect.</p><span class="feature-link">Try the audio tools <svg><use href="#i-right"/></svg></span></div></button>
+        <button class="feature-card feature-caption" data-peek-open="captions"><div class="feature-art" aria-hidden="true"><span class="caption-demo-line">Make every<br><b>word count.</b></span><span class="feature-small-tag">18 caption styles</span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-text"/></svg></span><h3>Say it in your style.</h3><p>Word highlights, custom fonts and colors. Correct any word and fine-tune its timing.</p><span class="feature-link">See the captions <svg><use href="#i-right"/></svg></span></div></button>
+        <button class="feature-card" data-peek-open="timeline"><div class="feature-art feature-film" aria-hidden="true"><img src="assets/examples/airport.jpg" alt="" loading="lazy"><img src="assets/hero/talk.jpg" alt="" loading="lazy"><img src="assets/examples/airport-doodle.jpg" alt="" loading="lazy"><span class="feature-playhead"></span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-scissors"/></svg></span><h3>Find the perfect beat.</h3><p>Trim, split, and shape the rhythm of your story. Keep the moments that make it yours.</p><span class="feature-link">See the timeline <svg><use href="#i-right"/></svg></span></div></button>
+        <button class="feature-card" data-peek-open="sound"><div class="feature-art feature-audio" aria-hidden="true"><span class="audio-orbit"><svg><use href="#i-music"/></svg></span><div class="audio-bars"><i style="--bar:12px"></i><i style="--bar:20px"></i><i style="--bar:34px"></i><i style="--bar:26px"></i><i style="--bar:44px"></i><i style="--bar:60px"></i><i style="--bar:46px"></i><i style="--bar:32px"></i><i style="--bar:48px"></i><i style="--bar:62px"></i><i style="--bar:38px"></i><i style="--bar:24px"></i><i style="--bar:46px"></i><i style="--bar:32px"></i><i style="--bar:18px"></i><i style="--bar:10px"></i></div><span class="feature-small-tag">Voice + music + effects</span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-music"/></svg></span><h3>Give it a little feeling.</h3><p>Add your soundtrack, balance the mix, and land the punchline with a sound effect.</p><span class="feature-link">Hear the sounds <svg><use href="#i-right"/></svg></span></div></button>
       </div>
     </section>
 
@@ -303,15 +310,15 @@
         <div class="opt-group">
           <span class="opt-label" id="motion-question"><i>03</i>Bring the pictures to life?</span>
           <div class="choices two" id="seg-motion" role="group" aria-labelledby="motion-question">
-            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Gentle camera moves, plus details like rain or steam.</small><span class="option-preview motion-demo living" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>Movement &amp; scene effects</span><svg><use href="#i-spark"/></svg></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Simple, slow zooms for a calmer edit.</small><span class="option-preview motion-demo still" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span>A gentle, slow zoom</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="living" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 7.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor"/></svg></span><span class="ct"><b>Living pictures <em class="rec">Recommended</em></b><small>Gentle camera moves, plus details like rain or steam.</small><span class="option-preview motion-demo living" aria-hidden="true"><span class="mini-frame"><img data-example-scene src="assets/styles/stick.jpg" alt=""><svg><use href="#i-spark"/></svg></span><span>Moves gently, with effects like rain or steam</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-motion="still"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 17l5-4 3 2 3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Still pictures</b><small>Simple, slow zooms for a calmer edit.</small><span class="option-preview motion-demo still" aria-hidden="true"><span class="mini-frame"><img data-example-scene src="assets/styles/stick.jpg" alt=""></span><span>One slow, steady zoom</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <div class="opt-group">
           <span class="opt-label" id="face-question"><i>04</i>Where does your face go?</span>
           <div class="choices two" id="seg-face" role="group" aria-labelledby="face-question">
-            <button data-face="full" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Full-frame cuts</b><small>Show the scene or your face</small><span class="option-preview face-demo full" aria-hidden="true"><img class="demo-you" src="assets/hero/talk.jpg" alt=""><svg><use href="#i-right"/></svg><img data-example-scene src="assets/styles/stick.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
-            <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small><span class="option-preview face-demo bubble" aria-hidden="true"><img data-example-scene src="assets/styles/stick.jpg" alt=""><img class="demo-you" src="assets/hero/talk.jpg" alt=""></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-face="full" class="on"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Full-frame cuts</b><small>Show the scene or your face</small><span class="option-preview face-demo full" aria-hidden="true"><span class="mini-frame"><img class="demo-you" src="assets/hero/talk.jpg" alt=""></span><svg><use href="#i-right"/></svg><span class="mini-frame"><img data-example-scene src="assets/styles/stick.jpg" alt=""></span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
+            <button data-face="bubble"><span class="ci"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><span class="ct"><b>Face bubble</b><small>Your face in a corner during scenes</small><span class="option-preview face-demo bubble" aria-hidden="true"><span class="mini-frame"><img data-example-scene src="assets/styles/stick.jpg" alt=""><span class="demo-you face-crop"><img src="assets/hero/talk.jpg" alt=""></span></span><span class="demo-note">You stay in view while the scene plays</span></span></span><i class="cc"><svg><use href="#i-check"/></svg></i></button>
           </div>
         </div>
         <button class="btn link sm" id="btn-reset-setup">Use recommended settings<svg><use href="#i-redo"/></svg></button>
@@ -319,8 +326,9 @@
         </div>
           <aside class="settings-example" id="settings-example" aria-label="Example of your video settings">
           <div class="example-player" id="example-player" data-format="vertical" data-face="full" data-motion="living">
+            <img class="example-scene-bg" data-example-scene src="assets/examples/airport-doodle.jpg" alt="">
             <img class="example-scene" id="example-scene" src="assets/examples/airport-doodle.jpg" alt="Example illustrated story scene">
-            <img class="example-face" src="assets/hero/talk.jpg" alt="Example creator on camera">
+            <span class="example-face"><img class="example-face-bg" src="assets/hero/talk.jpg" alt=""><img class="example-face-img" src="assets/hero/talk.jpg" alt="Example creator on camera"></span>
             <span class="example-caption">THE SUITCASE MIX-UP</span>
             <span class="example-badge">Example preview</span>
           </div>
@@ -727,7 +735,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=46", "./js/app.js": "./js/app.js?v=46", "./js/billing.js": "./js/billing.js?v=46", "./js/captions.js": "./js/captions.js?v=46", "./js/constants.js": "./js/constants.js?v=46", "./js/draw.js": "./js/draw.js?v=46", "./js/experience.js": "./js/experience.js?v=46", "./js/images.js": "./js/images.js?v=46", "./js/loader.js": "./js/loader.js?v=46", "./js/planner.js": "./js/planner.js?v=46", "./js/qc.js": "./js/qc.js?v=46", "./js/render.js": "./js/render.js?v=46", "./js/sfx.js": "./js/sfx.js?v=46", "./js/transcribe.js": "./js/transcribe.js?v=46"}}</script>
-  <script type="module" src="js/app.js?v=46"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=47", "./js/app.js": "./js/app.js?v=47", "./js/billing.js": "./js/billing.js?v=47", "./js/captions.js": "./js/captions.js?v=47", "./js/constants.js": "./js/constants.js?v=47", "./js/draw.js": "./js/draw.js?v=47", "./js/experience.js": "./js/experience.js?v=47", "./js/images.js": "./js/images.js?v=47", "./js/loader.js": "./js/loader.js?v=47", "./js/planner.js": "./js/planner.js?v=47", "./js/qc.js": "./js/qc.js?v=47", "./js/render.js": "./js/render.js?v=47", "./js/sfx.js": "./js/sfx.js?v=47", "./js/transcribe.js": "./js/transcribe.js?v=47"}}</script>
+  <script type="module" src="js/app.js?v=47"></script>
 </body>
 </html>

@@ -720,7 +720,7 @@ function loadDemo() {
   showFileChip('Demo story', '0:44', 'silent demo: your own video keeps its sound');
   loadProject(duration);
   if (!state.project.words.length) { state.project.words = words; save(); refresh(); }
-  goStep(state.project.approved ? 5 : 2);
+  goStep(2);
 }
 
 // A real, editable local project lets visitors explore before connecting accounts.
@@ -728,7 +728,7 @@ function loadDemo() {
 async function openSampleEditor() {
   if (state.busy || state.genAbort || state.exporting || state.sampleLoading) { toast('Finish the current task before opening the sample.'); return; }
   state.sampleLoading = true;
-  const buttons = [$('#btn-editor-demo'), $('#pay-demo'), ...$$('[data-editor-tool]')];
+  const buttons = [$('#btn-editor-demo'), $('#pay-demo'), $('#peek-sample')];
   const work = showWork({ kind: 'film', title: 'Opening your sample studio', tips: ['A real timeline, ready to make your own.'], steps: ['Load the artwork', 'Prepare your cast', 'Open the editor'], eta: 4, note: 'No account or subscription needed.' });
   buttons.forEach((b) => { b.disabled = true; });
   try {
@@ -3262,12 +3262,37 @@ drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
 $('#btn-demo').addEventListener('click', loadDemo);
 $('#cta-demo').addEventListener('click', () => { loadDemo(); });
 $('#btn-editor-demo').addEventListener('click', openSampleEditor);
-$$('[data-editor-tool]').forEach((b) => b.addEventListener('click', async () => { await openSampleEditor(); if (state.sampleEditor && state.step === 5) showTab(b.dataset.editorTool); }));
-$('#btn-sample-start').addEventListener('click', () => goStep(1));
+$('#peek-sample').addEventListener('click', () => { $('#peek').close(); openSampleEditor(); });
+// Leave the sample (or the current story) and begin again at step 1.
+function clearWorkspace() {
+  if (state.media && !state.media.paused) { state.media.pause(); stopAudio(); }
+  closeSheet();
+  Object.assign(state, { sampleEditor: false, project: null, file: null, media: null, stages: {}, selected: null, history: [], future: [], step: 1 });
+  syncUndoButtons();
+  $('#video-info').classList.add('hidden'); $('#video-info').innerHTML = '';
+  $('#file').value = '';
+  $('#panel-upload [data-next]').disabled = true;
+  $('#sample-editor-note').hidden = true;
+  renderProjects();
+}
+const STEP_NAMES = ['Your video', 'Art style', 'Video setup', 'Story & cast', 'Edit & export'];
+// Starting always goes step by step. A story in progress is never reopened without asking.
+function startStory() {
+  if (state.busy || state.genAbort || state.exporting) { goStep(state.step || 1); return; }
+  if (state.sampleEditor || !state.project) { if (state.sampleEditor) clearWorkspace(); goStep(1); return; }
+  const step = state.step || 1;
+  if (step <= 1) { goStep(1); return; }
+  $('#resume-name').textContent = state.project.title || 'My story';
+  $('#resume-detail').textContent = `Step ${step} of 5 · ${STEP_NAMES[step - 1]}`;
+  $('#resume-dialog').showModal();
+}
+$('#btn-resume').addEventListener('click', () => { $('#resume-dialog').close(); goStep(state.step || 1); });
+$('#btn-start-new').addEventListener('click', () => { $('#resume-dialog').close(); clearWorkspace(); goStep(1); });
+$('#btn-sample-start').addEventListener('click', () => { clearWorkspace(); goStep(1); });
 $$('a[href="#studio"]').forEach((a) => a.addEventListener('click', (e) => {
   if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
-  goStep(state.project ? state.step || 1 : 1);
+  startStory();
 }));
 $$('a[href="#top"], .nav-links a:not([href="#studio"]), #menu-sheet a:not([href="#studio"])').forEach((a) => a.addEventListener('click', (e) => {
   if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || !document.body.classList.contains('studio-open')) return;

@@ -30,6 +30,24 @@ function drawVideoCover(ctx, video, x, y, w, h, focusX = 0.5, focusY = 0.4, zoom
   ctx.drawImage(video, sx, sy, sw, sh, x, y, w, h);
 }
 
+// A phone (portrait) video in a horizontal frame: show the whole person in the
+// middle over a soft, blurred copy, instead of cropping to a thin strip.
+let blurCanvas = null;
+function drawCameraShot(ctx, video, W, H, focusX, focusY, zoom) {
+  const vw = video.videoWidth || video.width, vh = video.videoHeight || video.height;
+  if (!vw || !vh || W <= H || vw / vh > 0.9) { drawVideoCover(ctx, video, 0, 0, W, H, focusX, focusY, zoom); return; }
+  blurCanvas ||= Object.assign(document.createElement('canvas'), { width: 48, height: 27 });
+  const b = blurCanvas.getContext('2d');
+  drawVideoCover(b, video, 0, 0, 48, 27, 0.5, 0.5, 1);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(blurCanvas, -W * 0.05, -H * 0.05, W * 1.1, H * 1.1);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+  const h = H, w = Math.min(W, h * (vw / vh) * zoom);
+  drawVideoCover(ctx, video, (W - w) / 2, 0, w, h, focusX, focusY, zoom);
+}
+
 // ---------- captions (see captions.js) ----------
 
 export { captionPages, CAPTION_STYLES };
@@ -310,7 +328,7 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
     // alternate punch-in on consecutive face shots, like a jump-cut zoom
     const faceShots = segments.slice(0, idx).filter((s) => s.type === 'face').length;
     const zoom = settings.punchIn && faceShots % 2 === 1 ? 1.15 : 1;
-    drawVideoCover(ctx, video, 0, 0, W, H, fx, fy, zoom);
+    drawCameraShot(ctx, video, W, H, fx, fy, zoom);
   } else {
     const sfxSide = type === 'scene_bubble' && settings.bubbleSide !== 'left' ? 'left' : 'right';
     const bmp = seg.image?.key ? bitmapFor(seg.image.key, cache.onImage) : null;
@@ -337,7 +355,7 @@ function drawShot(ctx, W, H, t, project, seg, video, cache) {
       ctx.translate(cx, cy); ctx.scale(pop, pop); ctx.translate(-cx, -cy);
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.closePath();
       ctx.save(); ctx.clip();
-      drawVideoCover(ctx, video, cx - R, cy - R, R * 2, R * 2, fx, fy, 1.6);
+      drawVideoCover(ctx, video, cx - R, cy - R, R * 2, R * 2, fx, fy, 1.35);
       ctx.restore();
       ctx.lineWidth = R * 0.07; ctx.strokeStyle = '#fff'; ctx.stroke();
       ctx.lineWidth = R * 0.02; ctx.strokeStyle = '#141414';
