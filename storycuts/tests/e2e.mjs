@@ -725,12 +725,17 @@ try {
   check(await m.evaluate(() => document.body.classList.contains('ed-full')), 'editor is full-screen on phone');
   check(await m.evaluate(editorOrder), 'phone editor keeps the timeline, playback controls, and tools below the video');
   await shot(m, 'p06-editor');
-  check(await m.isVisible('#zoom-in') && await m.isVisible('#zoom-out') && await m.locator('#zoom-in').evaluate((el) => { const r = el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }), 'timeline zoom controls are reachable on the phone');
+  check(await m.evaluate(() => { const r = document.querySelector('#preview').getBoundingClientRect(); return r.height >= innerHeight * 0.3; }), 'the phone editor gives the video a large share of the screen');
   const phoneZoomWidth = await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width);
-  await m.click('#zoom-in');
-  check(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) > phoneZoomWidth, 'phone Zoom in shows more shot detail');
-  await m.click('#zoom-out');
-  check(Math.abs(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - phoneZoomWidth) < 1, 'phone Zoom out restores the timeline scale');
+  await m.evaluate(async () => {
+    const sc = document.querySelector('#tl-scroll');
+    const touch = (id, x) => new Touch({ identifier: id, target: sc, clientX: x, clientY: 500 });
+    const fire = (type, a, b) => sc.dispatchEvent(new TouchEvent(type, { touches: [touch(1, a), touch(2, b)], bubbles: true, cancelable: true }));
+    fire('touchstart', 150, 230);
+    for (const [a, b] of [[140, 240], [120, 260], [100, 280], [80, 300]]) { fire('touchmove', a, b); await new Promise((r) => requestAnimationFrame(r)); await new Promise((r) => requestAnimationFrame(r)); }
+    sc.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }));
+  });
+  check(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) > phoneZoomWidth, 'pinching the phone timeline zooms in');
   await m.click('#ed-tabs button[data-tab=shot]'); await sleep(600);
   check(await m.evaluate(() => document.querySelector('#ed-sheet').classList.contains('open')), 'phone tool sheet slides up');
   await shot(m, 'p07-sheet');
