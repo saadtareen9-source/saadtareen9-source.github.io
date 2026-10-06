@@ -2,6 +2,7 @@
 // the live preview and the export, so what you review is what you get.
 
 import { drawSoundEffect } from './draw.js';
+import { captionPages, drawCaptions, resolveCaptionStyle, loadCaptionFonts, CAPTION_STYLES } from './captions.js';
 import { bitmapFor, preloadBitmap, canAnimate } from './images.js';
 import { animReady, animVideo, syncAnim, pauseAnimsExcept, preloadAnim } from './animate.js';
 
@@ -29,104 +30,9 @@ function drawVideoCover(ctx, video, x, y, w, h, focusX = 0.5, focusY = 0.4, zoom
   ctx.drawImage(video, sx, sy, sw, sh, x, y, w, h);
 }
 
-// ---------- captions ----------
+// ---------- captions (see captions.js) ----------
 
-export function captionPages(words) {
-  const pages = [];
-  let cur = [];
-  const flush = () => { if (cur.length) pages.push(cur); cur = []; };
-  words.forEach((w, i) => {
-    const prev = words[i - 1];
-    if (cur.length && (cur.length >= 3 || (prev && w.s - prev.e > 0.45) || cur.map((x) => x.w).join(' ').length > 16)) flush();
-    cur.push(w);
-    if (/[.?!,]$/.test(w.w)) flush();
-  });
-  flush();
-  return pages.map((ws, i) => ({
-    words: ws,
-    start: ws[0].s,
-    end: Math.min(ws[ws.length - 1].e + 0.5, pages[i + 1]?.[0]?.s ?? Infinity),
-  }));
-}
-
-export const CAPTION_STYLES = [
-  { id: 'bold', name: 'Bold' },
-  { id: 'pop', name: 'Pop' },
-  { id: 'boxed', name: 'Boxed' },
-  { id: 'clean', name: 'Clean' },
-  { id: 'neon', name: 'Neon' },
-];
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-function drawCaptions(ctx, W, H, pages, t, style) {
-  const page = pages.find((p) => t >= p.start && t < p.end);
-  if (!page) return;
-  const preset = style.preset || 'bold';
-  const portrait = H > W;
-  const fs = Math.round((portrait ? W * 0.078 : H * 0.072) * (style.size || 1));
-  const hl = style.highlight || '#ffd60a';
-  ctx.save();
-  ctx.font = preset === 'clean' ? `700 ${fs}px Inter, "Helvetica Neue", Arial, sans-serif` : `900 ${fs}px "Arial Black", Impact, system-ui, sans-serif`;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  const fmt = (s) => (style.upper ? s.toUpperCase() : s).replace(/[,.]$/, '');
-  const parts = page.words.map((w) => fmt(w.w));
-  const space = ctx.measureText(' ').width;
-  const widths = parts.map((p) => ctx.measureText(p).width);
-  const total = widths.reduce((a, b) => a + b, 0) + space * (parts.length - 1);
-  const scale = Math.min(1, (W * 0.88) / total);
-  const pos = { low: portrait ? 0.78 : 0.86, mid: 0.55, high: portrait ? 0.2 : 0.16 }[style.pos || 'low'];
-  // entrance: each caption page pops in
-  const age = t - page.start;
-  const pop = age < 0.12 ? 0.88 + (age / 0.12) * 0.12 : 1;
-  ctx.translate(W / 2, H * pos);
-  ctx.scale(scale * pop, scale * pop);
-  if (preset === 'boxed') {
-    const padX = fs * 0.45, h = fs * 1.35;
-    ctx.fillStyle = 'rgba(0,0,0,0.72)';
-    roundRect(ctx, -total / 2 - padX, -h / 2, total + padX * 2, h, fs * 0.28);
-    ctx.fill();
-  }
-  let x = -total / 2;
-  parts.forEach((p, i) => {
-    const w = page.words[i];
-    const active = t >= w.s && t < (page.words[i + 1]?.s ?? page.end);
-    ctx.save();
-    ctx.translate(x + widths[i] / 2, 0);
-    if (active && preset !== 'clean') ctx.scale(1.08, 1.08);
-    if (preset === 'pop' && active) {
-      ctx.fillStyle = hl;
-      roundRect(ctx, -widths[i] / 2 - fs * 0.16, -fs * 0.62, widths[i] + fs * 0.32, fs * 1.24, fs * 0.2);
-      ctx.fill();
-    }
-    ctx.lineJoin = 'round';
-    if (preset === 'bold' || preset === 'pop') {
-      ctx.lineWidth = fs * 0.2; ctx.strokeStyle = '#000';
-      ctx.strokeText(p, 0, 0);
-      ctx.fillStyle = preset === 'pop' ? (active ? '#000' : '#fff') : active ? hl : '#fff';
-    } else if (preset === 'boxed') {
-      ctx.fillStyle = active ? hl : '#fff';
-    } else if (preset === 'clean') {
-      ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = fs * 0.35; ctx.shadowOffsetY = fs * 0.05;
-      ctx.fillStyle = active ? hl : '#fff';
-    } else if (preset === 'neon') {
-      ctx.shadowColor = active ? hl : '#ff4fd8'; ctx.shadowBlur = fs * 0.5;
-      ctx.lineWidth = fs * 0.08; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(p, 0, 0);
-      ctx.fillStyle = active ? '#fff' : '#ffd1f4';
-    }
-    ctx.fillText(p, 0, 0);
-    ctx.restore();
-    x += widths[i] + space;
-  });
-  ctx.restore();
-}
+export { captionPages, CAPTION_STYLES };
 
 // ---------- looks: filters and transitions ----------
 
@@ -529,9 +435,12 @@ export function drawFrame(ctx, W, H, t, project, video, cache = {}) {
     seg = drawPicture(ctx, W, H, t, project, video, cache);
   }
   if (settings.captions) {
-    if (!cache.pages || cache.pagesFor !== project.words) { cache.pages = captionPages(project.words); cache.pagesFor = project.words; }
-    drawCaptions(ctx, W, H, cache.pages, t, settings.captionStyle || { upper: true });
-  }
+    const cs = resolveCaptionStyle(settings.captionStyle);
+    if (!cache.pages || cache.pagesFor !== project.words || cache.pagesN !== cs.words) {
+      cache.pages = captionPages(project.words, cs.words); cache.pagesFor = project.words; cache.pagesN = cs.words;
+    }
+    cache.capBox = drawCaptions(ctx, W, H, cache.pages, t, cs);
+  } else cache.capBox = null;
   if (settings.watermark) {
     ctx.save();
     const fs = Math.min(W, H) * 0.028;
@@ -619,6 +528,7 @@ export async function exportVideo(project, media, { aspect = 'vertical', onProgr
   rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
 
   media.pause();
+  if (project.settings.captions) await loadCaptionFonts([resolveCaptionStyle(project.settings.captionStyle).font]);
   await Promise.all(project.segments.filter((sg) => sg.image?.key).map((sg) => preloadBitmap(sg.image.key)));
   if (project.settings.sceneMotion === 'animated' && canAnimate(project.settings)) await Promise.all(project.segments.filter((sg) => animReady(sg) && !sg.still).map((sg) => preloadAnim(sg.anim.key)));
   await media.seek(0);
