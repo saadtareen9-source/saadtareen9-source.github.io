@@ -117,9 +117,7 @@ async function newContext(opts, { mockListening = false, failListening = false, 
     await ctx.route('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm', (r) => r.fulfill({ contentType: 'application/javascript', headers: cors, body: `
       export const env = {};
       export async function pipeline() {
-        window.__speechModelLoads = (window.__speechModelLoads || 0) + 1;
         return async () => {
-          window.__speechCalls = (window.__speechCalls || 0) + 1;
           await new Promise(resolve => setTimeout(resolve, 650));
           ${failListening ? "throw new Error('Test speech model unavailable');" : `return { chunks: ${JSON.stringify(chunks)} };`}
         };

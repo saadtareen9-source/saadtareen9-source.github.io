@@ -92,34 +92,53 @@ export const hasSound = (samples) => {
   return peak > 0.01;
 };
 
-export async function transcribeInBrowser(file, { quality = 'fast', language = null, onStatus = () => {}, samples = null } = {}) {
+let worker = null;
+function asrWorker() {
+  if (!worker) {
+    const url = new URL(`./asr-worker.js${new URL(import.meta.url).search}`, import.meta.url);
+    worker = new Worker(url, { type: 'module' });
+  }
+  return worker;
+}
+function resetWorker() { worker?.terminate(); worker = null; }
+
+/**
+ * Whisper on this device, in a background worker. Gives up (instead of
+ * hanging) if the model stalls while loading or takes far too long.
+ */
+export async function transcribeInBrowser(file, { quality = 'fast', language = null, onStatus = () => {}, samples = null, signal } = {}) {
   onStatus('Reading the audio…');
   const audio = samples || await decodeAudio(file, 16000, { onStatus: (k) => k === 'capture' && onStatus('Listening along with your video…') });
   if (!hasSound(audio)) throw Object.assign(new Error('This video has no sound we can hear.'), { code: 'silent' });
   onStatus('Loading speech model…');
-  const { pipeline, env } = await import(`${TRANSFORMERS}/+esm`);
-  env.allowLocalModels = false;
-  const progress = {};
-  const progress_callback = (p) => {
-    if (p.status === 'progress' && p.file) {
-      progress[p.file] = [p.loaded || 0, p.total || 0];
-      const [l, t] = Object.values(progress).reduce((acc, [a, b]) => [acc[0] + a, acc[1] + b], [0, 0]);
-      if (t) onStatus(`Downloading speech model… ${Math.round((l / t) * 100)}% (first time only)`);
-    }
-  };
-  let asr;
-  const opts = { progress_callback, dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' } };
-  try {
-    if (!navigator.gpu) throw new Error('no webgpu');
-    asr = await pipeline('automatic-speech-recognition', MODELS[quality], { ...opts, device: 'webgpu' });
-  } catch {
-    asr = await pipeline('automatic-speech-recognition', MODELS[quality], { ...opts, device: 'wasm', dtype: 'q8' });
-  }
-  onStatus('Transcribing… (about real-time on most laptops)');
-  const out = await asr(audio, {
-    return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5, task: 'transcribe', ...(language ? { language } : {}),
+  const seconds = audio.length / 16000;
+  const w = asrWorker();
+  const chunks = await new Promise((resolve, reject) => {
+    let timer = 0;
+    const fail = (msg, code = 'device') => { cleanup(); resetWorker(); reject(Object.assign(new Error(msg), { code })); };
+    // no word from the model for this long means it has stalled
+    const arm = (ms, msg) => { clearTimeout(timer); timer = setTimeout(() => fail(msg, 'slow'), ms); };
+    const onAbort = () => fail('Stopped.', 'stopped');
+    const cleanup = () => { clearTimeout(timer); w.removeEventListener('message', onMsg); w.removeEventListener('error', onErr); signal?.removeEventListener('abort', onAbort); };
+    const onErr = (e) => { e.preventDefault?.(); fail(e.message || 'The voice reader could not start on this device.'); };
+    const onMsg = ({ data }) => {
+      if (data.type === 'progress') { onStatus(`Downloading speech model… ${data.percent}% (first time only)`); arm(90000, 'The speech model download stalled.'); }
+      if (data.type === 'ready') {
+        if (data.fresh) window.__speechModelLoads = (window.__speechModelLoads || 0) + 1;
+        onStatus('Transcribing… (about real-time on most laptops)');
+        arm(Math.max(120000, seconds * 4000), 'The voice reader is taking too long on this device.');
+      }
+      if (data.type === 'done') { cleanup(); window.__speechCalls = (window.__speechCalls || 0) + 1; resolve(data.chunks); }
+      if (data.type === 'error') fail(data.message);
+    };
+    w.addEventListener('message', onMsg);
+    w.addEventListener('error', onErr);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    arm(90000, 'The voice reader did not start.');
+    const copy = audio.slice();
+    w.postMessage({ type: 'run', lib: `${TRANSFORMERS}/+esm`, model: MODELS[quality], samples: copy, language }, [copy.buffer]);
   });
-  return tidyWords((out.chunks || []).map((c) => ({ w: c.text.trim(), s: c.timestamp[0], e: c.timestamp[1] ?? c.timestamp[0] + 0.3 })));
+  return tidyWords(chunks.map((c) => ({ w: c.text.trim(), s: c.timestamp[0], e: c.timestamp[1] ?? c.timestamp[0] + 0.3 })));
 }
 
 function tidyWords(list) {
