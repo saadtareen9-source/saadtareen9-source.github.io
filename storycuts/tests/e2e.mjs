@@ -46,13 +46,6 @@ const check = (ok, what, detail = '') => {
   if (!ok) failures++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const shotStripFits = () => {
-  const card = document.querySelector('#story-showreel');
-  const style = getComputedStyle(card);
-  const strip = document.querySelector('.showreel-timeline').getBoundingClientRect();
-  const usableWidth = card.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-  return Math.abs(strip.width - usableWidth) < 1 && document.querySelector('#example-scrub').getBoundingClientRect().height >= 40;
-};
 const sdk = fs.readFileSync(path.join(HERE, 'fixtures/anthropic-sdk.mjs'));
 const storyText = fs.readFileSync(path.join(HERE, 'fixtures/story.txt'), 'utf8').trim();
 const pngs = ['red', 'blue', 'green', 'orange'].map((c) => fs.readFileSync(path.join(HERE, `fixtures/mock_${c}.png`)).toString('base64'));
@@ -283,13 +276,22 @@ try {
     check(await s.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: the sample editor has no sideways page scrolling`);
     await s.click('#btn-sample-start'); await s.click('#btn-demo');
     check(await s.evaluate(() => !window.__storycuts.state.sampleEditor && window.__storycuts.state.project.duration === 44 && !window.__storycuts.state.project.approved), `${tag}: starting the guided demo keeps sample edits separate`);
-    for (const tool of ['captions', 'shot', 'sound']) {
+    check(await s.evaluate(() => window.__storycuts.state.step === 2 && !window.__storycuts.state.sampleEditor), `${tag}: Start my story inside the sample goes step by step, not to the editor`);
+    for (const tool of ['captions', 'timeline', 'sound']) {
       await s.goto(`${URL0}#features`);
       await s.locator('#features').scrollIntoViewIfNeeded();
       if (tool === 'captions') { await sleep(400); await shot(s, phone ? 'p16-editor-features' : '16-editor-features'); }
-      await s.click(`.feature-card[data-editor-tool=${tool}]`);
-      await s.waitForFunction((tab) => window.__storycuts.state.step === 5 && window.__storycuts.state.tab === tab && !window.__storycuts.state.sampleLoading, tool);
-      check(await s.isVisible(`#pane-${tool}`), `${tag}: the homepage ${tool} feature opens its working editor tool`);
+      await s.click(`.feature-card[data-peek-open=${tool}]`); await sleep(500);
+      check(await s.locator('#peek').evaluate((d) => d.open) && await s.isVisible(`[data-peek-pane=${tool}]`) && await s.evaluate(() => !window.__storycuts.state.sampleEditor && window.__storycuts.state.step !== 5), `${tag}: the homepage ${tool} card opens a separate sneak peek, not the editor`);
+      if (tool === 'captions') {
+        await s.click('[data-peek-style=neon]');
+        check(await s.getAttribute('[data-peek-style=neon]', 'aria-pressed') === 'true', `${tag}: sneak peek caption styles can be clicked through`);
+      }
+      if (tool === 'timeline') { await s.click('[data-peek-shot="3"]'); await sleep(200); check(await s.locator('[data-peek-shot="3"]').evaluate((b) => b.classList.contains('on')), `${tag}: sneak peek shots can be clicked through`); }
+      if (tool === 'sound') { await s.click('[data-peek-sound=boing]'); check(await s.locator('[data-peek-sound=boing]').evaluate((b) => b.classList.contains('on')), `${tag}: sneak peek sounds can be played`); }
+      await sleep(300); await shot(s, `${phone ? 'p' : ''}17-peek-${tool}`);
+      check(await s.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: the ${tool} sneak peek fits without sideways scrolling`);
+      await s.keyboard.press('Escape');
     }
     check(sampleCtx.providerRequests.length === 0, `${tag}: the new feature previews stay free of paid AI requests`);
     await sampleCtx.close();
@@ -315,38 +317,18 @@ try {
   watch(p, 'desktop');
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
-  check(await p.evaluate(shotStripFits), 'the desktop shot strip fills its preview card and is easy to scrub');
+  check(await p.evaluate(() => !document.querySelector('#example-scrub, [data-demo-view], [data-demo-caption], .showreel-timeline')), 'the landing example is a clean video, without a slider or extra controls');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
   check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
-  await p.click('#btn-example-play');
   await p.click('[data-showcase=rain]');
   check(await p.getAttribute('#story-showreel', 'data-demo-story') === 'rain' && (await p.getAttribute('#example-original', 'poster')).endsWith('man.jpg') && (await p.getAttribute('#showreel-art', 'src')).endsWith('rain.jpg'), 'choosing another story changes both the creator footage and illustration');
-  check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith(img.dataset.showreelFrame === 'face' ? 'man.jpg' : 'rain.jpg'))), 'the landing shot strip shows the footage and artwork for the selected story');
-  await p.click('button[data-demo-view=original]');
-  check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && await p.getAttribute('button[data-demo-view=original]', 'aria-pressed') === 'true', 'Original shows camera footage and marks the comparison choice');
-  check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith('man.jpg'))), 'the Original comparison also shows original footage in the shot strip');
-  await p.click('button[data-demo-view=result]');
-  await p.locator('#example-scrub').evaluate((el) => { el.value = '3.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'StoryCuts shows the illustrated comparison');
-  await p.locator('#example-scrub').evaluate((el) => { el.value = '6.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  check(await p.getAttribute('#btn-example-play', 'aria-label') === 'Play example' && !(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && (await p.locator('#showreel-time').textContent()).startsWith('0:06'), 'scrubbing pauses the example at the camera shot and updates its time');
-  await p.locator('#example-scrub').evaluate((el) => { el.value = '2.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'scrubbing back reaches the illustrated shot');
-  check((await p.locator('#showreel-caption').textContent()).includes('CORGI') && await p.getAttribute('#story-showreel', 'data-shot') === '1', 'the illustrated shot and caption refer to the same story beat');
-  await p.click('[data-demo-caption=boxed]');
-  check(await p.getAttribute('[data-demo-caption=boxed]', 'aria-pressed') === 'true' && await p.locator('#showreel-captions').evaluate((cv) => cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data.some((v, i) => i % 4 === 3 && v > 0)), 'the example caption style changes a visible canvas rendered with the export engine');
-  await p.locator('#example-scrub').evaluate((el) => { el.value = '.6'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && (await p.locator('#showreel-caption').textContent()).includes('umbrella'), 'the example opens on the matching camera hook');
-  await p.click('#btn-example-play'); await sleep(650);
-  check(await p.evaluate(() => Math.abs(+document.querySelector('#example-scrub').value - document.querySelector('#example-original').currentTime) < .15), 'example captions and playhead follow the footage clock during playback');
   await p.click('#btn-example-play');
+  check(await p.getAttribute('#btn-example-play', 'aria-label') === 'Play example', 'the example can be paused');
+  await p.click('#btn-example-play');
+  check(await p.getAttribute('#btn-example-play', 'aria-label') === 'Pause example', 'the example can be played again');
   await p.click('[data-showcase=breakfast]'); await sleep(250); await shot(p, '01j-story-example');
   check((await p.getAttribute('#example-original', 'poster')).endsWith('creator.jpg') && await p.getAttribute('[data-showcase=breakfast]', 'aria-pressed') === 'true', 'the third example uses another licensed camera-facing creator');
   await p.click('[data-showcase=airport]');
-  await p.locator('#example-original').evaluate((v) => v.readyState >= 2 ? Promise.resolve() : new Promise((resolve) => v.addEventListener('loadeddata', resolve, { once: true })));
-  await p.locator('#example-scrub').evaluate((el) => { el.value = '7.8'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  await sleep(150);
-  check(await p.evaluate(() => { const v = document.querySelector('#example-original'); return Math.abs(v.currentTime / (Math.min(8, v.duration) / 8) - 7.8) < .12; }) && (await p.locator('#showreel-caption').textContent()).includes('Definitely'), 'a shorter source clip still reaches the correctly timed final caption');
   await p.click('#btn-example-play');
   for (const [selector, name] of [['#styles', '01c-landing-styles'], ['#how', '01d-landing-how'], ['.story-showcase', '01e-landing-showcase'], ['#pricing', '01f-landing-pricing'], ['#faq', '01g-landing-faq'], ['.cta-band', '01h-landing-footer']]) {
     await p.locator(selector).scrollIntoViewIfNeeded(); await sleep(450); await shot(p, name);
@@ -387,7 +369,9 @@ try {
   await p.keyboard.press('Home');
   check(await p.getAttribute('#style-track [data-style=stick]', 'aria-selected') === 'true', 'gallery keyboard navigation returns to the first style');
   await p.click('.studio-home'); await p.locator('#nav-plan').click(); await sleep(350);
-  check(await step() === '2', 'returning to the studio preserves the current story and step');
+  check(await p.locator('#resume-dialog').evaluate((d) => d.open) && /Step 2 of 5/.test(await p.locator('#resume-detail').textContent()), 'opening the studio with a story in progress asks before continuing');
+  await p.click('#btn-resume'); await sleep(300);
+  check(await step() === '2', 'continuing returns to the same step, never skipping ahead');
   await shot(p, '02-style');
   check(await p.locator('#btn-style-next').evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight), 'style Continue stays visible while browsing the desktop gallery');
   await p.click('#btn-style-next'); await sleep(800);
@@ -623,14 +607,11 @@ try {
   const m = await mctx.newPage();
   watch(m, 'phone');
   await m.goto(URL0); await sleep(700); await shot(m, 'p01-landing');
-  check(await m.evaluate(shotStripFits), 'the phone shot strip fills its preview card and is easy to scrub');
   const noSideScroll = async (where) => check(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, `no sideways scroll on phone: ${where}`);
   await noSideScroll('landing');
   await m.click('[data-showcase=rain]');
-  await m.click('button[data-demo-view=original]');
-  await m.click('button[data-demo-view=result]');
-  await m.locator('#example-scrub').evaluate((el) => { el.value = '3.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  check(await m.getAttribute('[data-showcase=rain]', 'aria-pressed') === 'true' && await m.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'phone story and comparison controls show the selected illustrated example');
+  await sleep(2500);
+  check(await m.getAttribute('[data-showcase=rain]', 'aria-pressed') === 'true' && await m.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'phone story choice shows the selected illustrated example');
   await shot(m, 'p01i-story-example'); await noSideScroll('interactive example');
   for (const [selector, name] of [['#styles', 'p01b-landing-styles'], ['#how', 'p01c-landing-how'], ['.story-showcase', 'p01d-landing-showcase'], ['#pricing', 'p01e-landing-pricing'], ['#faq', 'p01f-landing-faq'], ['.cta-band', 'p01g-landing-footer']]) {
     await m.locator(selector).scrollIntoViewIfNeeded(); await sleep(350); await shot(m, name); await noSideScroll(name);

@@ -1,4 +1,4 @@
-import { drawCaptions, presetValues, loadCaptionFonts } from './captions.js';
+import { drawCaptions, presetValues, loadCaptionFonts, CAPTION_PRESETS } from './captions.js';
 // Presentation only. Examples use local licensed media and original artwork.
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -76,7 +76,7 @@ function initShowreel() {
   const screen = reel.querySelector('.phone-screen');
   const master = $('#example-original'), output = $('#hero-talk');
   const videos = [master, output];
-  const scrub = $('#example-scrub'), button = $('#btn-example-play');
+  const button = $('#btn-example-play');
   const canvas = $('#showreel-captions'), ctx = canvas.getContext('2d');
   let playing = !motion.matches && !navigator.connection?.saveData;
   let visible = false, time = 2.15, frame = 0, current = 'airport';
@@ -98,8 +98,6 @@ function initShowreel() {
     if (lastShot !== index) {
       lastShot = index;
       $('#showreel-caption').textContent = STORIES[current].lines[index];
-      $('#showreel-chapter').textContent = shot.label;
-      $$('.hero-mini-tl > span').forEach((el, i) => el.classList.toggle('active-shot', index === i));
     }
     // The canvas uses exactly the same caption renderer as the editor and export.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -108,10 +106,6 @@ function initShowreel() {
       const progress = (time - shot.start) / (shot.end - shot.start);
       $('#showreel-art').style.transform = `scale(${1.025 + progress * .035})`;
     } else $('#showreel-art').style.transform = 'none';
-    scrub.value = time.toFixed(2);
-    $('#example-playhead').style.left = `${time / 8 * 100}%`;
-    $('#showreel-time').textContent = `0:0${Math.floor(time)} / 0:08`;
-    scrub.setAttribute('aria-valuetext', `${time.toFixed(1)} of 8 seconds, ${shot.label}`);
     const label = playing ? 'Pause example' : 'Play example';
     if (button.getAttribute('aria-label') !== label) {
       button.setAttribute('aria-label', label);
@@ -171,29 +165,8 @@ function initShowreel() {
   reel.addEventListener('click', (e) => {
     const story = e.target.closest('[data-showcase]');
     if (story) choose(story.dataset.showcase);
-    const style = e.target.closest('[data-demo-caption]');
-    if (style) {
-      preset = style.dataset.demoCaption;
-      $$('#story-showreel [data-demo-caption]').forEach((b) => {
-        const on = b === style; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
-      });
-      render();
-    }
-    const view = e.target.closest('button[data-demo-view]');
-    if (view) {
-      reel.dataset.demoView = view.dataset.demoView;
-      syncFrames();
-      $$('#story-showreel button[data-demo-view]').forEach((b) => {
-        const on = b === view; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
-      });
-      render();
-    }
   });
   button.addEventListener('click', () => { playing = !playing; if (time >= 7.99) { time = 0; videos.forEach((v) => seekVideo(v, 0)); } updatePlayback(); });
-  scrub.addEventListener('input', () => {
-    time = Math.min(7.999, +scrub.value); playing = false;
-    videos.forEach((v) => { if (v.preload !== 'auto') { v.preload = 'auto'; if (!v.readyState) v.load(); } seekVideo(v, time); }); updatePlayback();
-  });
   videos.forEach((v) => {
     v.addEventListener('loadedmetadata', () => { v.playbackRate = mediaScale(v); });
     v.addEventListener('loadeddata', () => { if (!initialized.has(v)) { initialized.add(v); seekVideo(v, time); } render(); });
@@ -276,4 +249,137 @@ function initPortraitReview() {
   $('#btn-cast-prev').addEventListener('click', () => move(-1));
   $('#btn-cast-next').addEventListener('click', () => move(1));
 }
-export function initExperience() { initShowreel(); initSettingsPreview(); initChoiceAccessibility(); initPortraitReview(); }
+
+// A small, separate sneak peek of the editor tools: no project, no editor, no AI.
+const PEEK_SHOTS = [
+  { id: 'hook', label: 'Hook', note: 'You, on camera', src: 'assets/hero/talk.jpg', face: true, line: 'So I grabbed my suitcase', dur: 2.2 },
+  { id: 'reveal', label: 'Reveal', note: 'The drawing takes over', src: 'assets/examples/airport.jpg', line: 'and there was a CAT inside', dur: 2.6 },
+  { id: 'reaction', label: 'Reaction', note: 'Back to your face', src: 'assets/hero/talk.jpg', face: true, line: 'I just stared at it', dur: 1.8 },
+  { id: 'payoff', label: 'Payoff', note: 'The punchline, drawn', src: 'assets/examples/airport-doodle.jpg', line: 'Definitely not my suitcase', dur: 2.4 },
+];
+const PEEK_STYLES = ['bold', 'viral', 'pop', 'karaoke', 'oneword', 'comic', 'bubbly', 'boxed', 'pills', 'neon', 'marker', 'cinema'];
+const PEEK_SOUNDS = [['record_scratch', 'Record scratch', 'disc'], ['boing', 'Boing', 'spring'], ['dun_dun', 'Dun dun', 'drama'], ['tada', 'Ta-da', 'star'], ['whoosh', 'Whoosh', 'wind'], ['pop', 'Pop', 'pop'], ['sad_trombone', 'Sad trombone', 'down'], ['ding', 'Ding', 'bell']];
+function initPeek() {
+  const dialog = $('#peek');
+  if (!dialog) return;
+  const canvas = $('#peek-canvas'), ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const images = new Map();
+  const img = (src) => {
+    if (!images.has(src)) { const im = new Image(); im.src = src; im.onload = () => draw(); images.set(src, im); }
+    return images.get(src);
+  };
+  let tab = 'captions', style = 'bold', shot = 0, t0 = 0, frame = 0, opener = null, ac = null, sound = null;
+  const total = PEEK_SHOTS.reduce((a, x) => a + x.dur, 0);
+  const pagesFor = (line, dur) => {
+    const words = line.split(' '), step = (dur - 0.3) / words.length;
+    return [{ start: 0, end: dur, words: words.map((w, i) => ({ w, s: i * step, e: (i + 1) * step })) }];
+  };
+  // Pictures are fitted inside the frame (never cut off): a soft blurred copy fills the rest.
+  function picture(src, k, face) {
+    const im = img(src);
+    ctx.fillStyle = '#16131c'; ctx.fillRect(0, 0, W, H);
+    if (!im.complete || !im.naturalWidth) return;
+    const iw = im.naturalWidth, ih = im.naturalHeight;
+    const cover = Math.max(W / iw, H / ih), zoom = motion.matches ? 1 : 1 + 0.04 * k;
+    if (face) {
+      // camera footage fills the frame, framed on the face
+      const sc = cover * zoom;
+      ctx.drawImage(im, (W - iw * sc) / 2, Math.min(0, (H - ih * sc) * 0.3), iw * sc, ih * sc);
+      return;
+    }
+    ctx.save(); ctx.filter = 'blur(18px) brightness(.7)';
+    ctx.drawImage(im, (W - iw * cover) / 2, (H - ih * cover) / 2, iw * cover, ih * cover);
+    ctx.restore();
+    const fit = Math.min(W / iw, H / ih) * zoom;
+    ctx.drawImage(im, (W - iw * fit) / 2, (H - ih * fit) / 2, iw * fit, ih * fit);
+  }
+  function draw(now = performance.now()) {
+    const elapsed = motion.matches ? 1.2 : ((now - t0) / 1000);
+    let local, cur;
+    if (tab === 'timeline') {
+      if (!motion.matches) {
+        let e = elapsed % total; shot = 0;
+        while (e > PEEK_SHOTS[shot].dur) { e -= PEEK_SHOTS[shot].dur; shot++; }
+        local = e;
+      } else local = 1.2;
+      cur = PEEK_SHOTS[shot];
+      $$('#peek-shots button').forEach((b, i) => { b.classList.toggle('on', i === shot); b.style.setProperty('--p', i === shot ? String(local / cur.dur) : i < shot ? '1' : '0'); });
+    } else {
+      cur = tab === 'sound' ? PEEK_SHOTS[3] : PEEK_SHOTS[1];
+      local = motion.matches ? 1.4 : elapsed % (cur.dur + 0.8);
+    }
+    picture(cur.src, local / cur.dur, cur.face);
+    const cs = { ...presetValues(tab === 'captions' ? style : 'bold'), x: 0.5, y: 0.8 };
+    if (motion.matches) cs.anim = 'none';
+    drawCaptions(ctx, W, H, pagesFor(cur.line, cur.dur + 0.8), Math.min(local, cur.dur + 0.7), cs);
+    if (sound && now - sound.at < 1400) {
+      const k = (now - sound.at) / 1400, a = Math.min(1, (1 - k) * 3);
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.fillStyle = '#ffffffee';
+      const label = sound.name, fs = 30;
+      ctx.font = `800 ${fs}px Inter, sans-serif`;
+      const w = ctx.measureText(label).width + 70;
+      const y = H * 0.12 - (1 - Math.min(1, k * 4)) * 20;
+      ctx.beginPath(); ctx.roundRect((W - w) / 2, y, w, 60, 30); ctx.fill();
+      ctx.fillStyle = '#5e43be'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText(`♪  ${label}`, W / 2, y + 31);
+      ctx.restore();
+    }
+    if (dialog.open && !motion.matches) frame = requestAnimationFrame(draw);
+  }
+  function restart() { cancelAnimationFrame(frame); t0 = performance.now(); draw(); }
+  function show(name) {
+    tab = name;
+    $$('#peek-tabs [data-peek]').forEach((b) => { const on = b.dataset.peek === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+    $$('#peek [data-peek-pane]').forEach((p) => { p.hidden = p.dataset.peekPane !== name; });
+    $('#peek-canvas').setAttribute('aria-label', name === 'timeline' ? 'Example edit playing shot by shot' : name === 'sound' ? 'Example scene with a sound effect' : 'Example scene with captions');
+    restart();
+  }
+  $('#peek-cap-styles').innerHTML = PEEK_STYLES.map((id) => {
+    const p = CAPTION_PRESETS.find((x) => x.id === id);
+    return `<button data-peek-style="${id}" aria-pressed="${id === style}" class="${id === style ? 'on' : ''}">${esc(p?.name || id)}</button>`;
+  }).join('');
+  $('#peek-shots').innerHTML = PEEK_SHOTS.map((x, i) => `<button data-peek-shot="${i}" style="flex:${x.dur}"><img src="${x.src}" alt=""><span><b>${x.label}</b><small>${x.note}</small></span><i></i></button>`).join('');
+  $('#peek-sounds').innerHTML = PEEK_SOUNDS.map(([id, name, ic]) => `<button data-peek-sound="${id}"><svg><use href="#i-sfx-${ic}"/></svg>${esc(name)}</button>`).join('');
+  dialog.addEventListener('click', async (e) => {
+    if (e.target === dialog) { dialog.close(); return; }
+    const t = e.target.closest('[data-peek]');
+    if (t) show(t.dataset.peek);
+    const st = e.target.closest('[data-peek-style]');
+    if (st) {
+      style = st.dataset.peekStyle;
+      $$('#peek-cap-styles button').forEach((b) => { const on = b === st; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      loadCaptionFonts([presetValues(style).font]).then(() => draw());
+      restart();
+    }
+    const sh = e.target.closest('[data-peek-shot]');
+    if (sh) {
+      const i = +sh.dataset.peekShot;
+      t0 = performance.now() - PEEK_SHOTS.slice(0, i).reduce((a, x) => a + x.dur, 0) * 1000 - 50;
+      shot = i; if (motion.matches) draw();
+    }
+    const so = e.target.closest('[data-peek-sound]');
+    if (so) {
+      $$('#peek-sounds button').forEach((b) => b.classList.toggle('on', b === so));
+      sound = { name: so.textContent.trim(), at: performance.now() };
+      try {
+        ac ||= new AudioContext();
+        if (ac.state === 'suspended') await ac.resume();
+        const { sfxBuffer } = await import('./sfx.js');
+        const buf = await sfxBuffer(so.dataset.peekSound);
+        if (buf) { const src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination); src.start(); }
+      } catch { /* sound is a bonus; the preview still shows it */ }
+      if (motion.matches) draw();
+    }
+    if (e.target.closest('#peek-start')) dialog.close();
+  });
+  dialog.addEventListener('close', () => { cancelAnimationFrame(frame); if (opener?.isConnected) opener.focus({ preventScroll: true }); });
+  $$('[data-peek-open]').forEach((b) => b.addEventListener('click', () => {
+    opener = b;
+    dialog.showModal();
+    loadCaptionFonts(['montserrat', 'anton', 'poppins', 'bangers', 'luckiest', 'marker', 'bebas']).then(() => draw());
+    show(b.dataset.peekOpen);
+  }));
+}
+export function initExperience() { initPeek(); initShowreel(); initSettingsPreview(); initChoiceAccessibility(); initPortraitReview(); }
