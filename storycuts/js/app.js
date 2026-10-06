@@ -728,13 +728,15 @@ function loadDemo() {
 async function openSampleEditor() {
   if (state.busy || state.genAbort || state.exporting || state.sampleLoading) { toast('Finish the current task before opening the sample.'); return; }
   state.sampleLoading = true;
-  const buttons = [$('#btn-editor-demo'), $('#pay-demo')];
+  const buttons = [$('#btn-editor-demo'), $('#pay-demo'), ...$$('[data-editor-tool]')];
+  const work = showWork({ kind: 'film', title: 'Opening your sample studio', tips: ['A real timeline, ready to make your own.'], steps: ['Load the artwork', 'Prepare your cast', 'Open the editor'], eta: 4, note: 'No account or subscription needed.' });
   buttons.forEach((b) => { b.disabled = true; });
   try {
     const response = await fetch('assets/examples/airport.jpg');
     if (!response.ok) throw new Error('The sample picture could not load. Please try again.');
     const blob = await response.blob();
     const bitmap = await createImageBitmap(blob);
+    work.update({ step: 1 });
     const prefix = 'storycuts:sample-v43/';
     const crop = async (name, [x, y, w, h], aspect = '1:1') => {
       const canvas = document.createElement('canvas');
@@ -757,8 +759,10 @@ async function openSampleEditor() {
     state.media?.pause(); stopAudio();
     state.file = null; state.sampleEditor = true;
     const duration = 14;
-    const text = 'I thought I had grabbed my suitcase. Then I opened it at the airport. There was a cat inside. Definitely not my suitcase.';
-    const words = wordsFromText(text, duration, [[.15, 13.7]]);
+    const words = [['I grabbed my suitcase.', .15, 2.65], ['Then I opened it at the airport.', 2.8, 6.5], ['There was a cat inside.', 6.65, 10.9], ['Definitely not my suitcase.', 11.15, 13.8]].flatMap(([line, start, end]) => {
+      const ws = line.split(' '), step = (end - start) / ws.length;
+      return ws.map((w, i) => ({ w, s: start + i * step, e: start + (i + 1) * step }));
+    });
     state.media = new DemoMedia(duration, words);
     await state.media.poster.decode().catch(() => {});
     state.stages = {};
@@ -784,6 +788,7 @@ async function openSampleEditor() {
       p.sfx = []; p.approved = true;
     }
     state.aspect = p.settings.aspect || 'vertical';
+    work.update({ step: 2 });
     syncOptionsUI(); save(); refresh(); syncUndoButtons();
     selectCastCharacter('me');
     goStep(5);
@@ -791,7 +796,7 @@ async function openSampleEditor() {
     state.selected = segmentAt(p.segments, 3.5).id;
     renderTimeline(); renderInspector();
   } catch (e) { toast(errText(e), 6000); }
-  finally { state.sampleLoading = false; buttons.forEach((b) => { b.disabled = false; }); }
+  finally { work.stop(); state.sampleLoading = false; buttons.forEach((b) => { b.disabled = false; }); }
 }
 
 // ---------- step 2: style & options ----------
@@ -2080,6 +2085,19 @@ function drawPreview() {
     ctx.strokeRect(Math.max(1, box.x), Math.max(1, box.y), Math.min(c.width - 2, box.w), box.h);
     ctx.restore();
   }
+  if ($('#btn-safe-area').getAttribute('aria-pressed') === 'true') {
+    ctx.save(); ctx.setLineDash([7, 6]); ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.strokeRect(c.width * .08, c.height * .12, c.width * .78, c.height * .7);
+    ctx.font = '500 14px Inter, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
+    ctx.fillText('Keep captions inside', c.width * .08 + 10, c.height * .12 + 23); ctx.restore();
+  }
+  const activeWord = p.words.findIndex((w) => t >= w.s && t < w.e);
+  if (state.activeCaptionWord !== activeWord) {
+    state.activeCaptionWord = activeWord;
+    $$('#transcript [data-i]').forEach((b) => b.classList.toggle('speaking', +b.dataset.i === activeWord));
+  }
   $('#time').textContent = window.innerWidth < 640 ? fmtTC(t) : `${fmtTC(t)} / ${fmtTC(p.duration)}`;
   if (!state.userScrolling) scrollTimelineTo(t);
   $$('#timeline .clip').forEach((b) => b.classList.toggle('live', b.dataset.id === seg.id));
@@ -2707,6 +2725,7 @@ function renderTextPane() {
   if (!st) return;
   if (!capTilesBuilt) buildCaptionTiles();
   const cs = resolveCaptionStyle(st.captionStyle);
+  $('#btn-apply-caption-style').hidden = !store.get('storycuts:caption-favorite');
   $('#opt-captions').checked = !!st.captions;
   $('#opt-upper').checked = !!cs.upper;
   $$('#cap-styles .cap-tile').forEach((b) => { const on = b.dataset.preset === cs.preset; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
@@ -2918,9 +2937,61 @@ function renderTranscript() {
   const segs = p.approved ? p.segments : [];
   el.innerHTML = p.words.map((w, i) => {
     const seg = segs.length ? segmentAt(segs, w.s) : null;
-    return `<span data-i="${i}" class="${seg ? `w-${shotType(seg, p.settings)}` : ''}">${esc(w.w)}</span>`;
+    return `<button type="button" data-i="${i}" aria-pressed="${state.captionWordIndex === i}" class="${seg ? `w-${shotType(seg, p.settings)}` : ''}">${esc(w.w)}</button>`;
   }).join(' ');
+  state.activeCaptionWord = -1;
+  filterCaptionWords(); renderWordEditor();
 }
+function filterCaptionWords() {
+  const query = $('#caption-search').value.trim().toLocaleLowerCase();
+  let count = 0;
+  $$('#transcript [data-i]').forEach((b) => { b.hidden = !b.textContent.toLocaleLowerCase().includes(query); if (!b.hidden) count++; });
+  $('#caption-no-results').hidden = count > 0;
+}
+function renderWordEditor() {
+  const word = state.project?.words[state.captionWordIndex];
+  $('#caption-word-form').hidden = !word;
+  if (!word) return;
+  $('#caption-word').value = word.w;
+  $('#caption-word-start').value = +word.s.toFixed(3);
+  $('#caption-word-end').value = +word.e.toFixed(3);
+  $('#caption-word-status').textContent = '';
+}
+$('#caption-search').addEventListener('input', filterCaptionWords);
+$('#caption-word-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const p = state.project, i = state.captionWordIndex;
+  if (!p?.words[i] || state.exporting) return;
+  const w = $('#caption-word').value.trim(), start = +$('#caption-word-start').value, end = +$('#caption-word-end').value;
+  const lower = p.words[i - 1]?.e ?? 0, upper = p.words[i + 1]?.s ?? p.duration;
+  if (!w || /\s/.test(w)) { $('#caption-word-status').textContent = 'Edit one word at a time.'; return; }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < lower - .002 || end > upper + .002 || end - start < .01) {
+    $('#caption-word-status').textContent = `Keep this word between ${lower.toFixed(2)}s and ${upper.toFixed(2)}s, with the end after the start.`; return;
+  }
+  edit(() => { p.words = p.words.map((word, n) => n === i ? { ...word, w, s: Math.max(lower, start), e: Math.min(upper, end) } : word); });
+  seekTo(start); renderWordEditor();
+  $('#caption-word-status').textContent = 'Updated in your preview and subtitle export.';
+});
+$('#btn-save-caption-style').addEventListener('click', () => {
+  if (!state.project) return;
+  store.set('storycuts:caption-favorite', resolveCaptionStyle(state.project.settings.captionStyle));
+  renderTextPane(); toast('Your caption style is saved on this device.');
+});
+$('#btn-apply-caption-style').addEventListener('click', () => {
+  const saved = store.get('storycuts:caption-favorite');
+  if (!saved || !state.project) return;
+  snapshot(); state.project.settings.captionStyle = { ...saved }; state.project.settings.captions = true;
+  save(); renderTextPane(); drawPreview(); toast('Your saved caption style is applied.');
+});
+$('#btn-safe-area').addEventListener('click', () => {
+  const b = $('#btn-safe-area'); b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); drawPreview();
+});
+$('#btn-shortcuts').addEventListener('click', () => $('#shortcuts-dialog').showModal());
+$('#shortcuts-dialog').addEventListener('click', (e) => {
+  if (e.target !== e.currentTarget) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close();
+});
 
 const currentSeg = () => state.project.segments.find((s) => s.id === state.selected);
 
@@ -3191,6 +3262,7 @@ drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
 $('#btn-demo').addEventListener('click', loadDemo);
 $('#cta-demo').addEventListener('click', () => { loadDemo(); });
 $('#btn-editor-demo').addEventListener('click', openSampleEditor);
+$$('[data-editor-tool]').forEach((b) => b.addEventListener('click', async () => { await openSampleEditor(); if (state.sampleEditor && state.step === 5) showTab(b.dataset.editorTool); }));
 $('#btn-sample-start').addEventListener('click', () => goStep(1));
 $$('a[href="#studio"]').forEach((a) => a.addEventListener('click', (e) => {
   if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
@@ -3211,12 +3283,15 @@ $('#btn-open-editor').addEventListener('click', () => goStep(5));
 $('#btn-show-cast').addEventListener('click', () => { state.showCast = !state.showCast; renderPipeline(); if (state.showCast) scrollTo('#cast'); });
 $('#btn-play').addEventListener('click', togglePlay);
 $('#transcript').addEventListener('click', async (e) => {
-  const i = e.target.dataset.i;
-  if (i == null || !state.media) return;
-  const w = state.project.words[+i];
-  await state.media.seek(w.s);
-  if (state.project.approved) select(segmentAt(state.project.segments, w.s).id, false);
-  drawPreview();
+  const b = e.target.closest('[data-i]');
+  if (!b || !state.media || state.exporting) return;
+  state.captionWordIndex = +b.dataset.i;
+  const w = state.project.words[state.captionWordIndex];
+  if (!w) return;
+  state.media.pause(); stopAudio();
+  await seekTo(w.s + .001);
+  $$('#transcript [data-i]').forEach((word) => word.setAttribute('aria-pressed', String(word === b)));
+  renderWordEditor(); drawPreview();
 });
 $('#btn-export').addEventListener('click', doExport);
 $('#btn-srt').addEventListener('click', () => state.project?.words.length && download(new Blob([toSRT(state.project.words)], { type: 'text/plain' }), `${baseName()}.srt`));

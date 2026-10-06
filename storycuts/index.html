@@ -12,11 +12,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=45; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=46; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=45">
+  <link rel="stylesheet" href="style.css?v=46">
 </head>
 <body>
+  <a class="skip-link" href="#studio">Skip to the studio</a>
   <!-- icon sprite -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-5 5m5-5l5 5M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -81,6 +82,7 @@
     <nav class="nav-links" id="nav-links">
       <a href="#how">How it works</a>
       <a href="#styles">Styles</a>
+      <a href="#features">Editor</a>
       <a href="#studio">Studio</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
@@ -94,6 +96,7 @@
   <div class="menu-sheet" id="menu-sheet" hidden>
     <a href="#how">How it works</a>
     <a href="#styles">Styles</a>
+      <a href="#features">Editor</a>
     <a href="#studio">Studio</a>
     <a href="#studio" data-projects="1">My projects</a>
     <a href="#pricing">Pricing</a>
@@ -103,13 +106,15 @@
 
   <dialog id="character-preview" class="character-preview" aria-labelledby="portrait-preview-title"><div class="portrait-preview-head"><div><span class="kicker">Character review</span><h3 id="portrait-preview-title">Your character</h3></div><button class="icon-btn" id="btn-portrait-close" aria-label="Close character preview"><svg><use href="#i-close"/></svg></button></div><img id="portrait-preview-image" alt=""><p>Happy with the look? Close this preview and approve your cast. You can try a new look from the character card.</p><button class="btn primary" id="btn-portrait-done">Back to my cast<svg><use href="#i-check"/></svg></button></dialog>
 
+  <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title"><div class="shortcuts-head"><div><span class="kicker">A faster way to edit</span><h3 id="shortcuts-title">Keyboard shortcuts</h3></div><form method="dialog"><button class="icon-btn" aria-label="Close shortcuts"><svg><use href="#i-close"/></svg></button></form></div><dl><div><dt>Play / pause</dt><dd><kbd>Space</kbd></dd></div><div><dt>Split at playhead</dt><dd><kbd>S</kbd></dd></div><div><dt>Previous / next cut</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd></div><div><dt>Undo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Z</kbd></dd></div><div><dt>Redo</dt><dd><kbd>⌘ / Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dd></div></dl><p>Shortcuts pause while you type or have a dialog open.</p></dialog>
+
   <main id="top">
     <!-- HERO: a working concept preview, with local licensed footage -->
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow"><i></i> The storytime studio</span>
+        <span class="eyebrow"><i></i> A little story. A whole new world.</span>
         <h1>You tell it.<br>We make it<br><span class="grad">unforgettable.</span></h1>
-        <p class="lead">Record the story. We'll build the world around it. Turn your voice into an illustrated clip with a consistent cast, scenes, captions and an edit you can make your own.</p>
+        <p class="lead">Turn your talking video into a story people can see. Illustrated scenes, a consistent cast, and captions with personality. Your face and voice stay at the heart of it.</p>
         <div class="hero-ctas">
           <button class="btn primary lg" id="btn-editor-demo">Try the sample editor<svg><use href="#i-right"/></svg></button>
           <a class="btn glass ghost lg" href="#studio">Create my story</a>
@@ -122,7 +127,7 @@
         <div class="made-for"><span>Ready for</span><b>TikTok</b><i></i><b>Reels</b><i></i><b>Shorts</b></div>
       </div>
       <div class="hero-visual" id="story-showreel" data-demo-view="result" data-demo-story="airport">
-        <div class="hero-preview-head"><span><i></i> From storytime to screen time</span><span class="preview-live">Concept preview</span></div>
+        <div class="hero-preview-head"><span><i></i> See the story take shape</span><span class="preview-live">Interactive preview</span></div>
         <div class="showreel-tabs" role="group" aria-label="Choose an example story">
           <button class="on" data-showcase="airport" aria-pressed="true">The mix-up</button>
           <button data-showcase="rain" aria-pressed="false">The plot twist</button>
@@ -141,7 +146,7 @@
             <div class="phone-screen">
               <div class="shot shot-face"><video class="talk" id="hero-talk" muted loop playsinline preload="none" poster="assets/hero/talk.jpg" aria-label="Example camera footage in an illustrated edit" disablepictureinpicture><source src="assets/hero/talk.webm" type="video/webm"><source src="assets/hero/talk.mp4" type="video/mp4"></video><span class="shot-tag">YOU ON CAMERA</span></div>
               <div class="shot shot-scene"><img class="scene-img" id="showreel-art" src="assets/examples/airport.jpg" alt="An illustrated suitcase mix-up at an airport" width="840" height="1120" fetchpriority="high"><span class="shot-tag">YOUR STORY, DRAWN</span><img class="showreel-bubble" id="showreel-bubble" src="assets/hero/talk.jpg" alt=""></div>
-              <div class="cap" id="showreel-caption">THIS WASN'T<br><b>MY SUITCASE.</b></div>
+              <span class="preview-shot-label" id="showreel-shot-label">Illustrated scene</span><canvas id="showreel-captions" width="540" height="930" aria-hidden="true"></canvas><span class="sr-only" id="showreel-caption">I grabbed my suitcase.</span>
             </div>
             <figcaption><svg><use href="#i-film"/></svg>They see it happen.</figcaption>
           </figure>
@@ -152,10 +157,11 @@
           <span class="showreel-time" id="showreel-time">0:00 / 0:08</span>
         </div>
         <div class="showreel-timeline">
-          <div class="hero-mini-tl" aria-hidden="true"><span class="reel-scene"><img data-showreel-frame="scene" src="assets/examples/airport.jpg" alt=""><small>The story</small></span><span class="face"><img data-showreel-frame="face" src="assets/hero/talk.jpg" alt=""><small>You</small></span><span class="reel-scene"><img data-showreel-frame="scene" src="assets/examples/airport.jpg" alt=""></span><i id="example-playhead"></i></div>
+          <div class="hero-mini-tl" aria-hidden="true"><span class="face" style="flex:2"><img data-showreel-frame="face" src="assets/hero/talk.jpg" alt=""><small>Hook</small></span><span class="reel-scene" style="flex:3"><img data-showreel-frame="scene" src="assets/examples/airport.jpg" alt=""><small>Reveal</small></span><span class="face" style="flex:1.4"><img data-showreel-frame="face" src="assets/hero/talk.jpg" alt=""><small>You</small></span><span class="reel-scene" style="flex:1.6"><img data-showreel-frame="scene" src="assets/examples/airport.jpg" alt=""><small>Payoff</small></span><i id="example-playhead"></i></div>
           <label class="showreel-scrub"><span class="sr-only">Scrub through the example edit</span><input type="range" id="example-scrub" min="0" max="8" step=".05" value="0" aria-label="Example playback position"></label>
         </div>
-        <p class="hero-preview-foot">Illustrative story examples · licensed footage + original artwork</p>
+        <div class="showreel-caption-tools"><span>Make it yours</span><div role="group" aria-label="Example caption style"><button class="on" data-demo-caption="bold" aria-pressed="true">Bold</button><button data-demo-caption="minimal" aria-pressed="false">Clean</button><button data-demo-caption="boxed" aria-pressed="false">Boxed</button></div></div>
+        <p class="hero-preview-foot"><span id="showreel-chapter">The hook</span><span>Fictional story · muted stock footage</span></p>
       </div>
     </section>
 
@@ -163,6 +169,15 @@
     <section class="strip reveal" id="styles" aria-label="Art styles">
       <div class="section-intro"><div><p class="kicker">Find your visual language</p><h2 class="section-title">One story. So many ways to tell it.</h2></div><a href="#studio" class="btn ghost">Explore the styles<svg><use href="#i-right"/></svg></a></div>
       <div class="marquee" id="marquee"><div class="marquee-row" id="marquee-row"></div></div>
+    </section>
+
+    <section class="editor-features reveal" id="features" aria-labelledby="features-title">
+      <div class="section-intro"><div><p class="kicker">The finishing touches are yours</p><h2 class="section-title" id="features-title">Your story. Your signature.</h2></div><button class="btn ghost" data-editor-tool="captions">Explore the editor<svg><use href="#i-right"/></svg></button></div>
+      <div class="feature-grid">
+        <button class="feature-card feature-caption" data-editor-tool="captions"><div class="feature-art" aria-hidden="true"><span class="caption-demo-line">Make every<br><b>word count.</b></span><span class="feature-small-tag">18 caption styles</span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-text"/></svg></span><h3>Say it in your style.</h3><p>Word highlights, custom fonts and colors. Correct any word and fine-tune its timing.</p><span class="feature-link">Play with captions <svg><use href="#i-right"/></svg></span></div></button>
+        <button class="feature-card" data-editor-tool="shot"><div class="feature-art feature-film" aria-hidden="true"><img src="assets/examples/airport.jpg" alt="" loading="lazy"><img src="assets/hero/talk.jpg" alt="" loading="lazy"><img src="assets/examples/airport-doodle.jpg" alt="" loading="lazy"><span class="feature-playhead"></span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-scissors"/></svg></span><h3>Find the perfect beat.</h3><p>Trim, split, and shape the rhythm of your story. Keep the moments that make it yours.</p><span class="feature-link">Explore your timeline <svg><use href="#i-right"/></svg></span></div></button>
+        <button class="feature-card" data-editor-tool="sound"><div class="feature-art feature-audio" aria-hidden="true"><span class="audio-orbit"><svg><use href="#i-music"/></svg></span><div class="audio-bars"><i style="--bar:12px"></i><i style="--bar:20px"></i><i style="--bar:34px"></i><i style="--bar:26px"></i><i style="--bar:44px"></i><i style="--bar:60px"></i><i style="--bar:46px"></i><i style="--bar:32px"></i><i style="--bar:48px"></i><i style="--bar:62px"></i><i style="--bar:38px"></i><i style="--bar:24px"></i><i style="--bar:46px"></i><i style="--bar:32px"></i><i style="--bar:18px"></i><i style="--bar:10px"></i></div><span class="feature-small-tag">Voice + music + effects</span></div><div class="feature-copy"><span class="feature-icon"><svg><use href="#i-music"/></svg></span><h3>Give it a little feeling.</h3><p>Add your soundtrack, balance the mix, and land the punchline with a sound effect.</p><span class="feature-link">Try the audio tools <svg><use href="#i-right"/></svg></span></div></button>
+      </div>
     </section>
 
     <!-- HOW -->
@@ -431,7 +446,7 @@
           </div>
           <div class="ed-view">
             <div class="preview-workspace">
-            <div class="view-bar"><span><i class="preview-dot"></i>Your video</span><span class="preview-spec" id="preview-spec">9:16 · Vertical</span></div>
+            <div class="view-bar"><span><i class="preview-dot"></i>Your video</span><div class="preview-tools"><button id="btn-safe-area" class="preview-tool" aria-pressed="false" title="Show safe margins for your captions">Safe area</button><button id="btn-shortcuts" class="preview-tool" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button><span class="preview-spec" id="preview-spec">9:16 · Vertical</span></div></div>
             <div class="draw-card" id="draw-card" hidden>
               <div class="dc-row">
                 <span class="dc-ico"><svg><use href="#i-spark"/></svg></span>
@@ -529,9 +544,10 @@
                   <p class="pane-title">Effect</p>
                   <div class="cap-chips" id="cap-effects"></div>
                 </section>
+                <div class="caption-preset-actions"><button class="btn ghost sm" id="btn-save-caption-style">Save my style</button><button class="btn ghost sm" id="btn-apply-caption-style" hidden>Use my style</button></div>
                 <button class="btn ghost sm cap-reset" id="cap-reset"><svg><use href="#i-undo"/></svg>Reset this style</button>
               </div>
-              <details class="transcript-box"><summary>Transcript</summary><div class="transcript" id="transcript"></div></details>
+              <details class="transcript-box" id="caption-transcript"><summary>Edit words &amp; timing</summary><p class="cap-hint">Select a word to correct it. Your voice and video stay in place.</p><label class="transcript-search"><span class="sr-only">Find a word</span><input type="search" id="caption-search" placeholder="Find a word…" autocomplete="off"></label><div class="transcript" id="transcript" aria-label="Caption words"></div><p id="caption-no-results" class="muted small" hidden>No matching words.</p><form id="caption-word-form" class="caption-word-form" hidden><label class="field">Word<input id="caption-word" required maxlength="60" autocomplete="off"></label><div class="caption-word-times"><label class="field">Start (seconds)<input id="caption-word-start" type="number" min="0" step=".001" required></label><label class="field">End (seconds)<input id="caption-word-end" type="number" min=".01" step=".001" required></label></div><p class="status" id="caption-word-status" role="status"></p><button class="btn primary" type="submit">Apply correction<svg><use href="#i-check"/></svg></button></form></details>
             </div>
 
             <div class="ed-panel" id="pane-filters" data-pane="filters" role="tabpanel" aria-labelledby="tab-filters" hidden>
@@ -633,7 +649,8 @@
         <div class="brand small"><span class="logo"><svg viewBox="0 0 24 24"><path d="M9 6.5l9 5.5-9 5.5z" fill="#fff"/></svg></span>StoryCuts</div>
         <p>Tell your story, and we'll bring it to life around you.</p>
       </div>
-      <nav><b>Product</b><a href="#how">How it works</a><a href="#styles">Styles</a><a href="#studio">Studio</a></nav>
+      <nav><b>Product</b><a href="#how">How it works</a><a href="#styles">Styles</a>
+      <a href="#features">Editor</a><a href="#studio">Studio</a></nav>
       <nav><b>Account</b><a href="#pricing">Pricing</a><a href="#" class="manage-link" hidden>Manage subscription</a><a href="#faq">FAQ</a></nav>
     </div>
     <p class="copy">© <span id="year">2026</span> StoryCuts</p>
@@ -710,7 +727,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=45", "./js/app.js": "./js/app.js?v=45", "./js/billing.js": "./js/billing.js?v=45", "./js/captions.js": "./js/captions.js?v=45", "./js/constants.js": "./js/constants.js?v=45", "./js/draw.js": "./js/draw.js?v=45", "./js/experience.js": "./js/experience.js?v=45", "./js/images.js": "./js/images.js?v=45", "./js/loader.js": "./js/loader.js?v=45", "./js/planner.js": "./js/planner.js?v=45", "./js/qc.js": "./js/qc.js?v=45", "./js/render.js": "./js/render.js?v=45", "./js/sfx.js": "./js/sfx.js?v=45", "./js/transcribe.js": "./js/transcribe.js?v=45"}}</script>
-  <script type="module" src="js/app.js?v=45"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=46", "./js/app.js": "./js/app.js?v=46", "./js/billing.js": "./js/billing.js?v=46", "./js/captions.js": "./js/captions.js?v=46", "./js/constants.js": "./js/constants.js?v=46", "./js/draw.js": "./js/draw.js?v=46", "./js/experience.js": "./js/experience.js?v=46", "./js/images.js": "./js/images.js?v=46", "./js/loader.js": "./js/loader.js?v=46", "./js/planner.js": "./js/planner.js?v=46", "./js/qc.js": "./js/qc.js?v=46", "./js/render.js": "./js/render.js?v=46", "./js/sfx.js": "./js/sfx.js?v=46", "./js/transcribe.js": "./js/transcribe.js?v=46"}}</script>
+  <script type="module" src="js/app.js?v=46"></script>
 </body>
 </html>
