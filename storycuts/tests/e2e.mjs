@@ -198,6 +198,32 @@ try {
     const start = await s.evaluate(() => window.__storycuts.state.media.time);
     await s.click('#btn-play'); await sleep(700); await s.click('#btn-play');
     check(await s.evaluate(() => window.__storycuts.state.media.time) > start + .4, `${tag}: sample playback advances the real editor playhead`);
+    {
+      const segCount = () => s.evaluate(() => window.__storycuts.state.project.segments.length);
+      const n0 = await segCount();
+      await s.click('#timeline .clip >> nth=1');
+      check(await s.isVisible('#sel-bar') && !(await s.evaluate(() => document.body.classList.contains('sheet-open'))) && await s.locator('#timeline .clip.sel .trim').count() >= 1, `${tag}: tapping a clip selects it with trim handles and clip tools, without a pop-up`);
+      await shot(s, phone ? 'p15b-clip-tools' : '15c-clip-tools');
+      await s.click('#sel-bar [data-sb=split]');
+      check(await segCount() === n0 + 1, `${tag}: the clip toolbar splits the selected clip`);
+      await s.click('#sel-bar [data-sb=delete]');
+      check(await segCount() === n0, `${tag}: the clip toolbar deletes a clip and its neighbour fills the time`);
+      await s.click('#btn-undo'); await s.click('#btn-undo');
+      check(await segCount() === n0, `${tag}: clip tool edits use undo`);
+      await s.locator('#timeline .cut-plus').first().click();
+      check(await s.evaluate(() => window.__storycuts.state.tab === 'trans' && window.__storycuts.state.transScope === 'one'), `${tag}: the + between shots opens transitions for that cut`);
+      if (phone) await s.click('#sheet-done');
+      await s.evaluate(() => { const st = window.__storycuts.state; st.project.sfx = [{ id: 'fx-test', type: 'pop', t: 1, vol: 1 }]; });
+      await s.click('#sel-bar [data-sb=done]').catch(() => {});
+      await s.evaluate(() => window.__storycuts.state.project && document.querySelector('#zoom-in').click());
+      await s.evaluate(() => { const st = window.__storycuts.state; st.media.seek(0); });
+      await sleep(200);
+      await s.evaluate(() => document.querySelector('#zoom-out').click());
+      await s.locator('.fxclip[data-id="fx-test"]').click();
+      check(await s.isVisible('#sel-bar [data-sb=fx-del]') && !(await s.evaluate(() => document.body.classList.contains('sheet-open'))), `${tag}: tapping a sound effect shows its tools in place`);
+      await s.click('#sel-bar [data-sb=fx-del]');
+      check(await s.evaluate(() => !window.__storycuts.state.project.sfx.length), `${tag}: a sound effect can be deleted in one tap`);
+    }
     await s.click('#ed-tabs [data-tab=captions]');
     await s.locator('label:has(#opt-captions)').click();
     check(await s.evaluate(() => !window.__storycuts.state.project.settings.captions), `${tag}: sample caption controls change the project`);

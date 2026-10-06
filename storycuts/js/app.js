@@ -2278,9 +2278,13 @@ function renderTimeline() {
     return `<div class="clip ${type} ${st} ${moving || ''} ${sel ? 'sel' : ''}" data-id="${s.id}" role="button" tabindex="${sel ? '0' : '-1'}" aria-pressed="${sel}" aria-label="Shot ${i + 1}, ${type === 'face' ? 'your face' : 'illustrated scene'}, ${fmtTime(s.start)} to ${fmtTime(s.end)}" style="left:${TL.pad + s.start * TL.pps}px;width:${Math.max(6, (s.end - s.start) * TL.pps - 3)}px" title="${esc(shotText(s))}">
       <div class="thumbs" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
       <span class="cap">${type === 'face' ? icon('user') : ''}${esc(shotText(s).split(' ').slice(0, 4).join(' '))}</span>
-      ${sel ? `${i > 0 ? '<b class="trim l" data-edge="l"></b>' : ''}${i < p.segments.length - 1 ? '<b class="trim r" data-edge="r"></b>' : ''}` : ''}
+      ${sel && state.clipActive ? `${i > 0 ? '<b class="trim l" data-edge="l" aria-hidden="true"></b>' : ''}${i < p.segments.length - 1 ? '<b class="trim r" data-edge="r" aria-hidden="true"></b>' : ''}<span class="clip-dur">${(s.end - s.start).toFixed(1)}s</span>` : ''}
     </div>`;
+  }).join('') + p.segments.slice(1).map((s, k) => {
+    const tr = s.transIn || p.settings.transition || 'cut';
+    return `<button class="cut-plus ${tr !== 'cut' ? 'has' : ''}" data-cut="${s.id}" style="left:${TL.pad + s.start * TL.pps}px" aria-label="Transition into shot ${k + 2}: ${esc((TRANSITIONS.find((x) => x.id === tr) || TRANSITIONS[0]).name)}">${tr !== 'cut' ? icon('trans') : icon('plus')}</button>`;
   }).join('');
+  el.classList.toggle('active', !!state.clipActive);
   renderFxTrack();
   drawWave();
   renderTranscript();
@@ -2294,6 +2298,7 @@ function renderFxTrack() {
     const info = sfxInfo(c.type) || { name: c.type, icon: 'note', dur: 0.5 };
     return `<div class="fxclip ${c.id === state.selectedFx ? 'sel' : ''}" data-id="${c.id}" style="left:${TL.pad + c.t * TL.pps}px;width:${Math.max(34, info.dur * TL.pps)}px"><svg><use href="#i-sfx-${info.icon}"/></svg><em>${esc(info.name)}</em></div>`;
   }).join('') || `<span class="fx-empty" style="left:${TL.pad + 8}px">No sound effects yet. Add some in the Audio tab.</span>`;
+  renderSelBar();
   const m = p.settings.music;
   $('#tl-music').innerHTML = m
     ? `<div class="musicclip" data-music="1" style="left:${TL.pad}px;width:${Math.max(40, p.duration * TL.pps)}px">${icon('music')}<em>${esc(m.name)}</em></div>`
@@ -2382,7 +2387,7 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
     const trim = e.target.closest('.trim');
     const fx = e.target.closest('.fxclip');
     const clip = e.target.closest('.clip');
-    if (!trim && !fx && !clip) return;
+    if (!trim && !fx && !clip) { if (!e.target.closest('.cut-plus, button')) drag = { x0: e.clientX, blank: true }; return; }
     drag = { x0: e.clientX, moved: false, trim, fx, clip };
     if (trim) {
       const seg = currentSeg();
@@ -2400,6 +2405,7 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
   window.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const dx = e.clientX - drag.x0;
+    if (drag.blank) { if (Math.abs(dx) > 6) drag.moved = true; return; }
     if (!drag.moved && Math.abs(dx) < 4) return;
     if (!drag.moved) { drag.moved = true; if (drag.trim || drag.fx) snapshot(); }
     if (drag.trim) {
@@ -2415,8 +2421,9 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
     if (!drag) return;
     const d = drag;
     drag = null;
+    if (d.blank) { if (!d.moved) deselectClip(); return; }
     if (d.moved) {
-      if (d.trim || d.fx) { save(); if (d.trim) renderInspector(); else renderSoundPane(); }
+      if (d.trim || d.fx) { save(); if (d.trim) { renderInspector(); renderTimeline(); } else { renderSoundPane(); renderSelBar(); } }
       return;
     }
     if (d.fx) selectFx(d.fx.dataset.id);
@@ -2424,14 +2431,137 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
   });
 }());
 
+// ---------- CapCut-style clip tools ----------
+// Tapping a clip or a sound selects it in place: handles to trim, and a tool
+// bar (instead of a pop-up) with Split, Delete, Swap, Transition and Edit.
+function renderSelBar() {
+  const bar = $('#sel-bar');
+  const p = state.project;
+  if (!bar || !p) return;
+  const fx = state.selectedFx && (p.sfx || []).find((x) => x.id === state.selectedFx);
+  const seg = !fx && state.clipActive && p.segments.find((x) => x.id === state.selected);
+  const tool = (id, ic, label, extra = '') => `<button class="sb-tool" data-sb="${id}" ${extra}>${icon(ic)}<span>${label}</span></button>`;
+  if (fx) {
+    const info = sfxInfo(fx.type) || { name: fx.type };
+    const vol = Math.round((fx.vol ?? 1) * 100);
+    bar.innerHTML = `<button class="sb-done" data-sb="done" aria-label="Done">${icon('check')}</button><span class="sb-label"><b>${esc(info.name)}</b><small>Sound at ${fmtTC(fx.t)} · drag to move</small></span><div class="sb-tools">
+      ${tool('fx-play', 'play', 'Play')}
+      ${tool('fx-quieter', 'sfx-down', 'Quieter', vol <= 0 ? 'disabled' : '')}
+      <span class="sb-vol" aria-live="polite">${vol}%</span>
+      ${tool('fx-louder', 'sfx-up', 'Louder', vol >= 150 ? 'disabled' : '')}
+      ${tool('fx-here', 'right', 'To playhead')}
+      ${tool('fx-swap', 'redo', 'Replace')}
+      ${tool('fx-del', 'trash', 'Delete', 'class="sb-tool danger"')}
+    </div>`;
+  } else if (seg) {
+    const i = p.segments.indexOf(seg);
+    const type = shotType(seg, p.settings);
+    bar.innerHTML = `<button class="sb-done" data-sb="done" aria-label="Done">${icon('check')}</button><span class="sb-label"><b>Shot ${i + 1} · ${type === 'face' ? 'Your face' : 'Scene'}</b><small>${(seg.end - seg.start).toFixed(1)}s · drag the white edges to trim</small></span><div class="sb-tools">
+      ${tool('split', 'scissors', 'Split')}
+      ${tool('swap', type === 'face' ? 'film' : 'user', type === 'face' ? 'Use scene' : 'Use my face')}
+      ${i > 0 ? tool('trans', 'trans', 'Transition') : ''}
+      ${tool('edit', 'edit', 'Edit')}
+      ${tool('delete', 'trash', 'Delete', p.segments.length < 2 ? 'disabled' : '')}
+    </div>`;
+  }
+  const show = !!(fx || seg);
+  bar.hidden = !show;
+  document.body.classList.toggle('clip-tools', show);
+}
+
+function deselectClip() {
+  if (!state.clipActive && !state.selectedFx) return;
+  state.clipActive = false; state.selectedFx = null;
+  renderTimeline(); renderSoundPane();
+}
+
+$('#sel-bar').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-sb]');
+  const p = state.project;
+  if (!b || !p) return;
+  const act = b.dataset.sb;
+  if (act === 'done') { deselectClip(); return; }
+  const fx = (p.sfx || []).find((x) => x.id === state.selectedFx);
+  if (fx) {
+    if (act === 'fx-play') { state.sfxPlayer.preview(graph(), fx.type, (fx.vol ?? 1) * (p.settings.sfxVol ?? 0.8)); return; }
+    snapshot();
+    if (act === 'fx-quieter') fx.vol = Math.max(0, +((fx.vol ?? 1) - 0.25).toFixed(2));
+    if (act === 'fx-louder') fx.vol = Math.min(1.5, +((fx.vol ?? 1) + 0.25).toFixed(2));
+    if (act === 'fx-here') fx.t = +(state.media?.time || 0).toFixed(2);
+    if (act === 'fx-del') { p.sfx = p.sfx.filter((x) => x.id !== fx.id); state.selectedFx = null; toast('Sound removed. Undo brings it back.'); }
+    if (act === 'fx-swap') { state.history.pop(); syncUndoButtons(); state.replaceFx = fx.id; showTab('sound'); toast('Pick a new sound to replace it.'); return; }
+    save(); renderFxTrack(); renderSoundPane();
+    return;
+  }
+  const seg = currentSeg();
+  if (!seg) return;
+  const i = p.segments.indexOf(seg);
+  if (act === 'split') {
+    // split at the playhead if it's inside this clip, otherwise in the middle
+    const now = state.media?.time ?? 0;
+    const at = now > seg.start + 0.4 && now < seg.end - 0.4 ? now : (seg.start + seg.end) / 2;
+    if (seg.end - seg.start < 0.9) { toast('This clip is too short to split.'); return; }
+    edit(() => {
+      const copy = JSON.parse(JSON.stringify(seg));
+      copy.id = newId(); copy.start = +at.toFixed(3); copy.reason = 'Split from the previous shot.';
+      seg.end = copy.start;
+      p.segments.splice(i + 1, 0, copy);
+    });
+    renderInspector();
+    toast(`Split at ${fmtTC(at)}.`);
+  } else if (act === 'delete') {
+    if (p.segments.length < 2) return;
+    // the voice keeps playing, so the neighbour fills the gap
+    edit(() => {
+      const into = i > 0 ? p.segments[i - 1] : p.segments[i + 1];
+      if (i > 0) into.end = seg.end; else into.start = seg.start;
+      p.segments.splice(i, 1);
+      state.selected = into.id;
+    });
+    renderInspector();
+    toast('Clip deleted. The shot next to it now fills that time.');
+  } else if (act === 'swap') {
+    edit(() => {
+      seg.type = shotType(seg, p.settings) === 'face' ? 'scene' : 'face';
+      if (seg.type !== 'face' && !seg.scene) seg.scene = defaultSceneFor(seg);
+    });
+    renderInspector();
+    if (seg.type !== 'face' && !seg.image?.key) toast('Now a scene. Tap Edit to draw it.');
+  } else if (act === 'trans') {
+    state.transScope = 'one'; showTab('trans');
+  } else if (act === 'edit') {
+    showTab('shot');
+  }
+});
+
+// the + between two shots: style that one cut
+$('#timeline').addEventListener('click', (e) => {
+  const b = e.target.closest('.cut-plus');
+  if (!b) return;
+  e.stopPropagation();
+  state.selected = b.dataset.cut;
+  state.clipActive = true; state.selectedFx = null;
+  state.transScope = 'one';
+  renderTimeline(); renderInspector();
+  showTab('trans');
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!editorOpen() || !state.clipActive || state.selectedFx || document.body.classList.contains('sheet-open') || $('dialog[open]')) return;
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); $('#sel-bar [data-sb=delete]')?.click(); }
+  if (e.key === 'Escape') deselectClip();
+});
+
 async function select(id, seek) {
   state.selected = id;
   state.selectedFx = null;
+  state.clipActive = true;
   const seg = state.project.segments.find((s) => s.id === id);
   renderTimeline();
   renderInspector();
-  const tab = $('#ed-tabs button.on')?.dataset.tab;
-  showTab(tab === 'trans' ? 'trans' : 'shot');
+  // like CapCut: selecting shows handles and clip tools; it never opens a pop-up
+  if (!isPhone()) { const tab = $('#ed-tabs button.on')?.dataset.tab; showTab(tab === 'trans' ? 'trans' : 'shot', { open: false }); }
   if (seek && seg && state.media) await seekTo(seg.start + Math.min(0.2, (seg.end - seg.start) / 3));
 }
 
@@ -2576,8 +2706,9 @@ $('#timeline').addEventListener('keydown', async (e) => {
 // sound effects pane
 function selectFx(id) {
   state.selectedFx = id;
-  renderFxTrack();
-  showTab('sound');
+  state.clipActive = false;
+  renderTimeline();
+  if (!isPhone()) showTab('sound', { open: false });
   const c = state.project.sfx.find((x) => x.id === id);
   if (c) state.sfxPlayer.preview(graph(), c.type, c.vol ?? 1);
 }
@@ -2637,6 +2768,16 @@ async function drawMiniWave(cv) {
 
 function addSfxAt(type) {
   snapshot();
+  const old = state.replaceFx && (state.project.sfx || []).find((x) => x.id === state.replaceFx);
+  state.replaceFx = null;
+  if (old) {
+    old.type = type; save(); state.selectedFx = old.id;
+    renderFxTrack(); renderSoundPane();
+    state.sfxPlayer.preview(graph(), type, (state.project.settings.sfxVol ?? 0.8));
+    toast(`Replaced with ${sfxInfo(type)?.name || 'the new sound'}.`);
+    if (isPhone()) closeSheet();
+    return;
+  }
   const c = { id: newId(), type, t: +(state.media?.time || 0).toFixed(2), vol: 1 };
   state.project.sfx = [...(state.project.sfx || []), c];
   save();
