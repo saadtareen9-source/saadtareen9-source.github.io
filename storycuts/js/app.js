@@ -2281,6 +2281,9 @@ function renderTimeline() {
       ${sel && state.clipActive ? `${i > 0 ? '<b class="trim l" data-edge="l" aria-hidden="true"></b>' : ''}${i < p.segments.length - 1 ? '<b class="trim r" data-edge="r" aria-hidden="true"></b>' : ''}<span class="clip-dur">${(s.end - s.start).toFixed(1)}s</span>` : ''}
     </div>`;
   }).join('') + p.segments.slice(1).map((s, k) => {
+    // a selected clip's own edges belong to its trim handles
+    const selIdx = state.clipActive ? p.segments.findIndex((x) => x.id === state.selected) : -1;
+    if (selIdx >= 0 && (k + 1 === selIdx || k === selIdx)) return '';
     const tr = s.transIn || p.settings.transition || 'cut';
     return `<button class="cut-plus ${tr !== 'cut' ? 'has' : ''}" data-cut="${s.id}" style="left:${TL.pad + s.start * TL.pps}px" aria-label="Transition into shot ${k + 2}: ${esc((TRANSITIONS.find((x) => x.id === tr) || TRANSITIONS[0]).name)}">${tr !== 'cut' ? icon('trans') : icon('plus')}</button>`;
   }).join('');
