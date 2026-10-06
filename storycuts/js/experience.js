@@ -20,11 +20,41 @@ export function syncStyleShowcase(style) {
   $('#style-hero-title').textContent = style.label;
   $('#style-hero-description').textContent = style.blurb || 'Describe a world of your own, or bring a reference image.';
 }
+let activeCastId = null, activeCastIndex = 0;
+export function selectCastCharacter(id, { focus = false, scroll = false } = {}) {
+  const cards = $$('#chars .char');
+  const index = cards.findIndex((c) => c.dataset.character === id);
+  if (index < 0) return;
+  activeCastId = id; activeCastIndex = index;
+  cards.forEach((card, i) => { card.hidden = i !== index; });
+  $$('#cast-jump [data-cast-jump]').forEach((button) => {
+    const selected = button.dataset.castJump === id;
+    button.classList.toggle('on', selected);
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
+  $('#cast-position').textContent = `Character ${index + 1} of ${cards.length}`;
+  $('#btn-cast-prev').disabled = index === 0;
+  $('#btn-cast-next').disabled = index === cards.length - 1;
+  const card = cards[index];
+  if (scroll) card.scrollIntoView({ behavior: motion.matches ? 'auto' : 'smooth', block: 'nearest' });
+  if (focus) card.querySelector('[data-k=name]')?.focus({ preventScroll: true });
+}
 export function syncCastNavigation(characters) {
   const host = $('#cast-jump');
-  const active = document.activeElement?.closest('[data-cast-jump]')?.dataset.castJump;
-  host.innerHTML = characters.map((c) => `<button data-cast-jump="${esc(c.id)}" class="${c.image?.key && !c.image.stale ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true"></i>${esc(c.name)}</button>`).join('');
-  if (active) host.querySelector(`[data-cast-jump="${CSS.escape(active)}"]`)?.focus({ preventScroll: true });
+  const focused = document.activeElement?.closest('[data-cast-jump]')?.dataset.castJump;
+  if (!characters.some((c) => c.id === activeCastId)) activeCastId = characters[Math.min(activeCastIndex, characters.length - 1)]?.id;
+  host.innerHTML = characters.map((c) => {
+    const drawn = c.image?.key && !c.image.stale;
+    return `<button id="cast-tab-${esc(c.id)}" role="tab" aria-controls="cast-card-${esc(c.id)}" data-cast-jump="${esc(c.id)}" class="${drawn ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true">${drawn ? '<svg><use href="#i-check"/></svg>' : esc([...String(c.name ?? "").trim()][0] || '?')}</i>${esc(c.name)}</button>`;
+  }).join('');
+  $$('#chars .char').forEach((card) => {
+    card.id = `cast-card-${card.dataset.character}`;
+    card.setAttribute('role', 'tabpanel');
+    card.setAttribute('aria-labelledby', `cast-tab-${card.dataset.character}`);
+  });
+  selectCastCharacter(activeCastId);
+  if (focused) host.querySelector(`[data-cast-jump="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }
 function initShowreel() {
   const reel = $('#story-showreel');
@@ -45,6 +75,7 @@ function initShowreel() {
     if (renderedSecond !== second) {
       renderedSecond = second;
       $('#showreel-time').textContent = `0:0${second} / 0:08`;
+      scrub.setAttribute('aria-valuetext', `${second} of 8 seconds`);
     }
     if (renderedPlaying !== playing) {
       renderedPlaying = playing;
@@ -52,6 +83,12 @@ function initShowreel() {
       button.innerHTML = `<svg><use href="#i-${playing ? 'pause' : 'play'}"/></svg>`;
     }
     reel.dataset.playing = String(playing && visible && !document.hidden);
+  }
+  function syncFrames() {
+    const story = STORIES[current];
+    $$('#story-showreel [data-showreel-frame]').forEach((img) => {
+      img.src = img.dataset.showreelFrame === 'face' || reel.dataset.demoView === 'original' ? story.poster : story.art;
+    });
   }
   function tick(now) {
     frame = 0;
@@ -78,6 +115,7 @@ function initShowreel() {
     $('#showreel-art').src = story.art; $('#showreel-art').alt = story.alt;
     $('#showreel-bubble').src = story.poster;
     $('#showreel-caption').innerHTML = story.caption;
+    syncFrames();
     videos.forEach((v) => {
       v.pause(); v.poster = story.poster;
       v.src = `${story.clip}.${v.canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4'}`;
@@ -95,6 +133,7 @@ function initShowreel() {
     const view = e.target.closest('button[data-demo-view]');
     if (view) {
       reel.dataset.demoView = view.dataset.demoView; userSelectedView = true;
+      syncFrames();
       $$('#story-showreel button[data-demo-view]').forEach((b) => {
         const on = b === view; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
       });
@@ -111,6 +150,29 @@ function initShowreel() {
   document.addEventListener('visibilitychange', updatePlayback);
   motion.addEventListener('change', () => { if (motion.matches) { playing = false; updatePlayback(); } });
   render();
+}
+function initSettingsPreview() {
+  const panel = $('#panel-settings');
+  const button = $('#btn-settings-preview');
+  let paused = motion.matches || !!navigator.connection?.saveData;
+  const render = () => {
+    panel.dataset.previewPaused = String(paused || motion.matches);
+    button.disabled = motion.matches;
+    button.setAttribute('aria-label', motion.matches ? 'Example motion is off in your device settings' : paused ? 'Play settings example' : 'Pause settings example');
+    button.innerHTML = `<svg><use href="#i-${paused || motion.matches ? 'play' : 'pause'}"/></svg><span>${motion.matches ? 'Motion paused' : paused ? 'Play example' : 'Pause example'}</span>`;
+  };
+  button.addEventListener('click', () => { paused = !paused; render(); });
+  motion.addEventListener('change', () => { if (motion.matches) paused = true; render(); });
+  render();
+}
+function initChoiceAccessibility() {
+  const groups = $$('#seg-format, #seg-pacing, #seg-motion, #seg-face');
+  const sync = () => groups.forEach((group) => group.querySelectorAll('button').forEach((button) => {
+    const pressed = String(button.classList.contains('on'));
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+  }));
+  groups.forEach((group) => new MutationObserver(sync).observe(group, { subtree: true, attributes: true, attributeFilter: ['class'] }));
+  sync();
 }
 function initPortraitReview() {
   const dialog = $('#character-preview');
@@ -139,12 +201,23 @@ function initPortraitReview() {
   $('#cast-jump').addEventListener('click', (e) => {
     const b = e.target.closest('[data-cast-jump]');
     if (!b) return;
-    const card = document.querySelector(`#chars [data-character="${CSS.escape(b.dataset.castJump)}"]`);
-    if (!card) return;
-    card.scrollIntoView({ behavior: motion.matches ? 'auto' : 'smooth', block: 'center' });
-    card.querySelector('[data-k=name]')?.focus({ preventScroll: true });
-    card.classList.add('focus-flash');
-    clearTimeout(card.flashTimer); card.flashTimer = setTimeout(() => card.classList.remove('focus-flash'), 1100);
+    selectCastCharacter(b.dataset.castJump, { focus: true, scroll: true });
   });
+  $('#cast-jump').addEventListener('keydown', (e) => {
+    const buttons = $$('#cast-jump [data-cast-jump]');
+    const index = buttons.indexOf(e.target);
+    if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    selectCastCharacter(buttons[next].dataset.castJump);
+    buttons[next].focus({ preventScroll: true });
+  });
+  const move = (direction) => {
+    const cards = $$('#chars .char');
+    const card = cards[activeCastIndex + direction];
+    if (card) selectCastCharacter(card.dataset.character, { focus: true, scroll: true });
+  };
+  $('#btn-cast-prev').addEventListener('click', () => move(-1));
+  $('#btn-cast-next').addEventListener('click', () => move(1));
 }
-export function initExperience() { initShowreel(); initPortraitReview(); }
+export function initExperience() { initShowreel(); initSettingsPreview(); initChoiceAccessibility(); initPortraitReview(); }

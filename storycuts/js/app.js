@@ -1,4 +1,4 @@
-import { initExperience, syncStyleShowcase, syncCastNavigation, exampleSceneForStyle } from './experience.js';
+import { initExperience, syncStyleShowcase, syncCastNavigation, selectCastCharacter, exampleSceneForStyle } from './experience.js';
 import {
   drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType, FILTERS, filterCss, TRANSITIONS, CAPTION_STYLES,
 } from './render.js';
@@ -36,6 +36,7 @@ const STORAGE_WARN = 'Your browser wouldn\'t let StoryCuts save the pictures, so
 
 const state = {
   file: null,
+  sampleEditor: false,
   media: null,
   project: null,
   selected: null,
@@ -88,55 +89,62 @@ class VideoMedia {
   onEnded(cb) { this.video.addEventListener('ended', cb); return () => this.video.removeEventListener('ended', cb); }
 }
 
-// Stand-in "creator" for the demo story: an animated presenter that talks
-// in sync with the demo transcript. Behaves like a <video> for the app.
+// Silent concept footage. The stock creator did not record the fictional story.
+// A separate clock keeps the existing preview and export media contract intact.
 class DemoMedia {
   constructor(duration, words) {
     this.duration = duration; this.words = words;
     this.canvas = document.createElement('canvas');
     this.canvas.width = 720; this.canvas.height = 1280;
     this.offset = 0; this.t0 = 0; this.paused = true; this.listeners = new Set();
+    this.poster = new Image(); this.poster.src = 'assets/hero/talk.jpg';
+    this.presenter = document.createElement('video');
+    this.presenter.muted = true; this.presenter.loop = true; this.presenter.playsInline = true;
+    this.presenter.preload = 'auto';
+    this.presenter.src = `assets/hero/talk.${this.presenter.canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4'}`;
   }
   get time() {
     if (this.paused) return this.offset;
     const t = this.offset + (performance.now() - this.t0) / 1000;
-    if (t >= this.duration) { this.offset = this.duration; this.paused = true; this.listeners.forEach((cb) => setTimeout(cb)); return this.duration; }
+    if (t >= this.duration) { this.offset = this.duration; this.paused = true; this.presenter.pause(); this.listeners.forEach((cb) => setTimeout(cb)); return this.duration; }
     return t;
   }
   get el() { this.render(this.time); return this.canvas; }
-  async seek(t) { this.offset = Math.max(0, Math.min(this.duration, t)); this.t0 = performance.now(); }
+  async seek(t) {
+    this.offset = Math.max(0, Math.min(this.duration, t)); this.t0 = performance.now();
+    const video = this.presenter;
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      const target = this.offset % video.duration;
+      if (Math.abs(video.currentTime - target) > .03) {
+        await new Promise((resolve) => {
+          const done = () => { clearTimeout(timer); video.removeEventListener('seeked', done); resolve(); };
+          const timer = setTimeout(done, 800);
+          video.addEventListener('seeked', done);
+          video.currentTime = target;
+        });
+      }
+    }
+  }
   async play() {
     if (this.offset >= this.duration - 0.05) this.offset = 0;
     this.t0 = performance.now(); this.paused = false;
+    this.presenter.play().catch(() => {});
     clearInterval(this.iv); this.iv = setInterval(() => { if (!this.paused) this.time; else clearInterval(this.iv); }, 100);
   }
-  pause() { this.offset = this.time; this.paused = true; }
+  pause() { this.offset = this.time; this.paused = true; this.presenter.pause(); }
   onEnded(cb) { this.listeners.add(cb); return () => this.listeners.delete(cb); }
   render(t) {
     const c = this.canvas.getContext('2d'); const W = 720, H = 1280;
-    const g = c.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#ffd6a5'); g.addColorStop(1, '#ff8fab');
-    c.fillStyle = g; c.fillRect(0, 0, W, H);
-    const talking = this.words.some((w) => t >= w.s && t < w.e);
-    const sway = Math.sin(t * 1.3) * 8;
-    c.save(); c.translate(W / 2 + sway, 0);
-    c.fillStyle = '#3d348b'; c.beginPath(); c.ellipse(0, 1240, 300, 330, 0, Math.PI, 0); c.fill();
-    c.fillStyle = '#f1c27d'; c.fillRect(-55, 760, 110, 120);
-    c.beginPath(); c.ellipse(0, 600, 210, 250, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = '#2b2118'; c.beginPath(); c.ellipse(0, 420, 225, 120, 0, Math.PI, 0); c.fill();
-    c.fillRect(-225, 410, 40, 140); c.fillRect(185, 410, 40, 140);
-    const blink = (t % 3.7) < 0.12;
-    c.fillStyle = '#1b1b1b';
-    for (const ex of [-75, 75]) { c.beginPath(); c.ellipse(ex, 580, 18, blink ? 3 : 22, 0, 0, Math.PI * 2); c.fill(); }
-    c.lineWidth = 9; c.lineCap = 'round'; c.strokeStyle = '#1b1b1b';
-    const lift = Math.sin(t * 2.1) > 0.6 ? 12 : 0;
-    c.beginPath(); c.moveTo(-105, 530 - lift); c.lineTo(-45, 525 - lift); c.moveTo(45, 525 - lift); c.lineTo(105, 530 - lift); c.stroke();
-    const open = talking ? 14 + Math.abs(Math.sin(t * 17)) * 30 : 4;
-    c.fillStyle = '#7a1f1f'; c.beginPath(); c.ellipse(0, 700, 55, open, 0, 0, Math.PI * 2); c.fill();
-    c.restore();
-    c.fillStyle = 'rgba(0,0,0,0.38)';
-    c.beginPath(); c.roundRect ? c.roundRect(W / 2 - 62, 70, 124, 44, 22) : c.rect(W / 2 - 62, 70, 124, 44); c.fill();
-    c.fillStyle = '#fff'; c.font = '700 24px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText('DEMO', W / 2, 93);
+    c.fillStyle = '#20252d'; c.fillRect(0, 0, W, H);
+    const image = this.presenter.readyState >= 2 ? this.presenter : this.poster;
+    const w = image.videoWidth || image.naturalWidth, h = image.videoHeight || image.naturalHeight;
+    if (w && h) {
+      const scale = Math.max(W / w, H / h);
+      c.drawImage(image, (W - w * scale) / 2, (H - h * scale) / 2, w * scale, h * scale);
+    }
+    c.fillStyle = '#20252dcc'; c.fillRect(28, 28, 178, 44);
+    c.fillStyle = '#fff'; c.font = '500 21px Inter, system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.fillText('SILENT SAMPLE', 42, 50);
   }
 }
 
@@ -208,6 +216,7 @@ function imageJobOpts() {
 // ---------- project ----------
 
 function storageKey() {
+  if (state.sampleEditor) return 'storycuts:sample-v43';
   return state.file ? `storycuts:${state.file.name}:${state.file.size}` : 'storycuts:demo';
 }
 
@@ -236,11 +245,26 @@ function snapshot() {
   syncUndoButtons();
 }
 
+// Keep one undo entry for a slider gesture, and one for each discrete choice.
+const settingGestures = new WeakSet();
+function snapshotSetting(input) {
+  if (input?.type === 'range') {
+    if (settingGestures.has(input)) return;
+    settingGestures.add(input);
+  }
+  snapshot();
+}
+['change', 'focusout', 'pointercancel'].forEach((type) => document.addEventListener(type, (e) => {
+  if (e.target.matches?.('input[type=range]')) settingGestures.delete(e.target);
+}));
+
 function restore(snap) {
   Object.assign(state.project, JSON.parse(snap));
+  state.aspect = state.project.settings.aspect || state.aspect;
+  syncOptionsUI();
   save();
   refresh();
-  if (state.step === 5) { renderSoundPane(); renderTextPane(); drawPreview(); }
+  if (state.step === 5) { renderSoundPane(); renderTextPane(); renderFilterPane(); renderTransPane(); drawPreview(); setMix(graph(), state.project.settings); restartAudio(); }
 }
 
 function undo() {
@@ -444,6 +468,7 @@ function refresh() {
   if (p.characters.length) renderChars();
   if (p.approved) { renderTimeline(); renderInspector(); ensurePeaks(); }
   $('.ed-title').textContent = p.title || 'Untitled story';
+  $('#sample-editor-note').hidden = !state.sampleEditor;
   renderTranscript();
   renderPrep();
   renderSummary();
@@ -632,8 +657,10 @@ async function loadFile(file, { reopen = false } = {}) {
   if (!file) return;
   if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v|mkv)$/i.test(file.name)) { toast('That doesn\'t look like a video file.'); return; }
   if (!reopen && !$('#rights').checked) {
-    toast('Please tick the box confirming you have the rights to this video.');
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('#rights').closest('.check').animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 300 });
+    $('#upload-rights-note').hidden = false;
+    $('#rights').setAttribute('aria-invalid', 'true');
+    $('#rights').closest('.check').scrollIntoView({ block: 'center', behavior: 'auto' });
+    $('#rights').focus({ preventScroll: true });
     $('#file').value = '';
     return;
   }
@@ -650,6 +677,8 @@ async function loadFile(file, { reopen = false } = {}) {
   if (!Number.isFinite(video.duration)) { toast('Could not read the video length.'); return; }
   clearTimeout(toast.timer);
   $('#toast').classList.remove('show');
+  state.media?.pause(); stopAudio();
+  state.sampleEditor = false;
   state.file = file;
   state.media = new VideoMedia(video);
   state.stages = {};
@@ -662,6 +691,13 @@ async function loadFile(file, { reopen = false } = {}) {
   setTimeout(() => goStep(state.project.approved ? 5 : 2), 500);
 }
 
+$('#rights').addEventListener('change', () => {
+  if ($('#rights').checked) {
+    $('#upload-rights-note').hidden = true;
+    $('#rights').removeAttribute('aria-invalid');
+  }
+});
+
 function showFileChip(...parts) {
   const el = $('#video-info');
   el.classList.remove('hidden');
@@ -669,6 +705,8 @@ function showFileChip(...parts) {
 }
 
 function loadDemo() {
+  state.media?.pause(); stopAudio();
+  state.sampleEditor = false;
   state.file = null;
   const duration = 44;
   const words = wordsFromText(DEMO_TEXT, duration, [[0.6, 43.4]]);
@@ -678,6 +716,77 @@ function loadDemo() {
   loadProject(duration);
   if (!state.project.words.length) { state.project.words = words; save(); refresh(); }
   goStep(state.project.approved ? 5 : 2);
+}
+
+// A real, editable local project lets visitors explore before connecting accounts.
+// It uses existing licensed footage and concept artwork, never an AI request.
+async function openSampleEditor() {
+  if (state.busy || state.genAbort || state.exporting || state.sampleLoading) { toast('Finish the current task before opening the sample.'); return; }
+  state.sampleLoading = true;
+  const buttons = [$('#btn-editor-demo'), $('#pay-demo')];
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    const response = await fetch('assets/examples/airport.jpg');
+    if (!response.ok) throw new Error('The sample picture could not load. Please try again.');
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+    const prefix = 'storycuts:sample-v43/';
+    const crop = async (name, [x, y, w, h], aspect = '1:1') => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 600; canvas.height = aspect === '9:16' ? 1067 : 600;
+      canvas.getContext('2d').drawImage(bitmap, x * bitmap.width, y * bitmap.height, w * bitmap.width, h * bitmap.height, 0, 0, canvas.width, canvas.height);
+      const cropped = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', .9));
+      if (!cropped) throw new Error('The sample picture could not open. Please try again.');
+      const key = `${prefix}${name}`;
+      await putBlob(key, cropped);
+      return { key, aspect, stale: false };
+    };
+    let meImage, catImage, closeImage;
+    try {
+      meImage = await crop('cast-me', [0, .14, .55, .55 * bitmap.width / bitmap.height]);
+      catImage = await crop('cast-cat', [.24, .54, .24, .18]);
+      closeImage = await crop('scene-close', [.12, .31, .5, .5 * bitmap.width / bitmap.height * 16 / 9], '9:16');
+    } finally { bitmap.close(); }
+    const fullKey = `${prefix}scene-full`;
+    await putBlob(fullKey, blob);
+    state.media?.pause(); stopAudio();
+    state.file = null; state.sampleEditor = true;
+    const duration = 14;
+    const text = 'I thought I had grabbed my suitcase. Then I opened it at the airport. There was a cat inside. Definitely not my suitcase.';
+    const words = wordsFromText(text, duration, [[.15, 13.7]]);
+    state.media = new DemoMedia(duration, words);
+    await state.media.poster.decode().catch(() => {});
+    state.stages = {};
+    showFileChip('The suitcase mix-up', '0:14', 'fictional sample · no recorded voice');
+    loadProject(duration);
+    const p = state.project;
+    if (!p.approved || !p.segments.length) {
+      p.title = 'The suitcase mix-up · Sample';
+      p.words = words; p.transcriptSource = 'text'; p.transcriptReviewed = true;
+      p.settings = { ...defaultSettings(), style: 'cartoon', aspect: 'vertical' };
+      p.characters = [
+        { id: 'me', name: 'Me', description: 'Curly dark hair, blue jacket and white shirt.', color: '#3e6b9c', hair: 'curly', hairColor: '#29282a', accessory: 'none', height: 1, image: meImage },
+        { id: 'cat', name: 'The surprise guest', description: 'Small orange tabby cat with a white chest.', color: '#c98c52', hair: 'short', hairColor: '#c98c52', accessory: 'none', height: .4, image: catImage },
+      ];
+      p.locations = [{ id: 'airport', name: 'The airport', description: 'A bright terminal with big windows and yellow suitcases.' }];
+      const scene = (moment) => ({ image_prompt: moment, setting: 'airport', location_id: 'airport', moment, offscreen: [], actors: [{ character_id: 'me', x: .3, pose: 'look', expression: 'surprised', facing: 'right', speech: '' }, { character_id: 'cat', x: .55, pose: 'sit', expression: 'happy', facing: 'left', speech: '' }], props: ['yellow suitcase'], effects: [], sound_effect: '' });
+      p.segments = [
+        { id: 'sample-hook', start: 0, end: 2.8, type: 'face', reason: 'Start with the storyteller.', scene: null },
+        { id: 'sample-setting', start: 2.8, end: 6.6, type: 'scene', reason: 'Show the suitcase mix-up.', scene: scene('An unexpected cat in an open suitcase at the airport.'), image: { key: fullKey, aspect: '9:16', stale: false } },
+        { id: 'sample-reveal', start: 6.6, end: 11.1, type: 'scene', reason: 'A closer look at the surprise guest.', scene: scene('A close view of the orange cat in the suitcase.'), image: closeImage },
+        { id: 'sample-reaction', start: 11.1, end: duration, type: 'face', reason: 'Return to the reaction.', scene: null },
+      ];
+      p.sfx = []; p.approved = true;
+    }
+    state.aspect = p.settings.aspect || 'vertical';
+    syncOptionsUI(); save(); refresh(); syncUndoButtons();
+    selectCastCharacter('me');
+    goStep(5);
+    await seekTo(3.5);
+    state.selected = segmentAt(p.segments, 3.5).id;
+    renderTimeline(); renderInspector();
+  } catch (e) { toast(errText(e), 6000); }
+  finally { state.sampleLoading = false; buttons.forEach((b) => { b.disabled = false; }); }
 }
 
 // ---------- step 2: style & options ----------
@@ -752,8 +861,8 @@ function layoutStyles() {
   syncStyleShowcase(id === 'custom' ? { label: 'Your own style', blurb: 'Describe a world of your own, or bring a reference image.' } : STYLES[id]);
   const btn = $('#btn-style-next');
   if (btn) {
-    btn.firstChild.textContent = 'Continue';
-    btn.setAttribute('aria-label', `Continue with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`);
+    btn.firstChild.textContent = 'Set up video';
+    btn.setAttribute('aria-label', `Set up video with ${id === 'custom' ? 'my style' : STYLES[id]?.label || 'this style'}`);
   }
 }
 
@@ -1030,6 +1139,7 @@ function renderSettingsExample() {
   const s = state.project?.settings;
   if (!s) return;
   const still = s.sceneMotion === 'still', bubble = s.faceMode === 'bubble';
+  $('#setup-detail-summary').textContent = `${still ? 'Still pictures' : 'Living pictures'} · ${bubble ? 'face bubble' : 'full-frame cuts'}`;
   const pacing = s.pacing || 'mostly';
   const image = exampleSceneForStyle(s.style, STYLES[s.style]?.thumb || 'assets/styles/stick.jpg');
   const player = $('#example-player');
@@ -1062,6 +1172,14 @@ function renderSummary() {
     row(icon('user'), 'Video', state.file ? state.file.name : 'Demo story', 1),
   ].join('');
 }
+
+$('#btn-reset-setup').addEventListener('click', () => {
+  $('#seg-format [data-aspect=vertical]').click();
+  $('#seg-pacing [data-pacing=mostly]').click();
+  $('#seg-motion [data-motion=living]').click();
+  $('#seg-face [data-face=full]').click();
+  toast('Recommended settings restored.');
+});
 
 // ---------- step 3 prep: transcript + your characters ----------
 
@@ -1319,7 +1437,7 @@ async function createVideo() {
   if (!p) { toast('Upload a video first (or try the demo).'); goStep(1); return; }
   if (p.approved) { goStep(5); return; }
   if (p.settings.storyMode === 'transcript' && (!p.words.length || !['text', 'subtitles'].includes(p.transcriptSource))) { toast('Add your transcript before continuing.'); goStep(4); $('#prep-transcript').scrollIntoView({ block: 'center' }); return; }
-  if (state.file && !hasAccess()) { openPaywall(); return; }
+  if (state.file && !hasAccess() && (paidCheckoutOpen() || !keysReady())) { openPaywall(); return; }
   if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
   state.busy = true;
   state.stages = {};
@@ -1537,18 +1655,18 @@ function renderChars() {
     <div class="char ${c.image?.stale ? 'stale' : ''}" data-i="${i}" data-character="${esc(c.id)}">
       <div class="char-top"><span class="char-number">${i + 1}</span><b class="char-name">${esc(c.name)}</b><span class="char-state ${characterNeedsDrawing(c) ? 'waiting' : 'complete'}">${busy.has(c.id) ? 'Drawing…' : c.image?.stale ? 'Update needed' : c.image?.key ? 'Ready to review' : 'Not drawn yet'}</span></div><div class="char-main">
       <div class="char-art">
-        ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar">${icon('user')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Ready to draw'}</span></div>`}
+        ${c.image?.key ? `<img alt="Design for ${esc(c.name)}">` : `<div class="empty"><span class="avatar" aria-hidden="true">${esc([...String(c.name ?? "").trim()][0] || '?')}</span><span class="empty-txt">${busy.size ? 'Waiting to be drawn' : 'Your drawing appears here'}</span></div>`}
         ${busy.has(c.id) ? `<div class="art-busy"><svg viewBox="0 0 100 120"><circle cx="50" cy="24" r="14"/><path d="M50 38v40"/><path d="M50 50l-20 16M50 50l20 16"/><path d="M50 78l-16 30M50 78l16 30"/></svg><small>Sketching ${esc(c.name)}…</small></div>` : ''}
         ${c.image?.key ? qcBadge(c.image) : ''}
         ${c.image?.key ? `<button class="icon-btn portrait-zoom" data-character-preview="${i}" aria-label="View ${esc(c.name)} larger">${icon('plus')}</button>` : ''}
       </div>
       <div class="char-fields">
-        <label class="field">Name<input data-k="name" value="${esc(c.name)}" maxlength="24" ${busy.has(c.id) ? 'disabled' : ''}></label>
-        <label class="field">Appearance<textarea data-k="description" rows="3" maxlength="140" placeholder="Age, hair, clothes, a signature detail" ${busy.has(c.id) ? 'disabled' : ''}>${esc(c.description)}</textarea></label>
+        <label class="field">Character name<input data-k="name" value="${esc(c.name)}" maxlength="24" ${busy.has(c.id) ? 'disabled' : ''}></label>
+        <label class="field">What they look like<textarea data-k="description" rows="3" maxlength="140" placeholder="Hair, clothes, one recognizable detail" ${busy.has(c.id) ? 'disabled' : ''}>${esc(c.description)}</textarea></label>
         ${c.id === 'me' && state.media instanceof VideoMedia ? `<label class="check small"><input type="checkbox" data-k="useVideoLook" ${c.useVideoLook !== false ? 'checked' : ''} ${busy.has(c.id) ? 'disabled' : ''}><span class="box">${icon('check')}</span>Look like me (uses a frame of my video)</label>` : ''}
         <p class="char-edit-note" ${c.image?.stale ? '' : 'hidden'}>Details changed. Redraw to update this look.</p>
         <div class="char-row">
-          <button class="btn sm char-draw" data-redraw="${i}" ${busy.size ? 'disabled' : ''} aria-label="${c.image?.key ? 'Redraw' : 'Draw'} ${esc(c.name)}">${icon(c.image?.key ? 'redo' : 'spark')}${c.image?.key ? 'Try a new look' : 'Draw this character'}</button>
+          <button class="btn sm char-draw" data-redraw="${i}" ${busy.size ? 'disabled' : ''} aria-label="${c.image?.key ? 'Redraw' : 'Draw'} ${esc(c.name)}">${icon(c.image?.key ? 'redo' : 'edit')}${c.image?.key ? 'Try a new look' : 'Draw this character'}</button>
           ${c.id === 'me' ? '<small>This is you</small>' : `<button class="icon-btn sm" data-del="${i}" aria-label="Remove ${esc(c.name)}" data-tip="Remove" ${busy.size ? 'disabled' : ''}>${icon('trash')}</button>`}
         </div>
       </div>
@@ -1584,7 +1702,7 @@ function renderCastBar() {
     sub = 'This takes about a minute. When the pictures are ready, check each look before continuing.';
   } else if (missing) {
     title = changed ? `Update ${missing} character${missing === 1 ? '' : 's'} before continuing` : drawn ? `${missing} character${missing > 1 ? 's' : ''} still need${missing > 1 ? '' : 's'} a picture` : 'Check the details, then draw your cast';
-    sub = changed ? 'The details have changed. Redraw these characters so your scenes use the right look.' : drawn ? 'Every scene is drawn from these designs, so each character needs a picture first.' : 'Edit the names and appearances above. These designs will be reused throughout your story.';
+    sub = changed ? 'Redraw the updated characters so your scenes use the right look.' : drawn ? 'Each character needs a picture before we draw the scenes.' : 'Your edits save as you type. Draw everyone when the details look right.';
   } else {
     title = 'Do these look like your characters?';
     sub = `Check each picture. Try a new look if you need to, then approve your cast to draw the scenes.`;
@@ -1609,8 +1727,11 @@ function renderCastBar() {
   $('#cb-step2').className = `cb-step ${missing || busy ? '' : 'on'}`;
   $('#cb-step3').className = 'cb-step';
   $('#cast-bar').classList.toggle('ready', !missing && !busy);
-  $$('#cast-guide > div').forEach((el, i) => { el.classList.toggle('current', busy ? i === 1 : missing ? i === 0 : i === 2); el.classList.toggle('complete', !missing && i < 2); });
-  $('#cast-guide').setAttribute('aria-label', busy ? 'Drawing your cast' : missing ? 'Check the names and appearances, then draw your cast' : 'Review your pictures, then approve your cast');
+  const ready = p.approved && !missing && !busy;
+  $$('#cast-guide > div').forEach((el, i) => { el.classList.toggle('current', !ready && (busy ? i === 1 : missing ? i === 0 : i === 2)); el.classList.toggle('complete', ready || !missing && i < 2); });
+  $('#cast-guide > div:last-child b').textContent = ready ? 'Cast ready' : 'Review & approve';
+  $('#cast-guide > div:last-child small').textContent = ready ? 'Edit any look below.' : 'Then draw the scenes.';
+  $('#cast-guide').setAttribute('aria-label', ready ? 'Your cast is ready. Edit any character or open the editor.' : busy ? 'Drawing your cast' : missing ? 'Check the names and appearances, then draw your cast' : 'Review your pictures, then approve your cast');
 }
 
 async function grabSelfFrame() {
@@ -1690,7 +1811,11 @@ $('#chars').addEventListener('input', (e) => {
   card.querySelector('[data-redraw]').setAttribute('aria-label', `${ch.image?.key ? 'Redraw' : 'Draw'} ${ch.name || 'your character'}`);
   card.querySelector('[data-del]')?.setAttribute('aria-label', `Remove ${ch.name || 'your character'}`);
   card.querySelector('[data-character-preview]')?.setAttribute('aria-label', `View ${ch.name || 'your character'} larger`);
-  if (k === 'name') syncCastNavigation(state.project.characters);
+  if (k === 'name') {
+    syncCastNavigation(state.project.characters);
+    const avatar = card.querySelector('.avatar');
+    if (avatar) avatar.textContent = [...String(ch.name ?? "").trim()][0] || '?';
+  }
   const portrait = card.querySelector('.char-art img');
   if (portrait) portrait.alt = `Design for ${ch.name || 'your character'}`;
   if (ch.image?.key && k !== 'name') {
@@ -1729,6 +1854,8 @@ $('#chars').addEventListener('click', (e) => {
       });
       state.project.segments = normalizeSegments(state.project.segments, state.project.characters, state.project.duration, [], { pacing: state.project.settings.pacing });
     });
+    const next = state.project.characters[Math.min(i, state.project.characters.length - 1)];
+    if (next) selectCastCharacter(next.id, { focus: true, scroll: true });
   }
 });
 
@@ -1744,6 +1871,7 @@ $('#btn-add-char').addEventListener('click', () => {
     added = id;
     p.characters.push({ id, name, description: '', color: '#8854d0', hair: 'short', hairColor: '#2b2b2b', accessory: 'none', height: 1 });
   });
+  selectCastCharacter(added);
   const input = $(`#chars [data-character="${CSS.escape(added)}"] [data-k="name"]`);
   input?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   input?.focus({ preventScroll: true });
@@ -2130,14 +2258,12 @@ function drawWave() {
   const x0 = TL.pad, mid = h / 2;
   if (!state.peaks) {
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.font = '500 11px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(state.file ? 'Reading audio…' : 'The demo has no voice track (sound effects still play)', w / 2 + 30, mid + 4);
+    ctx.fillText(state.file ? 'Reading audio…' : 'Demo: no recorded voice', w / 2 + 30, mid + 4);
     return;
   }
-  const g = ctx.createLinearGradient(0, 0, w, 0);
-  g.addColorStop(0, '#2dd4bf'); g.addColorStop(1, '#22d3ee');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#84bca5';
   for (let px = 0; px < w; px += 2) {
     const t = (px + sc.scrollLeft - x0) / TL.pps;
     if (t < 0 || t > p.duration) continue;
@@ -2484,7 +2610,7 @@ $('#music-card').addEventListener('click', (e) => {
   if (b.dataset.m === 'del') { snapshot(); state.project.settings.music = null; save(); stopAudio(); renderSoundPane(); renderFxTrack(); setMix(graph(), state.project.settings); }
 });
 $('#music-card').addEventListener('change', (e) => {
-  if (e.target.dataset.m === 'fade' && state.project?.settings.music) { state.project.settings.music.fade = e.target.checked; save(); restartAudio(); }
+  if (e.target.dataset.m === 'fade' && state.project?.settings.music) { snapshot(); state.project.settings.music.fade = e.target.checked; save(); restartAudio(); }
 });
 $('#music-file').addEventListener('change', async (e) => {
   const f = e.target.files[0];
@@ -2509,6 +2635,8 @@ $('#tl-music').addEventListener('click', (e) => {
 ['#vol-voice', '#vol-sfx', '#vol-music'].forEach((sel) => $(sel).addEventListener('input', (e) => {
   const st = state.project?.settings;
   if (!st) return;
+  if (sel === '#vol-music' && !st.music) return;
+  snapshotSetting(e.target);
   if (sel === '#vol-music') { if (st.music) st.music.vol = +e.target.value; } else st[sel === '#vol-voice' ? 'voiceVol' : 'sfxVol'] = +e.target.value;
   setMix(graph(), st);
   save();
@@ -2532,6 +2660,8 @@ function renderTextPane() {
 }
 function setCaption(patch) {
   const st = state.project.settings;
+  if (Object.entries(patch).every(([key, value]) => st.captionStyle?.[key] === value)) return;
+  snapshot();
   st.captionStyle = { ...(st.captionStyle || {}), ...patch };
   save(); renderTextPane(); drawPreview();
 }
@@ -2565,10 +2695,12 @@ function renderFilterPane() {
 $('#filter-grid').addEventListener('click', (e) => {
   const b = e.target.closest('[data-filter]');
   if (!b) return;
+  if (state.project.settings.filter === b.dataset.filter) return;
+  snapshot();
   state.project.settings.filter = b.dataset.filter;
   save(); drawPreview(); renderFilterPane();
 });
-$('#filter-amt').addEventListener('input', (e) => { state.project.settings.filterAmt = +e.target.value; save(); drawPreview(); });
+$('#filter-amt').addEventListener('input', (e) => { if (!state.project) return; snapshotSetting(e.target); state.project.settings.filterAmt = +e.target.value; save(); drawPreview(); });
 
 function renderTransPane() {
   const p = state.project;
@@ -2820,19 +2952,23 @@ $('#inspector').addEventListener('change', (e) => {
 
 // ---------- export ----------
 
-function readExportUI() {
+function readExportUI(id) {
   const s = state.project.settings;
-  s.captions = $('#opt-captions').checked;
-  s.captionStyle = { ...(s.captionStyle || {}), upper: $('#opt-upper').checked };
+  if (id === 'opt-captions') s.captions = $('#opt-captions').checked;
+  if (id === 'opt-upper') s.captionStyle = { ...(s.captionStyle || {}), upper: $('#opt-upper').checked };
   renderTextPane();
-  s.punchIn = $('#opt-punch').checked;
-  s.sceneMotion = $('#opt-living').checked ? 'living' : 'still';
+  if (id === 'opt-punch') s.punchIn = $('#opt-punch').checked;
+  if (id === 'opt-living') s.sceneMotion = $('#opt-living').checked ? 'living' : 'still';
   syncMotionUI();
-  s.watermark = $('#opt-watermark').checked;
-  s.faceX = +$('#face-x').value;
+  if (id === 'opt-watermark') s.watermark = $('#opt-watermark').checked;
+  if (id === 'face-x') s.faceX = +$('#face-x').value;
   save(); drawPreview();
 }
-['#opt-captions', '#opt-upper', '#opt-punch', '#opt-living', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', () => state.project && readExportUI()));
+['#opt-captions', '#opt-upper', '#opt-punch', '#opt-living', '#opt-watermark', '#face-x'].forEach((sel) => $(sel).addEventListener('input', (e) => {
+  if (!state.project) return;
+  snapshotSetting(e.target);
+  readExportUI(e.target.id);
+}));
 
 function download(blob, name) {
   const a = document.createElement('a');
@@ -2916,6 +3052,8 @@ const drop = $('#drop');
 drop.addEventListener('drop', (e) => loadFile(e.dataTransfer.files[0]));
 $('#btn-demo').addEventListener('click', loadDemo);
 $('#cta-demo').addEventListener('click', () => { loadDemo(); });
+$('#btn-editor-demo').addEventListener('click', openSampleEditor);
+$('#btn-sample-start').addEventListener('click', () => goStep(1));
 $$('a[href="#studio"]').forEach((a) => a.addEventListener('click', (e) => {
   if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
@@ -3005,14 +3143,16 @@ $$('.reveal').forEach((el) => io.observe(el));
 // ---------- subscriptions ----------
 
 let billingPeriod = store.get('storycuts:period', 'monthly');
+let previewPlanId = null;
+const paidCheckoutOpen = () => BILLING.plans.some((p) => checkoutUrl(p.id, 'monthly') || checkoutUrl(p.id, 'yearly'));
 
 function planCard(plan, { compact = false } = {}) {
   const mine = currentPlan()?.id === plan.id;
   const price = monthlyPrice(plan, billingPeriod);
   const sub = billingPeriod === 'yearly' ? `$${yearlyTotal(plan)} billed yearly` : 'billed monthly';
-  const cta = mine ? 'Your plan' : `Get ${plan.name}`;
+  const cta = mine ? 'Your plan' : checkoutUrl(plan.id, billingPeriod) ? `Get ${plan.name}` : `View ${plan.name} plan`;
   if (compact) {
-    return `<button class="pay-plan${plan.popular ? ' popular' : ''}" data-plan="${plan.id}" ${mine ? 'disabled' : ''}>
+    return `<button class="pay-plan${plan.popular ? ' popular' : ''}${previewPlanId === plan.id ? ' on' : ''}" data-plan="${plan.id}" aria-pressed="${previewPlanId === plan.id}" ${mine ? 'disabled' : ''}>
       <span class="pp-name"><b>${esc(plan.name)}</b>${plan.popular ? '<em>Most popular</em>' : ''}<small>${plan.videos} videos a month</small></span>
       <span class="pp-price"><b>$${price}</b><small>/mo</small></span>
     </button>`;
@@ -3032,7 +3172,11 @@ function renderPlans() {
   $('#plans').innerHTML = BILLING.plans.map((p) => planCard(p)).join('');
   $('#pay-plans').innerHTML = BILLING.plans.map((p) => planCard(p, { compact: true })).join('');
   $$('.period').forEach((g) => {
-    g.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.period === billingPeriod));
+    g.querySelectorAll('button').forEach((b) => {
+      const on = b.dataset.period === billingPeriod;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', String(on));
+    });
     movePeriodThumb(g);
   });
   const mine = currentPlan();
@@ -3043,6 +3187,8 @@ function renderPlans() {
   nav.classList.remove('glass');
   const portal = BILLING.portalUrl;
   $$('#manage-sub, .manage-link').forEach((a) => { a.hidden = !(mine && portal); if (portal) a.href = portal; });
+  const selected = planById(previewPlanId);
+  $('#pay-selection').textContent = selected ? `${selected.name}: $${monthlyPrice(selected, billingPeriod)}/month${billingPeriod === 'yearly' ? `, $${yearlyTotal(selected)} billed yearly` : ', billed monthly'}. Preview pricing only. Checkout isn't open and no payment will be taken.` : 'Preview the plans below. No payment will be taken.';
 }
 
 function movePeriodThumb(g) {
@@ -3065,8 +3211,8 @@ $$('.period').forEach((g) => g.addEventListener('click', (e) => {
 function startCheckout(planId) {
   const url = checkoutUrl(planId, billingPeriod);
   if (!url) {
-    console.info('[StoryCuts] Add Stripe Payment Links in js/billing.js to open checkout.');
-    toast('Checkout opens very soon. Check back shortly!', 4000);
+    previewPlanId = planId;
+    openPaywall();
     return;
   }
   location.href = url;
@@ -3079,13 +3225,15 @@ document.addEventListener('click', (e) => {
 
 function openPaywall() {
   renderPlans();
+  $('#pay-description').textContent = `We're preparing subscriptions with AI creation included. Checkout isn't open yet. ${state.project ? 'Your video and settings are saved in this browser.' : 'Try the free sample editor to explore what you can make.'}`;
   const d = $('#paywall');
   if (!d.open) d.showModal();
   requestAnimationFrame(() => movePeriodThumb($('#pay-period')));
 }
 $('#pay-close').addEventListener('click', () => $('#paywall').close());
 $('#paywall').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
-$('#pay-demo').addEventListener('click', () => { $('#paywall').close(); loadDemo(); goStep(2); });
+$('#pay-demo').addEventListener('click', () => { $('#paywall').close(); openSampleEditor(); });
+$('#btn-advanced-preview').addEventListener('click', () => { $('#paywall').close(); openSettings(); });
 
 // ---------- site chrome ----------
 

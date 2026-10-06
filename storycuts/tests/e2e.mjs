@@ -35,6 +35,13 @@ const check = (ok, what, detail = '') => {
   if (!ok) failures++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const shotStripFits = () => {
+  const card = document.querySelector('#story-showreel');
+  const style = getComputedStyle(card);
+  const strip = document.querySelector('.showreel-timeline').getBoundingClientRect();
+  const usableWidth = card.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  return Math.abs(strip.width - usableWidth) < 1 && document.querySelector('#example-scrub').getBoundingClientRect().height >= 40;
+};
 const sdk = fs.readFileSync(path.join(HERE, 'fixtures/anthropic-sdk.mjs'));
 const storyText = fs.readFileSync(path.join(HERE, 'fixtures/story.txt'), 'utf8').trim();
 const pngs = ['red', 'blue', 'green', 'orange'].map((c) => fs.readFileSync(path.join(HERE, `fixtures/mock_${c}.png`)).toString('base64'));
@@ -84,16 +91,20 @@ const REVIEW = {
 // ---------- run ----------
 const browser = await chromium.launch();
 const errors = [];
-async function newContext(opts, { mockListening = false, failListening = false } = {}) {
+async function newContext(opts, { mockListening = false, failListening = false, connectAI = true, owner = true } = {}) {
   const ctx = await browser.newContext(opts);
   ctx.plannerRequests = [];
+  ctx.providerRequests = [];
+  ctx.on('request', (r) => { if (/https:\/\/api\.(anthropic|openai)\.com\//.test(r.url())) ctx.providerRequests.push(r.url()); });
   // Keep the suite offline: use the site's system font fallback in tests.
   await ctx.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ body: '', contentType: 'text/css' }));
-  await ctx.addInitScript(() => {
-    localStorage.setItem('storycuts:key', JSON.stringify('sk-ant-test'));
-    localStorage.setItem('storycuts:okey', JSON.stringify('sk-openai-test'));
-    localStorage.setItem('storycuts:owner', 'true');
-  });
+  await ctx.addInitScript(({ connectAI, owner }) => {
+    if (connectAI) {
+      localStorage.setItem('storycuts:key', JSON.stringify('sk-ant-test'));
+      localStorage.setItem('storycuts:okey', JSON.stringify('sk-openai-test'));
+    }
+    if (owner) localStorage.setItem('storycuts:owner', 'true');
+  }, { connectAI, owner });
   await ctx.route('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm', (r) => r.fulfill({ body: sdk, contentType: 'application/javascript', headers: cors }));
   // Stub only the downloaded model. Keep transcribeInBrowser, audio decoding,
   // speechSpans, wordsFromText and subtitle parsing as the real site modules.
@@ -151,19 +162,90 @@ async function fitsPhone(page, name) {
 }
 
 try {
+  // ===== first visit: useful editor and honest plan previews, no accounts =====
+  for (const phone of [false, true]) {
+    const tag = phone ? 'phone sample' : 'desktop sample';
+    const sampleCtx = await newContext({ viewport: { width: phone ? 390 : 1300, height: phone ? 844 : 1000 }, isMobile: phone, hasTouch: phone, acceptDownloads: true }, { connectAI: false, owner: false });
+    const s = await sampleCtx.newPage(); watch(s, tag);
+    await s.goto(URL0);
+    await s.locator('.plan [data-plan=creator]').click();
+    check(await s.locator('#paywall').evaluate((el) => el.open) && /Checkout isn't open/.test(await s.locator('#pay-selection').textContent()), `${tag}: an unavailable plan opens a clear preview instead of a dead end`);
+    await s.click('#pay-period [data-period=yearly]');
+    check(await s.getAttribute('#pay-plans [data-plan=creator]', 'aria-pressed') === 'true' && /\$336 billed yearly/.test(await s.locator('#pay-selection').textContent()), `${tag}: selected plan and billing period remain clear without taking a payment`);
+    check(await s.locator('#paywall').evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth && [...dialog.querySelectorAll('button, .modal-head, .pay-selection')].every((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && el.scrollWidth <= el.clientWidth + 1; })), `${tag}: plan descriptions and buttons fit without clipped text or sideways scrolling`);
+    await shot(s, phone ? 'p14-plan-preview' : '14-plan-preview');
+    await s.click('#pay-demo');
+    await s.waitForFunction(() => window.__storycuts.state.step === 5 && window.__storycuts.state.sampleEditor && window.__storycuts.state.project.approved, null, { timeout: 15000 });
+    await s.waitForFunction(() => document.querySelector('#timeline .clip.scene .thumbs')?.style.backgroundImage.includes('url('));
+    await sleep(400);
+    check(await s.isVisible('#sample-editor-note') && !(await s.locator('#settings').evaluate((el) => el.open)) && await s.locator('#timeline .clip').count() === 4, `${tag}: a ready-made sample opens the full editor without keys or a subscription`);
+    check(await s.locator('#cast-guide > .complete').count() === 3 && await s.locator('#cast-guide > .current').count() === 0 && await s.locator('#cast-guide > div:last-child b').textContent() === 'Cast ready', `${tag}: an approved cast shows a completed workflow instead of another approval task`);
+    check(await s.evaluate(() => { const st = window.__storycuts.state; return st.project.segments.find((seg) => seg.id === st.selected).start <= st.media.time && st.project.segments.find((seg) => seg.id === st.selected).end > st.media.time; }), `${tag}: the opening sample preview and shot inspector show the same shot`);
+    check(sampleCtx.providerRequests.length === 0 && await s.evaluate(() => !localStorage.getItem('storycuts:key') && !localStorage.getItem('storycuts:okey') && !localStorage.getItem('storycuts:owner')), `${tag}: exploring the sample makes no provider requests and does not grant paid access`);
+    await shot(s, phone ? 'p15-sample-editor' : '15-sample-editor');
+    const start = await s.evaluate(() => window.__storycuts.state.media.time);
+    await s.click('#btn-play'); await sleep(700); await s.click('#btn-play');
+    check(await s.evaluate(() => window.__storycuts.state.media.time) > start + .4, `${tag}: sample playback advances the real editor playhead`);
+    await s.click('#ed-tabs [data-tab=captions]');
+    await s.locator('label:has(#opt-captions)').click();
+    check(await s.evaluate(() => !window.__storycuts.state.project.settings.captions), `${tag}: sample caption controls change the project`);
+    if (phone) await s.click('#sheet-done');
+    await s.click('#btn-undo');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.captions), `${tag}: sample edits use the existing undo history`);
+    await s.click('#ed-tabs [data-tab=filters]');
+    await s.click('#filter-grid [data-filter=warm]');
+    const beforeSlider = await s.evaluate(() => window.__storycuts.state.history.length);
+    await s.locator('#filter-amt').evaluate((input) => {
+      for (const value of [.8, .6, .4]) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    check(await s.evaluate(() => window.__storycuts.state.history.length) === beforeSlider + 1, `${tag}: a continuous settings adjustment makes one undo entry`);
+    if (phone) await s.click('#sheet-done');
+    await s.click('#btn-undo');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.filter === 'warm' && window.__storycuts.state.project.settings.filterAmt === 1) && await s.locator('#filter-amt').inputValue() === '1', `${tag}: undo restores both the picture setting and its control`);
+    await s.click('#btn-undo');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.filter === 'none') && await s.getAttribute('#filter-grid [data-filter=none]', 'class') === 'filter-tile on', `${tag}: filter choices can be undone and the selected tile follows`);
+    if (!phone) {
+      await s.click('#ed-export');
+      const download = s.waitForEvent('download', { timeout: 45000 });
+      await s.click('#btn-export');
+      const exported = await download;
+      check(/storycuts-vertical\.(webm|mp4)$/.test(exported.suggestedFilename()) && fs.statSync(await exported.path()).size > 10000, 'the sample exports a real video using the existing renderer');
+    }
+    check(await s.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: the sample editor has no sideways page scrolling`);
+    await s.click('#btn-sample-start'); await s.click('#btn-demo');
+    check(await s.evaluate(() => !window.__storycuts.state.sampleEditor && window.__storycuts.state.project.duration === 44 && !window.__storycuts.state.project.approved), `${tag}: starting the guided demo keeps sample edits separate`);
+    await sampleCtx.close();
+  }
+
+  // The unfinished subscription service must not block an explicitly connected
+  // advanced preview, and it must not write a fake subscription to the browser.
+  const byokCtx = await newContext({ viewport: { width: 1300, height: 1000 } }, { mockListening: true, owner: false });
+  const byok = await byokCtx.newPage(); watch(byok, 'advanced preview');
+  await openStory(byok);
+  await byok.click('#btn-create');
+  await byok.waitForSelector('#transcript-review:not(.hidden)');
+  check(!(await byok.locator('#paywall').evaluate((el) => el.open)), 'connected advanced preview can create a real-video project while subscriptions are unavailable');
+  await byok.click('#btn-review-continue'); await waitForCast(byok);
+  check(byokCtx.plannerRequests.length === 1, 'advanced preview reaches the existing planner without an owner bypass');
+  await byokCtx.close();
+
   // ===== desktop: the full flow =====
   const ctx = await newContext({ viewport: { width: 1300, height: 1000 } });
   const p = await ctx.newPage();
   watch(p, 'desktop');
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
+  check(await p.evaluate(shotStripFits), 'the desktop shot strip fills its preview card and is easy to scrub');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
   check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
   await p.click('#btn-example-play');
   await p.click('[data-showcase=rain]');
   check(await p.getAttribute('#story-showreel', 'data-demo-story') === 'rain' && (await p.getAttribute('#example-original', 'poster')).endsWith('man.jpg') && (await p.getAttribute('#showreel-art', 'src')).endsWith('rain.jpg'), 'choosing another story changes both the creator footage and illustration');
+  check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith(img.dataset.showreelFrame === 'face' ? 'man.jpg' : 'rain.jpg'))), 'the landing shot strip shows the footage and artwork for the selected story');
   await p.click('button[data-demo-view=original]');
   check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && await p.getAttribute('button[data-demo-view=original]', 'aria-pressed') === 'true', 'Original shows camera footage and marks the comparison choice');
+  check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith('man.jpg'))), 'the Original comparison also shows original footage in the shot strip');
   await p.click('button[data-demo-view=result]');
   check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'StoryCuts shows the illustrated comparison');
   await p.locator('#example-scrub').evaluate((el) => { el.value = '6.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -193,8 +275,9 @@ try {
   await p.locator('#drop').focus(); await p.keyboard.press('Enter');
   check(!!(await chooser), 'upload can be opened with the keyboard');
   await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
-  check(await step() === '1' && await p.isVisible('#toast'), 'video upload asks for ownership confirmation');
+  check(await step() === '1' && await p.isVisible('#upload-rights-note') && await p.evaluate(() => document.activeElement?.id === 'rights'), 'video upload puts its permission reminder beside the checkbox and focuses the correction');
   await p.locator('label:has(#rights)').click();
+  check(!(await p.isVisible('#upload-rights-note')) && await p.getAttribute('#rights', 'aria-invalid') === null, 'confirming video permission clears the inline reminder');
   await p.locator('#file').setInputFiles(path.join(HERE, 'fixtures/upload.webm'));
   await p.waitForFunction(() => window.__storycuts.state.step === 2);
   check(await p.evaluate(() => window.__storycuts.state.file?.name === 'upload.webm' && document.querySelector('#video').src.startsWith('blob:')), 'a real local video opens the style step without uploading the video');
@@ -216,16 +299,26 @@ try {
   check(await p.locator('#btn-style-next').evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight), 'style Continue stays visible while browsing the desktop gallery');
   await p.click('#btn-style-next'); await sleep(800);
   check(await step() === '3', 'continue goes to settings');
+  check(!(await p.locator('#setup-details').evaluate((el) => el.open)) && !(await p.isVisible('#seg-motion')) && await p.isVisible('#seg-pacing'), 'video setup starts with the two main choices and keeps extra controls optional');
   check(await p.getAttribute('#seg-motion button.on', 'data-motion') === 'living', 'living pictures is the default');
   await shot(p, '03-settings');
+  check(await p.evaluate(() => [...document.querySelectorAll('#seg-pacing .cut-example i')].every((el) => getComputedStyle(el).backgroundImage.includes('url(') && el.getBoundingClientRect().height >= 40)), 'all pacing choices show actual photo and illustration previews instead of color bars');
+  await p.click('#btn-settings-preview');
+  check(await p.evaluate(() => [...document.querySelectorAll('.example-player img, .option-preview img')].every((img) => getComputedStyle(img).animationPlayState === 'paused')) && await p.getAttribute('#btn-settings-preview', 'aria-label') === 'Play settings example', 'Pause example stops all settings preview motion');
+  await p.click('#btn-settings-preview');
+  check(await p.getAttribute('#panel-settings', 'data-preview-paused') === 'false' && await p.getAttribute('#btn-settings-preview', 'aria-label') === 'Pause settings example', 'Play example resumes the settings previews');
   await p.click('#seg-pacing [data-pacing=bookends]');
   check(await p.getAttribute('#example-player', 'data-pacing') === 'bookends' && await p.locator('#example-sequence .face').count() === 2, 'pacing choice shows an intro-and-outro shot example');
+  check(await p.getAttribute('#seg-pacing [data-pacing=bookends]', 'aria-pressed') === 'true' && await p.getAttribute('#seg-pacing [data-pacing=mostly]', 'aria-pressed') === 'false', 'settings choices announce the selected option to assistive technology');
+  await p.click('#setup-details > summary');
   await p.click('#seg-format [data-aspect=horizontal]'); await p.click('#seg-face [data-face=bubble]'); await p.click('#seg-motion [data-motion=still]');
+  check(await p.locator('#setup-detail-summary').textContent() === 'Still pictures · face bubble', 'the optional setup summary reflects the current camera and motion choices');
   check(await p.getAttribute('#example-player', 'data-format') === 'horizontal' && await p.getAttribute('#example-player', 'data-face') === 'bubble' && await p.getAttribute('#example-player', 'data-motion') === 'still', 'settings preview follows format, face bubble and motion choices');
   await p.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(400); await shot(p, '03b-settings-example');
   await p.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(p, '03c-motion-examples');
   await p.locator('#seg-face').scrollIntoViewIfNeeded(); await shot(p, '03d-face-examples');
-  await p.click('#seg-format [data-aspect=vertical]'); await p.click('#seg-face [data-face=full]'); await p.click('#seg-motion [data-motion=living]'); await p.click('#seg-pacing [data-pacing=mostly]');
+  await p.click('#btn-reset-setup');
+  check(await p.evaluate(() => { const s = window.__storycuts.state.project.settings; return s.aspect === 'vertical' && s.pacing === 'mostly' && s.faceMode === 'full' && s.sceneMotion === 'living'; }), 'one-click recommended settings restores the existing defaults');
   await p.click('#panel-settings [data-next="4"]'); await sleep(800);
   check(await step() === '4', 'continue goes to create');
   await shot(p, '04-create');
@@ -241,16 +334,24 @@ try {
   const segs = await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.scene).map((s) => ({ a: s.scene.actors.map((x) => x.character_id).join(','), off: (s.scene.offscreen || []).join(','), loc: s.scene.location_id })));
   check(segs.some((s) => s.a === 'jake' && s.loc === 'jake_room') && segs.some((s) => s.a === 'me' && s.off === 'jake'), 'texting is split into two shots, one per place', JSON.stringify(segs));
   await shot(p, '06-characters');
+  check(await p.locator('#chars .char:visible').count() === 1 && await p.locator('#cast-position').textContent() === 'Character 1 of 3', 'character review shows one focused card with its position in the cast');
+  await p.locator('#cast-jump [data-cast-jump=me]').focus(); await p.keyboard.press('ArrowRight');
+  check(await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'aria-selected') === 'true' && await p.isVisible('#chars [data-character=dad]'), 'character tabs support arrow-key navigation');
+  await p.keyboard.press('Home');
+  check(await p.getAttribute('#cast-jump [data-cast-jump=me]', 'tabindex') === '0' && await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'tabindex') === '-1', 'only the selected character tab is in the keyboard tab order');
   await p.click('#btn-add-char');
   check(await p.evaluate(() => document.activeElement?.matches('#chars .char:last-child [data-k=name]')), 'adding a character opens an inline name field');
   await p.locator('#chars .char:last-child [data-k=name]').fill('Grandma');
   await p.locator('#chars .char:last-child [data-k=description]').fill('Gray bob, round glasses, cream cardigan');
   check(await p.evaluate(() => window.__storycuts.state.project.characters.at(-1).name === 'Grandma'), 'character edits save without a dialog');
+  check(await p.locator('#chars .char:last-child .avatar').textContent() === 'G', 'editing a character name updates its undrawn portrait label');
   await p.locator('#chars .char:last-child [data-del]').click();
   check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 3, 'inline character can be removed');
+  check(await p.evaluate(() => document.activeElement?.matches('#chars .char:not([hidden]) [data-k=name]')), 'removing the active character returns focus to the next available character');
   for (let i = 0; i < 6; i++) await p.click('#btn-add-char');
   check(await p.evaluate(() => window.__storycuts.state.project.characters.length) === 8, 'character limit prevents an extra character being silently discarded');
   for (let i = 0; i < 5; i++) await p.locator('#chars .char:last-child [data-del]').click();
+  await p.click('#cast-jump [data-cast-jump=dad]');
   await p.locator('#chars [data-character=dad] [data-k=name]').fill('Dad the cook');
   check(await p.getAttribute('#chars [data-character=dad] [data-redraw]', 'aria-label') === 'Draw Dad the cook', 'renaming a character also updates its accessible drawing button label');
   check(await p.getAttribute('#cast-jump [data-cast-jump=dad]', 'aria-label') === 'Edit Dad the cook', 'renaming a character updates its cast navigation label');
@@ -262,6 +363,7 @@ try {
   await p.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
   await sleep(600);
   const dadKey = await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.key);
+  await p.click('#cast-jump [data-cast-jump=dad]');
   await p.locator('#chars [data-character=dad] [data-k=description]').fill('Tall bald dad, bushy mustache, red polo and a cream apron');
   check(await p.evaluate(() => window.__storycuts.state.project.characters.find((c) => c.id === 'dad').image.stale) && !(await p.isVisible('#btn-approve')), 'changing appearance requires a new drawing before approval');
   await shot(p, '07b-character-updated');
@@ -319,6 +421,13 @@ try {
     const st = window.__storycuts.state;
     return !st.project.segments.find((s) => s.id === st.selected).image.stale;
   }), 'redrawing the latest scene clears its update warning');
+  const zoomWidth = await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width);
+  const zoomTime = await p.evaluate(() => window.__storycuts.state.media.time);
+  await p.click('#zoom-in');
+  check(await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) > zoomWidth && await p.evaluate((time) => Math.abs(window.__storycuts.state.media.time - time) < .03, zoomTime), 'desktop timeline zoom increases detail without moving the video position');
+  await p.click('#zoom-out');
+  check(Math.abs(await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - zoomWidth) < 1, 'desktop zoom out restores the previous timeline scale');
+  await p.locator('#timeline .clip.face').first().click(); await sleep(400); await shot(p, '09b-editor-demo');
   await p.locator('#timeline .clip.scene').nth(1).click(); await sleep(400);
   await shot(p, '09-editor');
   // trim
@@ -396,6 +505,7 @@ try {
   // missing character pictures are reported honestly
   await p.click('#ed-close'); await sleep(700);
   await p.click('#btn-show-cast');
+  await p.click('#cast-jump [data-cast-jump=dad]');
   await p.locator('#chars [data-character=dad] [data-k=description]').fill('Tall dad in a green sweater');
   check(await p.evaluate(() => window.__storycuts.state.project.segments.filter((s) => s.scene?.actors.some((a) => a.character_id === 'dad') && s.image?.key).every((s) => s.image.stale)), 'a changed character marks its existing scenes for updating');
   await p.evaluate(() => window.__storycuts.state.project.characters.forEach((c) => delete c.image));
@@ -420,6 +530,7 @@ try {
   const m = await mctx.newPage();
   watch(m, 'phone');
   await m.goto(URL0); await sleep(700); await shot(m, 'p01-landing');
+  check(await m.evaluate(shotStripFits), 'the phone shot strip fills its preview card and is easy to scrub');
   const noSideScroll = async (where) => check(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, `no sideways scroll on phone: ${where}`);
   await noSideScroll('landing');
   await m.click('[data-showcase=rain]');
@@ -433,12 +544,16 @@ try {
   await m.click('#btn-keys'); await sleep(200); await shot(m, 'p01h-connections');
   await m.keyboard.press('Escape');
   await m.click('#cta-demo'); await sleep(900); await shot(m, 'p02-style'); await noSideScroll('style');
-  check(await m.locator('#btn-style-next').evaluate((el) => el.scrollWidth <= el.clientWidth), 'style Continue label fits its phone button');
+  check(await m.locator('#btn-style-next').evaluate((el) => el.innerText.trim() === 'Set up video' && el.scrollWidth <= el.clientWidth), 'the style action names the next step and fits its phone button');
   check(await m.evaluate(() => {
     const card = document.querySelector('.style-card.on').getBoundingClientRect();
     return card.bottom <= document.querySelector('#style-track').getBoundingClientRect().bottom && card.bottom <= document.querySelector('#panel-style .wiz-nav').getBoundingClientRect().top;
   }), 'selected style details stay above the phone footer');
   await m.click('#btn-style-next'); await sleep(800); await shot(m, 'p03-settings'); await noSideScroll('settings');
+  await m.click('#btn-settings-preview');
+  check(await m.getAttribute('#panel-settings', 'data-preview-paused') === 'true', 'phone creators can pause the settings example');
+  await m.click('#btn-settings-preview');
+  await m.click('#setup-details > summary');
   await m.click('#seg-pacing [data-pacing=story]'); await m.click('#seg-face [data-face=bubble]');
   await m.locator('#settings-example').scrollIntoViewIfNeeded(); await sleep(300); await shot(m, 'p03b-settings-example'); await noSideScroll('settings example');
   await m.locator('#seg-motion').scrollIntoViewIfNeeded(); await shot(m, 'p03c-motion-examples'); await noSideScroll('motion examples');
@@ -458,6 +573,7 @@ try {
   await m.click('#btn-review-continue');
   await m.waitForFunction(() => !document.querySelector('#btn-gen-chars').hidden, null, { timeout: 30000 });
   await sleep(500); await shot(m, 'p05-characters'); await noSideScroll('characters');
+  check(await m.locator('#btn-add-char').evaluate((el) => el.innerText.trim() === 'Add' && el.getBoundingClientRect().width >= 60) && await m.locator('#cast-bar').evaluate((el) => el.getBoundingClientRect().height < 120), 'phone cast has a labelled Add action and a compact drawing dock');
   await m.click('#btn-gen-chars');
   await sleep(400); await shot(m, 'p05c-drawing-cast');
   await m.waitForFunction(() => document.querySelectorAll('.char-art img').length === 3, null, { timeout: 30000 });
@@ -477,6 +593,12 @@ try {
   check(await m.evaluate(() => document.body.classList.contains('ed-full')), 'editor is full-screen on phone');
   check(await m.evaluate(editorOrder), 'phone editor keeps the timeline, playback controls, and tools below the video');
   await shot(m, 'p06-editor');
+  check(await m.isVisible('#zoom-in') && await m.isVisible('#zoom-out') && await m.locator('#zoom-in').evaluate((el) => { const r = el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }), 'timeline zoom controls are reachable on the phone');
+  const phoneZoomWidth = await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width);
+  await m.click('#zoom-in');
+  check(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) > phoneZoomWidth, 'phone Zoom in shows more shot detail');
+  await m.click('#zoom-out');
+  check(Math.abs(await m.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - phoneZoomWidth) < 1, 'phone Zoom out restores the timeline scale');
   await m.click('#ed-tabs button[data-tab=shot]'); await sleep(600);
   check(await m.evaluate(() => document.querySelector('#ed-sheet').classList.contains('open')), 'phone tool sheet slides up');
   await shot(m, 'p07-sheet');
@@ -636,6 +758,7 @@ try {
   await r.evaluate(() => window.testWork.stop());
   await r.click('#cta-demo'); await r.click('#btn-style-next');
   check(await r.evaluate(() => getComputedStyle(document.querySelector('.example-scene')).animationName === 'none'), 'settings examples respect reduced motion');
+  check(await r.isDisabled('#btn-settings-preview') && await r.getAttribute('#panel-settings', 'data-preview-paused') === 'true', 'the settings motion control honors the device reduced-motion preference');
   await r.evaluate(async () => { const { showWork } = await import('./js/loader.js'); window.testWork = showWork({ kind: 'cast', title: 'Drawing your cast' }); });
   check(await r.evaluate(() => getComputedStyle(document.querySelector('.cast-head-ink')).opacity === '1' && getComputedStyle(document.querySelector('.cast-check')).opacity === '1'), 'reduced motion leaves the character drawing illustration complete and readable');
   await shot(r, 'p13-reduced-motion-cast');
