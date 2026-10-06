@@ -2848,4 +2848,5 @@ body.ed-full .sample-editor-note .btn { --h: 30px; }
 body.ed-full .tl-head { top: 6px; }
 body.ed-full .preview-workspace { position: relative; }
 body.ed-full .ed-view { position: static; }
-body.ed-full .view-bar { top: auto; bottom: 10px; }
+body.ed-full .view-bar { top: 8px; bottom: auto; }
+body.ed-full .preview-workspace:has(#draw-card:not([hidden]):not(.done):not(.busy)) .view-bar { top: 68px; }
