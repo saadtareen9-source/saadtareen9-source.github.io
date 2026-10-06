@@ -327,6 +327,22 @@ try {
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
   check(await p.evaluate(() => !document.querySelector('#example-scrub, button[data-demo-view], [data-demo-caption], .showreel-timeline')), 'the landing example is a clean video, without a slider or extra controls');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
+  const timing = await p.evaluate(async () => {
+    const { snapCuts } = await import('./js/qc.js');
+    const { alignWordsToAudio } = await import('./js/transcribe.js');
+    const text = 'So I went to the airport. I grabbed my bag, and then I saw a cat inside it. Wild.'.split(' ');
+    let t = 0.3;
+    const words = text.map((w) => { const s = t; t += 0.32; const e = t - 0.05; if (/[.,]$/.test(w)) t += 0.35; return { w, s, e }; });
+    const segs = [{ start: 0, end: 1.5 }, { start: 1.5, end: 4.2 }, { start: 4.2, end: 8 }];
+    snapCuts(segs, words, 8);
+    const midWord = segs.slice(1).some((sg) => words.some((w) => sg.start > w.s + 0.01 && sg.start < w.e - 0.01));
+    const sr = 16000, x = new Float32Array(sr * 6), truth = [[0.5, 0.9], [1.0, 1.5], [2.2, 2.7], [2.8, 3.3], [4.0, 4.6]];
+    for (const [a, b] of truth) for (let i = a * sr; i < b * sr; i++) x[i] = 0.4 * Math.sin(i * 0.2);
+    const aligned = alignWordsToAudio(truth.map(([a, b], i) => ({ w: `w${i}`, s: a - 0.2, e: b + 0.3 })), x, sr);
+    return { midWord, offBy: Math.max(...aligned.map((w, i) => Math.abs(w.s - truth[i][0]))) };
+  });
+  check(!timing.midWord, 'cuts are moved into the pauses between words, never mid-word');
+  check(timing.offBy < 0.03, 'caption word timings are lined up with the actual sound', `largest start error ${timing.offBy.toFixed(3)}s`);
   check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
   await p.click('[data-showcase=rain]');
   check(await p.getAttribute('#story-showreel', 'data-demo-story') === 'rain' && (await p.getAttribute('#example-original', 'poster')).endsWith('man.jpg') && (await p.getAttribute('#showreel-art', 'src')).endsWith('rain.jpg'), 'choosing another story changes both the creator footage and illustration');

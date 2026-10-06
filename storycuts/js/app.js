@@ -18,7 +18,7 @@ import { showWork } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { trackFaces } from './facetrack.js';
-import { transcribeInBrowser, transcribeWithOpenAI, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
+import { transcribeInBrowser, transcribeWithOpenAI, alignWordsToAudio, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
 import {
   IMAGE_MODELS, STYLES, canAnimate, modelInfo, storageProblem, deleteBlobs, hasBlob, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
@@ -1485,7 +1485,9 @@ async function createVideo() {
       };
       try {
         samples = await decodeAudio(state.file, 16000, { onStatus: (k) => k === 'capture' && onStatus('Listening along with your video') });
-        words = await transcribeInBrowser(state.file, { quality: $('#asr-quality').value, onStatus, samples, signal: asrAbort.signal });
+        // choosing "Most accurate" is the creator's permission to send just the sound
+        if ($('#asr-quality').value === 'cloud' && settingsGet().openai) words = await transcribeWithOpenAI(samples, settingsGet().openai);
+        else words = await transcribeInBrowser(state.file, { quality: $('#asr-quality').value === 'cloud' ? 'fast' : $('#asr-quality').value, onStatus, samples, signal: asrAbort.signal });
         if (!words.length) throw new Error('no speech found');
       } catch (e) {
         problem = e.code === 'silent' ? 'silent' : errText(e);
@@ -1511,6 +1513,7 @@ async function createVideo() {
         save(); renderPrep(); renderSummary();
         return;
       }
+      try { words = alignWordsToAudio(words, samples); } catch { /* keep the model's timing */ }
       p.words = words; p.transcriptSource = 'auto'; p.transcriptReviewed = false; save(); renderTranscript(); renderPrep();
       state.live?.update({ actions: [] });
     }
@@ -1934,7 +1937,7 @@ async function approveAndDraw() {
   if (p.characters.some(characterNeedsDrawing)) { toast('Draw or update your characters before approving the cast.'); return; }
   snapshot();
   p.characters = normalizeCharacters(p.characters);
-  p.segments = normalizeSegments(p.segments, p.characters, p.duration, [], { pacing: p.settings.pacing });
+  p.segments = normalizeSegments(p.segments, p.characters, p.duration, [], { pacing: p.settings.pacing, words: p.words });
   p.approved = true;
   save();
   state.stages = { ...(state.stages || {}), cast: 'done' };
@@ -3630,3 +3633,11 @@ renderStepper();
 
 // test hook
 window.__storycuts = { state, loadDemo };
+
+// Remember the creator's listening choice on this device.
+{
+  const sel = $('#asr-quality');
+  const saved = store.get('storycuts:asr-quality', '');
+  if ([...sel.options].some((o) => o.value === saved)) sel.value = saved;
+  sel.addEventListener('change', () => store.set('storycuts:asr-quality', sel.value));
+}
