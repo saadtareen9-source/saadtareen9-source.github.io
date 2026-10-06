@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=51; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=52; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=51">
+  <link rel="stylesheet" href="style.css?v=52">
 </head>
 <body>
   <a class="skip-link" href="#studio">Skip to the studio</a>
@@ -369,7 +369,7 @@
                 <div class="tool-row"><button class="btn primary" id="btn-use-paste">Use this transcript<svg><use href="#i-check"/></svg></button><button class="btn ghost" id="btn-paste-cancel">Cancel</button></div>
               </div>
             </div>
-            <details class="listening-options" id="listening-options"><summary>Listening options <span>Optional</span></summary><label class="field">Listening quality<select id="asr-quality"><option value="fast">Quick</option><option value="accurate">More careful (takes longer)</option></select></label></details>
+            <details class="listening-options" id="listening-options"><summary>Listening options <span>Optional</span></summary><label class="field">Listening quality<select id="asr-quality"><option value="fast">Quick</option><option value="accurate">More careful (takes longer)</option><option value="cloud">Most accurate: OpenAI (sends only the sound, about 1 cent a minute)</option></select></label></details>
             <button class="btn link sm" id="btn-check-transcript" hidden><svg><use href="#i-text"/></svg>Check the transcript</button>
           </section>
 
@@ -602,7 +602,8 @@
           </div>
 
           <div class="tl" id="tl">
-            <div class="timeline-bar"><b>Your story</b><span class="timeline-help">Select a shot to edit · drag its edges to trim</span><span class="timeline-legend"><i class="legend-face"></i>Your face<i class="legend-scene"></i>Scene</span><div class="zoom"><span class="zoom-label">Zoom</span><button class="icon-btn sm" id="zoom-out" aria-label="Zoom out" data-tip="See more of your story"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="icon-btn sm" id="zoom-in" aria-label="Zoom in" data-tip="See more detail"><svg><use href="#i-plus"/></svg></button></div></div>
+            <div class="timeline-bar"><b>Your story</b><span class="timeline-help">Tap a clip to trim, split or delete it · tap + between shots for a transition</span><span class="timeline-legend"><i class="legend-face"></i>Your face<i class="legend-scene"></i>Scene</span><div class="zoom"><span class="zoom-label">Zoom</span><button class="icon-btn sm" id="zoom-out" aria-label="Zoom out" data-tip="See more of your story"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="icon-btn sm" id="zoom-in" aria-label="Zoom in" data-tip="See more detail"><svg><use href="#i-plus"/></svg></button></div></div>
+            <div class="sel-bar" id="sel-bar" role="toolbar" aria-label="Tools for the selected clip" hidden></div>
             <div class="tl-scroll" id="tl-scroll">
               <div class="tl-content" id="tl-content">
                 <div class="tl-ruler" id="tl-ruler"></div>
@@ -741,7 +742,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=51", "./js/app.js": "./js/app.js?v=51", "./js/asr-worker.js": "./js/asr-worker.js?v=51", "./js/billing.js": "./js/billing.js?v=51", "./js/captions.js": "./js/captions.js?v=51", "./js/constants.js": "./js/constants.js?v=51", "./js/draw.js": "./js/draw.js?v=51", "./js/experience.js": "./js/experience.js?v=51", "./js/facetrack.js": "./js/facetrack.js?v=51", "./js/images.js": "./js/images.js?v=51", "./js/loader.js": "./js/loader.js?v=51", "./js/planner.js": "./js/planner.js?v=51", "./js/qc.js": "./js/qc.js?v=51", "./js/render.js": "./js/render.js?v=51", "./js/sfx.js": "./js/sfx.js?v=51", "./js/transcribe.js": "./js/transcribe.js?v=51"}}</script>
-  <script type="module" src="js/app.js?v=51"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=52", "./js/app.js": "./js/app.js?v=52", "./js/asr-worker.js": "./js/asr-worker.js?v=52", "./js/billing.js": "./js/billing.js?v=52", "./js/captions.js": "./js/captions.js?v=52", "./js/constants.js": "./js/constants.js?v=52", "./js/draw.js": "./js/draw.js?v=52", "./js/experience.js": "./js/experience.js?v=52", "./js/facetrack.js": "./js/facetrack.js?v=52", "./js/images.js": "./js/images.js?v=52", "./js/loader.js": "./js/loader.js?v=52", "./js/planner.js": "./js/planner.js?v=52", "./js/qc.js": "./js/qc.js?v=52", "./js/render.js": "./js/render.js?v=52", "./js/sfx.js": "./js/sfx.js?v=52", "./js/transcribe.js": "./js/transcribe.js?v=52"}}</script>
+  <script type="module" src="js/app.js?v=52"></script>
 </body>
 </html>

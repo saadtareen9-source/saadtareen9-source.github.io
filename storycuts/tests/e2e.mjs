@@ -198,6 +198,32 @@ try {
     const start = await s.evaluate(() => window.__storycuts.state.media.time);
     await s.click('#btn-play'); await sleep(700); await s.click('#btn-play');
     check(await s.evaluate(() => window.__storycuts.state.media.time) > start + .4, `${tag}: sample playback advances the real editor playhead`);
+    {
+      const segCount = () => s.evaluate(() => window.__storycuts.state.project.segments.length);
+      const n0 = await segCount();
+      await s.click('#timeline .clip >> nth=1');
+      check(await s.isVisible('#sel-bar') && !(await s.evaluate(() => document.body.classList.contains('sheet-open'))) && await s.locator('#timeline .clip.sel .trim').count() >= 1, `${tag}: tapping a clip selects it with trim handles and clip tools, without a pop-up`);
+      await shot(s, phone ? 'p15b-clip-tools' : '15c-clip-tools');
+      await s.click('#sel-bar [data-sb=split]');
+      check(await segCount() === n0 + 1, `${tag}: the clip toolbar splits the selected clip`);
+      await s.click('#sel-bar [data-sb=delete]');
+      check(await segCount() === n0, `${tag}: the clip toolbar deletes a clip and its neighbour fills the time`);
+      await s.click('#btn-undo'); await s.click('#btn-undo');
+      check(await segCount() === n0, `${tag}: clip tool edits use undo`);
+      await s.locator('#timeline .cut-plus').first().click();
+      check(await s.evaluate(() => window.__storycuts.state.tab === 'trans' && window.__storycuts.state.transScope === 'one'), `${tag}: the + between shots opens transitions for that cut`);
+      if (phone) await s.click('#sheet-done');
+      await s.evaluate(() => { const st = window.__storycuts.state; st.project.sfx = [{ id: 'fx-test', type: 'pop', t: 1, vol: 1 }]; });
+      await s.click('#sel-bar [data-sb=done]').catch(() => {});
+      await s.evaluate(() => window.__storycuts.state.project && document.querySelector('#zoom-in').click());
+      await s.evaluate(() => { const st = window.__storycuts.state; st.media.seek(0); });
+      await sleep(200);
+      await s.evaluate(() => document.querySelector('#zoom-out').click());
+      await s.locator('.fxclip[data-id="fx-test"]').click();
+      check(await s.isVisible('#sel-bar [data-sb=fx-del]') && !(await s.evaluate(() => document.body.classList.contains('sheet-open'))), `${tag}: tapping a sound effect shows its tools in place`);
+      await s.click('#sel-bar [data-sb=fx-del]');
+      check(await s.evaluate(() => !window.__storycuts.state.project.sfx.length), `${tag}: a sound effect can be deleted in one tap`);
+    }
     await s.click('#ed-tabs [data-tab=captions]');
     await s.locator('label:has(#opt-captions)').click();
     check(await s.evaluate(() => !window.__storycuts.state.project.settings.captions), `${tag}: sample caption controls change the project`);
@@ -327,6 +353,22 @@ try {
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
   check(await p.evaluate(() => !document.querySelector('#example-scrub, button[data-demo-view], [data-demo-caption], .showreel-timeline')), 'the landing example is a clean video, without a slider or extra controls');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
+  const timing = await p.evaluate(async () => {
+    const { snapCuts } = await import('./js/qc.js');
+    const { alignWordsToAudio } = await import('./js/transcribe.js');
+    const text = 'So I went to the airport. I grabbed my bag, and then I saw a cat inside it. Wild.'.split(' ');
+    let t = 0.3;
+    const words = text.map((w) => { const s = t; t += 0.32; const e = t - 0.05; if (/[.,]$/.test(w)) t += 0.35; return { w, s, e }; });
+    const segs = [{ start: 0, end: 1.5 }, { start: 1.5, end: 4.2 }, { start: 4.2, end: 8 }];
+    snapCuts(segs, words, 8);
+    const midWord = segs.slice(1).some((sg) => words.some((w) => sg.start > w.s + 0.01 && sg.start < w.e - 0.01));
+    const sr = 16000, x = new Float32Array(sr * 6), truth = [[0.5, 0.9], [1.0, 1.5], [2.2, 2.7], [2.8, 3.3], [4.0, 4.6]];
+    for (const [a, b] of truth) for (let i = a * sr; i < b * sr; i++) x[i] = 0.4 * Math.sin(i * 0.2);
+    const aligned = alignWordsToAudio(truth.map(([a, b], i) => ({ w: `w${i}`, s: a - 0.2, e: b + 0.3 })), x, sr);
+    return { midWord, offBy: Math.max(...aligned.map((w, i) => Math.abs(w.s - truth[i][0]))) };
+  });
+  check(!timing.midWord, 'cuts are moved into the pauses between words, never mid-word');
+  check(timing.offBy < 0.03, 'caption word timings are lined up with the actual sound', `largest start error ${timing.offBy.toFixed(3)}s`);
   check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
   await p.click('[data-showcase=rain]');
   check(await p.getAttribute('#story-showreel', 'data-demo-story') === 'rain' && (await p.getAttribute('#example-original', 'poster')).endsWith('man.jpg') && (await p.getAttribute('#showreel-art', 'src')).endsWith('rain.jpg'), 'choosing another story changes both the creator footage and illustration');

@@ -2756,3 +2756,48 @@ body.ed-app .pane-title { font-size: .8rem; }
   .peek-shots b { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .peek-shots span { padding: 0 6px; }
 }
+
+/* ---------- CapCut-style clip tools ---------- */
+.sel-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--bg-1); min-height: 58px; }
+.sel-bar[hidden] { display: none; }
+.sb-done { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: none; background: var(--accent); color: #fff; cursor: pointer; }
+.sb-done svg { width: 18px; height: 18px; }
+.sb-label { display: grid; gap: 1px; min-width: 0; flex: 0 1 auto; }
+.sb-label b { font-size: .82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-label small { font-size: .7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-tools { display: flex; align-items: center; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.sb-tools::-webkit-scrollbar { display: none; }
+.sb-tool { flex: none; display: grid; justify-items: center; gap: 3px; min-width: 62px; padding: 6px 6px 5px; border: none; border-radius: 10px; background: none; color: var(--text); font-size: .68rem; font-weight: 500; cursor: pointer; }
+.sb-tool svg { width: 20px; height: 20px; }
+.sb-tool:hover:not(:disabled) { background: var(--bg-3); }
+.sb-tool:disabled { opacity: .35; cursor: default; }
+.sb-tool.danger { color: #ff8a8a; }
+.sb-vol { min-width: 40px; text-align: center; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--text-2); }
+/* trim handles: big and easy to grab */
+#timeline.active .clip.sel { box-shadow: 0 0 0 2px #fff; }
+#timeline .trim { width: 16px; background: #fff; }
+#timeline .trim::before { width: 3px; height: 18px; background: #18151f; }
+#timeline .trim.l { left: -15px; border-radius: 8px 0 0 8px; }
+#timeline .trim.r { right: -15px; border-radius: 0 8px 8px 0; }
+.clip-dur { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 1px 7px; border-radius: 6px; background: #fff; color: #18151f; font-size: .66rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+/* the + between shots */
+.cut-plus { position: absolute; top: 50%; z-index: 4; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; transform: translate(-50%, -50%); border: 2px solid var(--bg); border-radius: 7px; background: #f4f4f5; color: #18151f; cursor: pointer; box-shadow: 0 2px 6px #0007; transition: transform .15s; }
+.cut-plus svg { width: 12px; height: 12px; }
+.cut-plus:hover { transform: translate(-50%, -50%) scale(1.12); }
+.cut-plus.has { background: var(--accent-line, #ae9adf); }
+#timeline.active .clip.sel ~ .cut-plus { z-index: 4; }
+.tl-track.shots { overflow: visible; }
+.tl-content { padding-top: 20px; }
+/* phones: the clip tools replace the tool bar at the bottom, like CapCut */
+body.ed-full.clip-tools .ed-tabs { visibility: hidden; }
+body.ed-full .sel-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); border-bottom: none; }
+body.ed-full .sb-label small { display: none; }
+body.ed-full .sb-tool { min-width: 56px; }
+@media (max-width: 420px) { body.ed-full .sb-label { display: none; } }
+/* computers: the clip tools take the place of the timeline header, so nothing below moves */
+body:not(.ed-full) .sel-bar { position: absolute; top: 0; left: 0; right: 150px; border-right: 1px solid var(--line); z-index: 8; height: 40px; min-height: 0; padding: 0 10px; gap: 10px; }
+body:not(.ed-full) .sb-done { width: 28px; height: 28px; }
+body:not(.ed-full) .sb-done svg { width: 14px; height: 14px; }
+body:not(.ed-full) .sb-label { display: flex; align-items: baseline; gap: 10px; }
+body:not(.ed-full) .sb-tool { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 10px; font-size: .74rem; }
+body:not(.ed-full) .sb-tool svg { width: 15px; height: 15px; }

@@ -141,6 +141,68 @@ export async function transcribeInBrowser(file, { quality = 'fast', language = n
   return tidyWords(chunks.map((c) => ({ w: c.text.trim(), s: c.timestamp[0], e: c.timestamp[1] ?? c.timestamp[0] + 0.3 })));
 }
 
+/**
+ * Line each word up with the actual sound. Speech models often start a word a
+ * little early (in the silence before it) or end it late; captions then feel
+ * out of sync. This nudges each start to the moment the voice begins and each
+ * end to when it stops, within small limits so words never swap places.
+ */
+export function alignWordsToAudio(words, samples, sampleRate = 16000) {
+  if (!words?.length || !samples?.length) return words;
+  const hop = Math.round(sampleRate * 0.01);
+  const n = Math.floor(samples.length / hop);
+  const env = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    let e = 0;
+    for (let j = k * hop; j < (k + 1) * hop; j++) e += samples[j] * samples[j];
+    env[k] = Math.sqrt(e / hop);
+  }
+  const sorted = Float32Array.from(env).sort();
+  const floor = sorted[Math.floor(n * 0.15)] || 0, peak = sorted[Math.floor(n * 0.95)] || 1;
+  const thr = floor + (peak - floor) * 0.12;
+  const voiced = (t) => { const k = Math.round(t * 100); return k >= 0 && k < n && env[k] > thr; };
+  const out = words.map((w) => ({ ...w }));
+  const pauseAfter = (from, to) => {
+    // the first moment of voice after a real pause (80 ms or more) inside [from, to]
+    let quiet = 0;
+    for (let t = from; t < to; t += 0.01) {
+      if (!voiced(t)) quiet += 0.01;
+      else if (quiet >= 0.08) return t;
+      else quiet = 0;
+    }
+    return null;
+  };
+  // pass 1: starts
+  for (let i = 0; i < out.length; i++) {
+    const w = out[i], prevStart = i ? out[i - 1].s : -Infinity;
+    const limit = Math.min(w.s + 0.4, w.e - 0.05);
+    if (!voiced(w.s)) {
+      for (let t = w.s; t < limit; t += 0.01) if (voiced(t)) { w.s = t; break; }
+    } else {
+      // starts in the tail of the previous word: jump to after the pause
+      const after = pauseAfter(w.s, limit);
+      if (after != null) w.s = after;
+      else {
+        let t = w.s;
+        while (t - 0.01 > Math.max(prevStart + 0.05, w.s - 0.12) && voiced(t - 0.01)) t -= 0.01;
+        w.s = t;
+      }
+    }
+    if (w.s < prevStart + 0.02) w.s = prevStart + 0.02;
+  }
+  // pass 2: ends, now that every start is known
+  for (let i = 0; i < out.length; i++) {
+    const w = out[i], next = out[i + 1]?.s ?? Infinity;
+    let e = Math.min(Math.max(w.e, w.s + 0.08), next);
+    if (!voiced(e - 0.01) || e === next) {
+      for (let t = e - 0.01; t > w.s + 0.06; t -= 0.01) if (voiced(t)) { e = Math.min(e, t + 0.06); break; }
+    }
+    w.e = Math.max(w.s + 0.06, e);
+    w.s = +w.s.toFixed(3); w.e = +w.e.toFixed(3);
+  }
+  return out;
+}
+
 function tidyWords(list) {
   const words = list.filter((w) => w.w && Number.isFinite(w.s));
   for (let i = 0; i < words.length; i++) {

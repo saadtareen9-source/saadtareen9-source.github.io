@@ -141,7 +141,7 @@ export function normalizeScene(scene, characters, report = [], segIndex = null) 
  * Turn a plan into contiguous, time-based segments that cover [0, duration],
  * applying editorial rules along the way.
  */
-export function normalizeSegments(segments, characters, duration, report = [], { pacing = 'mostly', cutbacks = false } = {}) {
+export function normalizeSegments(segments, characters, duration, report = [], { pacing = 'mostly', cutbacks = false, words = null } = {}) {
   let segs = (segments || [])
     .filter((s) => Number.isFinite(s.start))
     .map((s) => ({
@@ -235,6 +235,7 @@ export function normalizeSegments(segments, characters, duration, report = [], {
   for (let i = segs.length - 1; i > 0; i--) {
     if (segs[i].type === 'face' && segs[i - 1].type === 'face') { segs[i - 1].end = segs[i].end; segs.splice(i, 1); }
   }
+  if (words?.length) snapCuts(segs, words, duration, report);
   segs.forEach((s, i) => {
     if (s.type !== 'face' && !s.scene) {
       s.scene = normalizeScene({}, characters, report, i);
@@ -244,10 +245,48 @@ export function normalizeSegments(segments, characters, duration, report = [], {
   return segs;
 }
 
+/**
+ * Move every cut into a natural pause: never in the middle of a word, and just
+ * before the next word starts, preferring the ends of sentences. This is what
+ * makes cuts feel smooth instead of clipped.
+ */
+export function snapCuts(segs, words, duration, report = []) {
+  const ws = words.filter((w) => Number.isFinite(w.s) && Number.isFinite(w.e)).sort((a, b) => a.s - b.s);
+  if (!ws.length || segs.length < 2) return segs;
+  // every place a cut could go: the moment before each word starts
+  const spots = ws.map((w, i) => {
+    const prev = ws[i - 1];
+    const gap = prev ? Math.max(0, w.s - prev.e) : w.s;
+    const lead = Math.min(0.1, Math.max(0.02, gap / 2));
+    return { t: Math.max(prev ? prev.e : 0, w.s - lead), gap, sentence: !prev || /[.?!]["')\]]*$/.test(prev.w), comma: !!prev && /[,;:]$/.test(prev.w) };
+  });
+  let moved = 0;
+  for (let i = 1; i < segs.length; i++) {
+    const b = segs[i].start;
+    const lo = segs[i - 1].start + 0.8, hi = segs[i].end - 0.8;
+    if (hi <= lo) continue;
+    let best = null, bestScore = Infinity;
+    for (const sp of spots) {
+      if (sp.t < lo || sp.t > hi || Math.abs(sp.t - b) > 1.2) continue;
+      // close to the planned moment, but pauses and sentence ends win
+      const score = Math.abs(sp.t - b) - Math.min(sp.gap, 0.6) * 1.2 - (sp.sentence ? 0.45 : sp.comma ? 0.2 : 0);
+      if (score < bestScore) { bestScore = score; best = sp; }
+    }
+    if (best && Math.abs(best.t - b) > 0.01) {
+      segs[i].start = +best.t.toFixed(3);
+      segs[i - 1].end = segs[i].start;
+      moved++;
+    }
+  }
+  segs[segs.length - 1].end = duration;
+  if (moved) report.push({ seg: null, check: 'cut-timing', fix: `Moved ${moved} cut${moved > 1 ? 's' : ''} into natural pauses between words.` });
+  return segs;
+}
+
 export function runQC(project) {
   const report = [];
   project.characters = normalizeCharacters(project.characters, report);
-  project.segments = normalizeSegments(project.segments, project.characters, project.duration, report, { pacing: project.settings?.pacing, cutbacks: true });
+  project.segments = normalizeSegments(project.segments, project.characters, project.duration, report, { pacing: project.settings?.pacing, cutbacks: true, words: project.words });
   const scenes = project.segments.filter((s) => s.type !== 'face').length;
   const checks = project.segments.length * 6 + project.characters.length * 2;
   return { report, checks, scenes };
