@@ -1478,9 +1478,10 @@ async function createVideo() {
       }
       // Backup: OpenAI's speech-to-text, with only the sound sent, and only if the creator agrees.
       if (!words && samples && problem !== 'silent' && settingsGet().openai) {
-        state.live?.update({ title: 'Choose how to listen' });
+        liveStop();
         if (await askCloudListening()) {
-          state.live?.update({ title: 'Listening to your story', tips: ['OpenAI is writing down your words…', 'Only the sound was sent, never your video.'] });
+          liveStart('transcribe', 'Listening to your story');
+          state.live?.update({ tips: ['OpenAI is writing down your words…', 'Only the sound was sent, never your video.'] });
           try { words = await transcribeWithOpenAI(samples, settingsGet().openai); if (!words.length) words = null; } catch (e) { problem = errText(e); }
         }
       }
