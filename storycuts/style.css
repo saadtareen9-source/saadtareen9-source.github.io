@@ -2801,3 +2801,50 @@ body:not(.ed-full) .sb-done svg { width: 14px; height: 14px; }
 body:not(.ed-full) .sb-label { display: flex; align-items: baseline; gap: 10px; }
 body:not(.ed-full) .sb-tool { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 10px; font-size: .74rem; }
 body:not(.ed-full) .sb-tool svg { width: 15px; height: 15px; }
+
+/* ---------- phone editor: give the video the space (CapCut-style) ---------- */
+body.ed-full .tl-labels { display: none; }
+body.ed-full .timeline-bar { height: 34px; padding: 0 12px; }
+body.ed-full .timeline-bar b { font-size: .74rem; }
+body.ed-full .tl-content { padding: 18px 0 6px; }
+body.ed-full .tl-ruler { height: 14px; }
+body.ed-full .tl-track { margin-top: 4px; }
+body.ed-full .tl-track.shots { height: 50px; }
+body.ed-full .tl-track.fx { height: 24px; }
+body.ed-full .tl-track.music { height: 22px; }
+body.ed-full .tl-track.voice { height: 22px; }
+body.ed-full .fxclip { height: 20px; top: 2px; padding: 0 6px; font-size: .68rem; }
+body.ed-full .musicclip, body.ed-full .music-empty { height: 20px !important; font-size: .68rem; }
+body.ed-full .view-bar { min-height: 0; padding: 4px 10px 2px; }
+body.ed-full .view-bar > span:first-child { display: none; }
+body.ed-full .preview-tool { padding: 3px 8px; font-size: .66rem; }
+body.ed-full .stage { padding: 0 8px 6px; }
+body.ed-full .draw-card { margin: 0 8px 6px; padding: 6px 6px 6px 12px; gap: 8px; }
+body.ed-full .draw-card .dc-row { gap: 8px; }
+body.ed-full .draw-card .dc-txt b { font-size: .8rem; }
+body.ed-full .draw-card .dc-txt span { font-size: .68rem; }
+body.ed-full .draw-card .btn { --h: 34px; padding: 0 12px; font-size: .76rem; }
+body.ed-full .sample-editor-note { margin: 0 8px 6px; padding: 6px 10px; font-size: .7rem; }
+body.ed-full .sample-editor-note small, body.ed-full .sample-editor-note span > span:last-child { display: none; }
+body.ed-full .transport { padding: 4px 8px; }
+body.ed-full .ed-tabs { padding-top: 4px; }
+body.ed-full .ed-tabs button { padding: 5px 0 4px; }
+body.ed-full .ed-tabs button svg { width: 20px; height: 20px; }
+body.ed-full .sample-editor-note > span { font-size: 0; }
+body.ed-full .sample-editor-note > span b { font-size: .74rem; }
+body.ed-full .ed-view { position: relative; }
+body.ed-full .view-bar { position: absolute; top: 6px; right: 10px; z-index: 6; padding: 0; background: none; }
+body.ed-full .view-bar .preview-spec { display: none; }
+body.ed-full .preview-tool { background: rgba(20, 18, 26, .7); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+body.ed-full .stage { padding-top: 6px; }
+body.ed-full .timeline-bar { display: none; }
+body.ed-full .tl-content { padding: 16px 0 4px; }
+body.ed-full .tl-track.shots { height: 46px; }
+body.ed-full .tl-track.fx { height: 22px; }
+body.ed-full .tl-track.music, body.ed-full .tl-track.voice { height: 20px; }
+body.ed-full .fxclip { height: 18px; top: 2px; }
+body.ed-full .musicclip, body.ed-full .music-empty { height: 18px !important; }
+body.ed-full .sample-editor-note .btn { --h: 30px; }
+body.ed-full .tl-head { top: 6px; }
+body.ed-full .preview-workspace { position: relative; }
+body.ed-full .ed-view { position: static; }

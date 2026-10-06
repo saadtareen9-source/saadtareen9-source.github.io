@@ -3785,3 +3785,19 @@ window.__storycuts = { state, loadDemo };
   if ([...sel.options].some((o) => o.value === saved)) sel.value = saved;
   sel.addEventListener('change', () => store.set('storycuts:asr-quality', sel.value));
 }
+
+// Pinch the timeline with two fingers to zoom it (phones), like CapCut.
+{
+  const sc = $('#tl-scroll');
+  let start = 0, last = 1, raf = 0;
+  const dist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  sc.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { start = dist(e); last = 1; } }, { passive: true });
+  sc.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2 || !start) return;
+    e.preventDefault();
+    const k = dist(e) / start;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { if (Math.abs(k / last - 1) > 0.04) { zoom(k / last); last = k; } });
+  }, { passive: false });
+  sc.addEventListener('touchend', (e) => { if (e.touches.length < 2) start = 0; });
+}
