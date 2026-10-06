@@ -12,9 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=43; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=44; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
   <!-- icon sprite -->
@@ -85,7 +85,7 @@
       <a href="#faq">FAQ</a>
     </nav>
     <div class="nav-right">
-      <button class="icon-btn nav-keys" id="btn-keys" aria-label="Advanced preview setup" data-tip="AI accounts"><svg><use href="#i-key"/></svg><i class="dot" id="keys-dot"></i></button>
+      <button class="icon-btn nav-keys" id="btn-keys" hidden aria-label="Owner setup" data-tip="AI accounts"><svg><use href="#i-key"/></svg><i class="dot" id="keys-dot"></i></button>
       <a class="btn primary sm nav-cta" id="nav-plan" href="#studio"><span>Open studio</span></a>
       <button class="icon-btn nav-menu" id="btn-menu" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
     </div>
@@ -574,7 +574,7 @@
         </div>
       </div>
       <div class="plans stagger" id="plans"></div>
-      <p class="plans-foot muted small"><svg><use href="#i-shield"/></svg>Preview pricing. Final plans will be confirmed at launch. The current advanced preview uses your own AI accounts. <a href="#" id="manage-sub" hidden>Manage subscription</a></p>
+      <p class="plans-foot muted small"><svg><use href="#i-shield"/></svg>Every plan includes all AI drawing, quality checks and exports. Subscriptions open soon. <a href="#" id="manage-sub" hidden>Manage subscription</a></p>
     </section>
 
     <!-- FAQ -->
@@ -582,7 +582,7 @@
       <span class="kicker">FAQ</span>
       <h2 class="section-title">Questions</h2>
       <details><summary>Is my video uploaded anywhere?</summary><p>No. Your video is played and edited inside your browser. Only the words you say are sent to the AI editor, and only the scene descriptions (plus your character designs) are sent to the image model.</p></details>
-      <details><summary>What does it cost?</summary><p>The sample editor is free and needs no account. Our planned subscriptions include AI creation within your plan's allowance, so you won't need separate AI accounts. Paid plans aren't open yet. For now, creating a new story in the advanced preview uses your own Claude and OpenAI accounts, which charge for AI usage. You'll see an estimate before drawing.</p></details>
+      <details><summary>What does it cost?</summary><p>StoryCuts is a monthly subscription with everything included: planning, every character and scene picture, quality checks and exports. You don't need any other accounts. Plans are based on minutes of finished video each month, starting at $19. Subscriptions open soon. Until then, the sample editor is free and needs no account.</p></details>
       <details><summary>Can I cancel anytime?</summary><p>Paid plans aren't open yet. When they launch, you'll be able to cancel or switch plans and keep access until the end of your paid period.</p></details>
       <details><summary>Will my characters look the same in every scene?</summary><p>Yes, that's the point. Each character is designed once, you approve the look, and every scene is drawn with those designs as reference. Every image is also checked automatically and redrawn if a character doesn't match.</p></details>
       <details><summary>Which apps can I post to?</summary><p>Export vertical 9:16 for TikTok, Instagram Reels and YouTube Shorts, or horizontal 16:9 for YouTube, with captions burned in.</p></details>
@@ -631,8 +631,8 @@
   <dialog id="settings">
     <form method="dialog" class="modal">
       <div class="modal-head">
-        <h3>Advanced preview setup</h3>
-        <p>Creating a new story in this preview uses your own AI accounts. Keys stay in this browser and go straight to each provider. Our planned subscriptions will include AI creation.</p>
+        <h3>Owner setup</h3>
+        <p>For the site owner only. Creating uses these AI accounts. Keys stay in this browser and go straight to each provider.</p>
       </div>
       <label class="field">Claude API key <span class="hint">plans the edit and checks every image</span>
         <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-…">
@@ -677,7 +677,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=43", "./js/app.js": "./js/app.js?v=43", "./js/billing.js": "./js/billing.js?v=43", "./js/constants.js": "./js/constants.js?v=43", "./js/draw.js": "./js/draw.js?v=43", "./js/experience.js": "./js/experience.js?v=43", "./js/images.js": "./js/images.js?v=43", "./js/loader.js": "./js/loader.js?v=43", "./js/planner.js": "./js/planner.js?v=43", "./js/qc.js": "./js/qc.js?v=43", "./js/render.js": "./js/render.js?v=43", "./js/sfx.js": "./js/sfx.js?v=43", "./js/transcribe.js": "./js/transcribe.js?v=43"}}</script>
-  <script type="module" src="js/app.js?v=43"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=44", "./js/app.js": "./js/app.js?v=44", "./js/billing.js": "./js/billing.js?v=44", "./js/constants.js": "./js/constants.js?v=44", "./js/draw.js": "./js/draw.js?v=44", "./js/experience.js": "./js/experience.js?v=44", "./js/images.js": "./js/images.js?v=44", "./js/loader.js": "./js/loader.js?v=44", "./js/planner.js": "./js/planner.js?v=44", "./js/qc.js": "./js/qc.js?v=44", "./js/render.js": "./js/render.js?v=44", "./js/sfx.js": "./js/sfx.js?v=44", "./js/transcribe.js": "./js/transcribe.js?v=44"}}</script>
+  <script type="module" src="js/app.js?v=44"></script>
 </body>
 </html>
