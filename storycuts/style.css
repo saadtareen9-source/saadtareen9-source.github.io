@@ -2520,7 +2520,7 @@ body.ed-app .work-pill { top: 12px; height: 36px; }
 .resume-card { display: grid; gap: 4px; margin: 6px 0 12px; padding: 14px 16px; border-radius: 12px; background: #f6f5f9; border: 1px solid #e7e4ef; }
 .resume-card b { font-size: .95rem; }
 .resume-card span { font-size: .8rem; color: #5d6370; }
-.resume-note { margin: 0 0 24px; font-size: .78rem; color: #6b7280; line-height: 1.6; }
+.shortcuts-dialog > .resume-note { margin: 0 0 24px; font-size: .78rem; color: #6b7280; line-height: 1.6; }
 .resume-actions { display: grid; gap: 8px; }
 .resume-actions .btn { width: 100%; justify-content: center; }
 .shortcuts-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
