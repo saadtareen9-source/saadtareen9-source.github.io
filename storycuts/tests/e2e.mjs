@@ -192,6 +192,29 @@ try {
     if (phone) await s.click('#sheet-done');
     await s.click('#btn-undo');
     check(await s.evaluate(() => window.__storycuts.state.project.settings.captions), `${tag}: sample edits use the existing undo history`);
+    if (phone) await s.click('#ed-tabs [data-tab=captions]');
+    check(await s.locator('#cap-styles .cap-tile canvas').count() >= 15, `${tag}: captions offer a wide range of styles drawn with the real renderer`);
+    await s.click('#cap-styles [data-preset=comic]');
+    check(await s.evaluate(() => { const cs = window.__storycuts.state.project.settings.captionStyle; return cs.preset === 'comic' && cs.font === 'bangers'; }) && await s.getAttribute('#cap-styles [data-preset=comic]', 'aria-pressed') === 'true', `${tag}: choosing a caption style applies its font and look`);
+    await s.click('#cap-sub [data-sub=text]');
+    await s.click('#cap-fonts [data-cv=anton]');
+    await s.click('#cap-size [data-v="1.55"]');
+    await s.click('#cap-sub [data-sub=colour]');
+    await s.locator('#cap-text-colors [data-c="#9be7ff"]').click();
+    await s.locator('#pane-captions input[type=color][data-ck=highlight]').evaluate((el) => { el.value = '#ff0066'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await s.click('#cap-sub [data-sub=motion]');
+    await s.click('#cap-anims [data-cv=karaoke]');
+    check(await s.evaluate(() => { const cs = window.__storycuts.state.project.settings.captionStyle; return cs.font === 'anton' && cs.size === 1.55 && cs.color === '#9be7ff' && cs.highlight === '#ff0066' && cs.anim === 'karaoke'; }), `${tag}: caption font, size, colours and animation can all be changed`);
+    await s.click('#cap-sub [data-sub=styles]');
+    if (!phone) {
+      await s.evaluate(() => { const st = window.__storycuts.state; st.media.seek(st.project.words[1].s + 0.05); });
+      await sleep(250);
+      const box = await s.evaluate(() => { const b = window.__storycuts.state.cache.capBox; const cv = document.querySelector('#preview'); const r = cv.getBoundingClientRect(); return b && { x: r.left + (b.x + b.w / 2) / cv.width * r.width, y: r.top + (b.y + b.h / 2) / cv.height * r.height, top: r.top, h: r.height }; });
+      if (box) { await s.mouse.move(box.x, box.y); await s.mouse.down(); await s.mouse.move(box.x, box.top + box.h * 0.25, { steps: 6 }); await s.mouse.up(); }
+      check(!!box && await s.evaluate(() => Math.abs(window.__storycuts.state.project.settings.captionStyle.y - 0.25) < 0.06), `${tag}: captions can be dragged anywhere on the video`);
+      await shot(s, '15b-caption-styles');
+    }
+    if (phone) await s.click('#sheet-done');
     await s.click('#ed-tabs [data-tab=filters]');
     await s.click('#filter-grid [data-filter=warm]');
     const beforeSlider = await s.evaluate(() => window.__storycuts.state.history.length);

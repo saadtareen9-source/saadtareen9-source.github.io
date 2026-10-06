@@ -5,8 +5,8 @@ const motion = matchMedia('(prefers-reduced-motion: reduce)');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STORIES = {
   airport: { clip: 'assets/hero/talk', poster: 'assets/hero/talk.jpg', art: 'assets/examples/airport.jpg', alt: 'A suitcase mix-up at an airport, with an unexpected orange cat', caption: 'THIS WASN’T<br><b>MY SUITCASE.</b>' },
-  rain: { clip: 'assets/examples/man', poster: 'assets/examples/man.jpg', art: 'assets/examples/rain.jpg', alt: 'A young man meets a corgi carrying an umbrella on a rainy street', caption: 'AND THEN<br><b>HE FOUND ME.</b>' },
-  breakfast: { clip: 'assets/examples/creator', poster: 'assets/examples/creator.jpg', art: 'assets/examples/breakfast.jpg', alt: 'A burnt pancake and a dad’s surprised reaction in the kitchen', caption: 'BREAKFAST WAS<br><b>A BAD IDEA.</b>' },
+  rain: { clip: 'assets/examples/man', poster: 'assets/examples/man.jpg', art: 'assets/examples/rain.jpg', alt: 'A young man meets a corgi carrying an umbrella on a rainy street', caption: 'THEN A CORGI<br><b>FOUND ME.</b>' },
+  breakfast: { clip: 'assets/examples/creator', poster: 'assets/examples/creator.jpg', art: 'assets/examples/breakfast.jpg', alt: 'Her little brother holds up a burnt pancake while their dad watches from the doorway', caption: 'MY BROTHER<br><b>TRIED TO COOK.</b>' },
 };
 export function exampleSceneForStyle(style, fallback) {
   return ({ stick: 'assets/examples/airport-doodle.jpg', cartoon: 'assets/examples/airport.jpg', anime: 'assets/examples/rain.jpg', comic: 'assets/examples/breakfast.jpg' })[style] || fallback;
@@ -46,7 +46,9 @@ export function syncCastNavigation(characters) {
   if (!characters.some((c) => c.id === activeCastId)) activeCastId = characters[Math.min(activeCastIndex, characters.length - 1)]?.id;
   host.innerHTML = characters.map((c) => {
     const drawn = c.image?.key && !c.image.stale;
-    return `<button id="cast-tab-${esc(c.id)}" role="tab" aria-controls="cast-card-${esc(c.id)}" data-cast-jump="${esc(c.id)}" class="${drawn ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true">${drawn ? '<svg><use href="#i-check"/></svg>' : esc([...String(c.name ?? "").trim()][0] || '?')}</i>${esc(c.name)}</button>`;
+    const src = c.image?.key ? $(`#chars .char[data-character="${CSS.escape(c.id)}"] .char-art img`)?.getAttribute('src') : '';
+    const thumb = c.image?.key ? `<img alt=""${src ? ` src="${esc(src)}"` : ''}>` : esc([...String(c.name ?? '').trim()][0] || '?');
+    return `<button id="cast-tab-${esc(c.id)}" role="tab" aria-controls="cast-card-${esc(c.id)}" data-cast-jump="${esc(c.id)}" class="${drawn ? 'drawn' : ''}" aria-label="Edit ${esc(c.name)}"><i aria-hidden="true">${thumb}${drawn ? '<b class="tick"><svg><use href="#i-check"/></svg></b>' : ''}</i><span>${esc(c.name)}</span></button>`;
   }).join('');
   $$('#chars .char').forEach((card) => {
     card.id = `cast-card-${card.dataset.character}`;

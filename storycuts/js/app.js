@@ -1,7 +1,10 @@
 import { initExperience, syncStyleShowcase, syncCastNavigation, selectCastCharacter, exampleSceneForStyle } from './experience.js';
 import {
-  drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType, FILTERS, filterCss, TRANSITIONS, CAPTION_STYLES,
+  drawFrame, segmentAt, exportVideo, toSRT, audioGraph, setMix, ASPECTS, shotType, FILTERS, filterCss, TRANSITIONS,
 } from './render.js';
+import {
+  CAPTION_PRESETS, CAPTION_FONTS, CAPTION_ANIMS, CAPTION_BGS, CAPTION_EFFECTS, presetValues, resolveCaptionStyle, loadCaptionFonts, drawCaptionSample,
+} from './captions.js';
 import {
   SFX_CATS, allSfx, sfxInfo, registerSfx, loadSfxManifest, sfxPeaks, SfxPlayer, MusicPlayer,
 } from './sfx.js';
@@ -250,14 +253,14 @@ function snapshot() {
 // Keep one undo entry for a slider gesture, and one for each discrete choice.
 const settingGestures = new WeakSet();
 function snapshotSetting(input) {
-  if (input?.type === 'range') {
+  if (input?.type === 'range' || input?.type === 'color') {
     if (settingGestures.has(input)) return;
     settingGestures.add(input);
   }
   snapshot();
 }
 ['change', 'focusout', 'pointercancel'].forEach((type) => document.addEventListener(type, (e) => {
-  if (e.target.matches?.('input[type=range]')) settingGestures.delete(e.target);
+  if (e.target.matches?.('input[type=range], input[type=color]')) settingGestures.delete(e.target);
 }));
 
 function restore(snap) {
@@ -419,7 +422,7 @@ function defaultSettings() {
     faceMode: 'full',
     pacing: 'mostly',
     castHints: [], storyMode: 'auto', planNotes: '',
-    captions: true, captionStyle: { upper: true, preset: 'bold', pos: 'low', size: 1, highlight: '#ffd60a' }, punchIn: true,
+    captions: true, captionStyle: { preset: 'bold' }, punchIn: true,
     filter: 'none', filterAmt: 1, transition: 'cut', music: null, customSfx: [], sceneMotion: 'living', faceX: 0.5, faceY: 0.4, bubbleSide: 'right', watermark: false,
   };
 }
@@ -1081,7 +1084,7 @@ function syncOptionsUI() {
   $$('#seg-pacing button').forEach((b) => b.classList.toggle('on', b.dataset.pacing === (s.pacing || 'mostly')));
   syncMotionUI();
   $('#opt-captions').checked = !!s.captions;
-  $('#opt-upper').checked = !!s.captionStyle?.upper;
+  $('#opt-upper').checked = !!resolveCaptionStyle(s.captionStyle).upper;
   $('#opt-punch').checked = !!s.punchIn;
   $('#opt-watermark').checked = !!s.watermark;
   $('#face-x').value = s.faceX ?? 0.5;
@@ -1611,6 +1614,10 @@ async function fillImg(el, key) {
   el.classList.remove('missing');
   el.dataset.url = URL.createObjectURL(blob);
   el.src = el.dataset.url;
+  // the cast tabs show the same picture as a thumbnail
+  const id = el.closest('.char-art') && el.closest('.char')?.dataset.character;
+  const tab = id && document.querySelector(`#cast-jump [data-cast-jump="${CSS.escape(id)}"] img`);
+  if (tab) tab.src = el.src;
 }
 
 // A redraw must not throw away a draft in a different card or in the inspector.
@@ -2063,7 +2070,16 @@ function drawPreview() {
   state.cache.preview = true;
   state.cache.live = !state.media.paused;
   state.cache.onImage = () => requestAnimationFrame(drawPreview);
-  const seg = drawFrame(c.getContext('2d'), c.width, c.height, t, p, state.media.el, state.cache);
+  const ctx = c.getContext('2d');
+  const seg = drawFrame(ctx, c.width, c.height, t, p, state.media.el, state.cache);
+  // show where the caption is while its settings are open, so it is clear it can be dragged
+  const box = state.cache.capBox;
+  if (box && state.tab === 'captions' && state.media.paused) {
+    ctx.save();
+    ctx.setLineDash([8, 6]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeRect(Math.max(1, box.x), Math.max(1, box.y), Math.min(c.width - 2, box.w), box.h);
+    ctx.restore();
+  }
   $('#time').textContent = window.innerWidth < 640 ? fmtTC(t) : `${fmtTC(t)} / ${fmtTC(p.duration)}`;
   if (!state.userScrolling) scrollTimelineTo(t);
   $$('#timeline .clip').forEach((b) => b.classList.toggle('live', b.dataset.id === seg.id));
@@ -2473,6 +2489,7 @@ function showTab(name, { open = true } = {}) {
   if (name === 'captions') renderTextPane();
   if (name === 'filters') renderFilterPane();
   if (name === 'trans') renderTransPane();
+  drawPreview();
   requestAnimationFrame(updateSegThumbs);
 }
 $('#ed-tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
@@ -2649,31 +2666,147 @@ $('#tl-music').addEventListener('click', (e) => {
 
 // ---------- text, filters, transitions panes ----------
 
-const HIGHLIGHTS = ['#ffd60a', '#ff4fd8', '#38bdf8', '#4ade80', '#fb923c', '#ffffff'];
+const CAP_TEXT_COLOURS = ['#ffffff', '#ffe14d', '#ff7a59', '#ffd1f4', '#9be7ff', '#111111'];
+const CAP_HIGHLIGHTS = ['#ffd60a', '#4ade80', '#38bdf8', '#ff4fd8', '#fb923c', '#a78bfa', '#ef4444', '#ffffff'];
+const CAP_OUTLINES = ['#000000', '#ffffff', '#2b1a4a', '#ff2fd0', '#1d4ed8', '#7f1d1d'];
+const CAP_BG_COLOURS = ['#000000', '#ffffff', '#7c5cff', '#ffd60a', '#ef4444', '#0ea5e9'];
+const CAP_POS_Y = { high: 0.2, mid: 0.55, low: 0.78 };
+const near = (a, b) => Math.abs(a - b) < 0.001;
+
+const swatchHTML = (key, colours, current) => colours.map((c) => `<button data-ck="${key}" data-c="${c}" class="${String(current).toLowerCase() === c ? 'on' : ''}" style="--c:${c}" aria-label="${key} ${c}"></button>`).join('');
+const chipHTML = (key, list, current) => list.map((x) => `<button data-ck="${key}" data-cv="${x.id}" class="${current === x.id ? 'on' : ''}">${esc(x.name)}</button>`).join('');
+
+// Style tiles are drawn with the real caption renderer so they match the video exactly.
+let capTilesBuilt = false;
+function buildCaptionTiles() {
+  $('#cap-styles').innerHTML = CAPTION_PRESETS.map((x) => `<button class="cap-tile" data-preset="${x.id}" aria-label="${esc(x.name)} caption style"><canvas width="240" height="150"></canvas><small>${esc(x.name)}</small></button>`).join('');
+  const paint = () => $$('#cap-styles .cap-tile').forEach((b) => drawCaptionSample(b.querySelector('canvas').getContext('2d'), 240, 150, presetValues(b.dataset.preset)));
+  paint();
+  loadCaptionFonts().then(() => { paint(); drawPreview(); });
+  capTilesBuilt = true;
+}
+let tileAnim = 0;
+function animateTile(b) {
+  cancelAnimationFrame(tileAnim);
+  if (!b || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const t0 = performance.now();
+  const ctx = b.querySelector('canvas').getContext('2d');
+  const style = presetValues(b.dataset.preset);
+  const tick = (now) => {
+    const k = ((now - t0) / 1800) % 1;
+    drawCaptionSample(ctx, 240, 150, style, { progress: k });
+    if (b.matches(':hover')) tileAnim = requestAnimationFrame(tick);
+    else drawCaptionSample(ctx, 240, 150, style);
+  };
+  tileAnim = requestAnimationFrame(tick);
+}
+$('#cap-styles').addEventListener('pointerover', (e) => { const b = e.target.closest('.cap-tile'); if (b && e.pointerType === 'mouse') animateTile(b); });
 
 function renderTextPane() {
   const st = state.project?.settings;
   if (!st) return;
-  const cs = st.captionStyle || {};
+  if (!capTilesBuilt) buildCaptionTiles();
+  const cs = resolveCaptionStyle(st.captionStyle);
   $('#opt-captions').checked = !!st.captions;
   $('#opt-upper').checked = !!cs.upper;
-  $('#cap-styles').innerHTML = CAPTION_STYLES.map((x) => `<button class="cap-tile cs-${x.id} ${(cs.preset || 'bold') === x.id ? 'on' : ''}" data-preset="${x.id}" style="--hl:${cs.highlight || '#ffd60a'}"><span class="cs-demo">${cs.upper ? 'THE <i>BEST</i>' : 'The <i>best</i>'}</span><small>${esc(x.name)}</small></button>`).join('');
-  $$('#cap-pos button').forEach((b) => b.classList.toggle('on', b.dataset.v === (cs.pos || 'low')));
-  $$('#cap-size button').forEach((b) => b.classList.toggle('on', +b.dataset.v === (cs.size || 1)));
-  $('#cap-colors').innerHTML = HIGHLIGHTS.map((c) => `<button data-c="${c}" class="${(cs.highlight || '#ffd60a') === c ? 'on' : ''}" style="--c:${c}" aria-label="Highlight ${c}"></button>`).join('');
-  $('#cap-styles').closest('.ed-panel').classList.toggle('caps-off', !st.captions);
+  $$('#cap-styles .cap-tile').forEach((b) => { const on = b.dataset.preset === cs.preset; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  $('#cap-fonts').innerHTML = Object.entries(CAPTION_FONTS).map(([id, f]) => `<button data-ck="font" data-cv="${id}" class="${cs.font === id ? 'on' : ''}" style="font-family:${esc(f.family)};font-weight:${f.weight}">${esc(f.name)}</button>`).join('');
+  $$('#cap-size button').forEach((b) => b.classList.toggle('on', near(+b.dataset.v, cs.size)));
+  $$('#cap-pos button').forEach((b) => b.classList.toggle('on', near(cs.x, 0.5) && near(CAP_POS_Y[b.dataset.v], cs.y)));
+  $$('#cap-words button').forEach((b) => b.classList.toggle('on', +b.dataset.v === cs.words));
+  $('#cap-text-colors').innerHTML = swatchHTML('color', CAP_TEXT_COLOURS, cs.color);
+  $('#cap-colors').innerHTML = swatchHTML('highlight', CAP_HIGHLIGHTS, cs.highlight);
+  $('#cap-outline-colors').innerHTML = swatchHTML('outline', CAP_OUTLINES, cs.outline);
+  $('#cap-bg').innerHTML = CAPTION_BGS.map((x) => `<button data-ck="bg" data-cv="${x.id}" class="${cs.bg === x.id ? 'on' : ''}">${esc(x.name)}</button>`).join('');
+  $('#cap-bg-colors').innerHTML = swatchHTML('bgColor', CAP_BG_COLOURS, cs.bgColor);
+  $('#cap-bg-row').hidden = cs.bg === 'none' || cs.bg === 'word';
+  $('#cap-anims').innerHTML = chipHTML('anim', CAPTION_ANIMS, cs.anim);
+  $('#cap-effects').innerHTML = chipHTML('effect', CAPTION_EFFECTS, cs.effect);
+  // keep sliders and colour pickers in step (skip the one being dragged)
+  $$('#pane-captions input[data-ck]').forEach((inp) => {
+    if (inp === document.activeElement) return;
+    const v = cs[inp.dataset.ck];
+    if (inp.type === 'color') inp.value = /^#[0-9a-f]{6}$/i.test(v) ? v : '#ffffff';
+    else inp.value = v ?? 0;
+  });
+  $('#pane-captions').classList.toggle('caps-off', !st.captions);
 }
-function setCaption(patch) {
+function setCaption(patch, input) {
   const st = state.project.settings;
-  if (Object.entries(patch).every(([key, value]) => st.captionStyle?.[key] === value)) return;
-  snapshot();
-  st.captionStyle = { ...(st.captionStyle || {}), ...patch };
+  const cur = resolveCaptionStyle(st.captionStyle);
+  if (Object.entries(patch).every(([key, value]) => cur[key] === value)) return;
+  if (input) snapshotSetting(input); else snapshot();
+  st.captionStyle = { ...cur, ...patch };
   save(); renderTextPane(); drawPreview();
 }
-$('#cap-styles').addEventListener('click', (e) => { const b = e.target.closest('[data-preset]'); if (b) setCaption({ preset: b.dataset.preset }); });
-$('#cap-pos').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setCaption({ pos: b.dataset.v }); });
+function chooseCaptionPreset(id) {
+  const cur = resolveCaptionStyle(state.project.settings.captionStyle);
+  setCaption({ ...presetValues(id), x: cur.x, y: cur.y, pos: cur.pos });
+}
+function showCaptionSub(name) {
+  $$('#cap-sub button').forEach((b) => { const on = b.dataset.sub === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+  $$('#pane-captions .cap-sec').forEach((sec) => { sec.hidden = sec.dataset.capsub !== name; });
+}
+$('#cap-sub').addEventListener('click', (e) => { const b = e.target.closest('[data-sub]'); if (b) showCaptionSub(b.dataset.sub); });
+$('#cap-styles').addEventListener('click', (e) => { const b = e.target.closest('[data-preset]'); if (b) chooseCaptionPreset(b.dataset.preset); });
+$('#cap-pos').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setCaption({ pos: b.dataset.v, x: 0.5, y: CAP_POS_Y[b.dataset.v] }); });
 $('#cap-size').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setCaption({ size: +b.dataset.v }); });
-$('#cap-colors').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (b) setCaption({ highlight: b.dataset.c }); });
+$('#cap-words').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setCaption({ words: +b.dataset.v }); });
+$('#pane-captions').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-ck]');
+  if (!b) return;
+  setCaption({ [b.dataset.ck]: b.dataset.c ?? b.dataset.cv });
+});
+$('#pane-captions').addEventListener('input', (e) => {
+  const inp = e.target.closest('input[data-ck]');
+  if (!inp || !state.project) return;
+  setCaption({ [inp.dataset.ck]: inp.type === 'range' ? +inp.value : inp.value }, inp);
+});
+$('#cap-reset').addEventListener('click', () => chooseCaptionPreset(resolveCaptionStyle(state.project.settings.captionStyle).preset));
+
+// Drag the caption on the preview to place it anywhere.
+{
+  const cv = $('#preview');
+  let drag = null;
+  const toCanvas = (e) => {
+    const r = cv.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * cv.width, y: ((e.clientY - r.top) / r.height) * cv.height };
+  };
+  const hit = (pt) => {
+    const b = state.cache?.capBox;
+    const pad = cv.width * 0.03;
+    return b && pt.x > b.x - pad && pt.x < b.x + b.w + pad && pt.y > b.y - pad && pt.y < b.y + b.h + pad;
+  };
+  cv.addEventListener('pointerdown', (e) => {
+    if (!state.project?.settings.captions) return;
+    const pt = toCanvas(e);
+    if (!hit(pt)) return;
+    const cs = resolveCaptionStyle(state.project.settings.captionStyle);
+    drag = { id: e.pointerId, dx: cs.x * cv.width - pt.x, dy: cs.y * cv.height - pt.y, moved: false };
+    cv.setPointerCapture(e.pointerId);
+    cv.classList.add('cap-dragging');
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove', (e) => {
+    const pt = toCanvas(e);
+    if (!drag) { cv.classList.toggle('cap-grab', !!state.project?.settings.captions && !!hit(pt)); return; }
+    const st = state.project.settings;
+    if (!drag.moved) { snapshot(); drag.moved = true; }
+    let x = Math.min(0.9, Math.max(0.1, (pt.x + drag.dx) / cv.width));
+    const y = Math.min(0.94, Math.max(0.06, (pt.y + drag.dy) / cv.height));
+    if (Math.abs(x - 0.5) < 0.03) x = 0.5;
+    st.captionStyle = { ...resolveCaptionStyle(st.captionStyle), x, y, pos: null };
+    drawPreview();
+  });
+  const end = () => {
+    if (!drag) return;
+    if (drag.moved) { save(); renderTextPane(); }
+    drag = null;
+    cv.classList.remove('cap-dragging');
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+}
 
 const p0Ready = () => !!(state.project?.approved && state.project.segments.length);
 
@@ -2960,7 +3093,7 @@ $('#inspector').addEventListener('change', (e) => {
 function readExportUI(id) {
   const s = state.project.settings;
   if (id === 'opt-captions') s.captions = $('#opt-captions').checked;
-  if (id === 'opt-upper') s.captionStyle = { ...(s.captionStyle || {}), upper: $('#opt-upper').checked };
+  if (id === 'opt-upper') s.captionStyle = { ...resolveCaptionStyle(s.captionStyle), upper: $('#opt-upper').checked };
   renderTextPane();
   if (id === 'opt-punch') s.punchIn = $('#opt-punch').checked;
   if (id === 'opt-living') s.sceneMotion = $('#opt-living').checked ? 'living' : 'still';

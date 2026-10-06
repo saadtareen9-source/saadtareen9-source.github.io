@@ -9,12 +9,12 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23f4f4f5'/><path d='M25 19l21 13-21 13z' fill='%230a0a0b'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=44; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    (function () { var V=45; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
   </script>
-  <link rel="stylesheet" href="style.css?v=44">
+  <link rel="stylesheet" href="style.css?v=45">
 </head>
 <body>
   <!-- icon sprite -->
@@ -50,6 +50,7 @@
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.9"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.2v.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
     <symbol id="i-sfx-wind" viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 10-3-3M3 15h15a3 3 0 11-3 3M3 12h8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
     <symbol id="i-sfx-up" viewBox="0 0 24 24"><path d="M4 19c6 0 10-4 12-12m0 0l-4 1m4-1l1 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-sfx-glitch" viewBox="0 0 24 24"><path d="M3 6h7M13 6h8M3 10h4M10 10h11M3 14h12M18 14h3M3 18h6M12 18h9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
@@ -138,8 +139,8 @@
           <span class="story-transform" aria-hidden="true"><svg><use href="#i-right"/></svg></span>
           <figure class="result-card phone">
             <div class="phone-screen">
-              <div class="shot shot-face"><video class="talk" id="hero-talk" muted loop playsinline preload="none" poster="assets/hero/talk.jpg" aria-label="Example camera footage in an illustrated edit" disablepictureinpicture><source src="assets/hero/talk.webm" type="video/webm"><source src="assets/hero/talk.mp4" type="video/mp4"></video><span class="shot-tag">YOUR MOMENT</span></div>
-              <div class="shot shot-scene"><img class="scene-img" id="showreel-art" src="assets/examples/airport.jpg" alt="An illustrated suitcase mix-up at an airport" width="840" height="1120" fetchpriority="high"><span class="shot-tag">THE STORY COMES TO LIFE</span><img class="showreel-bubble" id="showreel-bubble" src="assets/hero/talk.jpg" alt=""></div>
+              <div class="shot shot-face"><video class="talk" id="hero-talk" muted loop playsinline preload="none" poster="assets/hero/talk.jpg" aria-label="Example camera footage in an illustrated edit" disablepictureinpicture><source src="assets/hero/talk.webm" type="video/webm"><source src="assets/hero/talk.mp4" type="video/mp4"></video><span class="shot-tag">YOU ON CAMERA</span></div>
+              <div class="shot shot-scene"><img class="scene-img" id="showreel-art" src="assets/examples/airport.jpg" alt="An illustrated suitcase mix-up at an airport" width="840" height="1120" fetchpriority="high"><span class="shot-tag">YOUR STORY, DRAWN</span><img class="showreel-bubble" id="showreel-bubble" src="assets/hero/talk.jpg" alt=""></div>
               <div class="cap" id="showreel-caption">THIS WASN'T<br><b>MY SUITCASE.</b></div>
             </div>
             <figcaption><svg><use href="#i-film"/></svg>They see it happen.</figcaption>
@@ -490,14 +491,46 @@
 
             <div class="ed-panel" id="pane-captions" data-pane="captions" role="tabpanel" aria-labelledby="tab-captions" hidden>
               <div class="pane-title-row"><p class="pane-title">Captions</p><label class="switch"><input type="checkbox" id="opt-captions" aria-label="Show captions" checked><span></span></label></div>
-              <div class="cap-styles" id="cap-styles"></div>
-              <p class="pane-title">Position</p>
-              <div class="mini-seg" id="cap-pos"><button data-v="high">Top</button><button data-v="mid">Middle</button><button data-v="low" class="on">Bottom</button></div>
-              <p class="pane-title">Size</p>
-              <div class="mini-seg" id="cap-size"><button data-v="0.8">S</button><button data-v="1" class="on">M</button><button data-v="1.2">L</button></div>
-              <p class="pane-title">Highlight colour</p>
-              <div class="swatches" id="cap-colors"></div>
-              <label class="switch"><input type="checkbox" id="opt-upper" checked><span></span>All caps</label>
+              <div class="cap-body">
+                <div class="mini-seg cap-sub" id="cap-sub" role="tablist" aria-label="Caption settings"><button data-sub="styles" class="on" role="tab" aria-selected="true">Styles</button><button data-sub="text" role="tab" aria-selected="false">Text</button><button data-sub="colour" role="tab" aria-selected="false">Colour</button><button data-sub="motion" role="tab" aria-selected="false">Motion</button></div>
+                <p class="cap-hint"><svg><use href="#i-move"/></svg>Drag the caption on the video to move it.</p>
+                <section class="cap-sec" data-capsub="styles">
+                  <div class="cap-styles" id="cap-styles"></div>
+                </section>
+                <section class="cap-sec" data-capsub="text" hidden>
+                  <p class="pane-title">Font</p>
+                  <div class="cap-fonts" id="cap-fonts"></div>
+                  <p class="pane-title">Size</p>
+                  <div class="mini-seg" id="cap-size"><button data-v="0.8">S</button><button data-v="1" class="on">M</button><button data-v="1.25">L</button><button data-v="1.55">XL</button></div>
+                  <label class="range-field wide-range"><span>Fine tune</span><input type="range" id="cap-size-range" data-ck="size" min="0.6" max="1.8" step="0.05" value="1"></label>
+                  <p class="pane-title">Position</p>
+                  <div class="mini-seg" id="cap-pos"><button data-v="high">Top</button><button data-v="mid">Middle</button><button data-v="low" class="on">Bottom</button></div>
+                  <p class="pane-title">Words on screen</p>
+                  <div class="mini-seg" id="cap-words"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3" class="on">3</button><button data-v="4">4</button><button data-v="6">Line</button></div>
+                  <label class="range-field wide-range"><span>Tilt</span><input type="range" id="cap-tilt" data-ck="tilt" min="-12" max="12" step="1" value="0"></label>
+                  <label class="range-field wide-range"><span>Letter spacing</span><input type="range" id="cap-spacing" data-ck="spacing" min="0" max="0.2" step="0.01" value="0"></label>
+                  <label class="switch"><input type="checkbox" id="opt-upper" checked><span></span>All caps</label>
+                </section>
+                <section class="cap-sec" data-capsub="colour" hidden>
+                  <p class="pane-title">Text</p>
+                  <div class="swatch-row"><div class="swatches" id="cap-text-colors"></div><label class="color-pick" title="Any colour"><input type="color" data-ck="color" aria-label="Pick any text colour"></label></div>
+                  <p class="pane-title">Highlight (the word being said)</p>
+                  <div class="swatch-row"><div class="swatches" id="cap-colors"></div><label class="color-pick" title="Any colour"><input type="color" data-ck="highlight" aria-label="Pick any highlight colour"></label></div>
+                  <p class="pane-title">Outline</p>
+                  <div class="swatch-row"><div class="swatches" id="cap-outline-colors"></div><label class="color-pick" title="Any colour"><input type="color" data-ck="outline" aria-label="Pick any outline colour"></label></div>
+                  <label class="range-field wide-range"><span>Thickness</span><input type="range" id="cap-outline-w" data-ck="outlineW" min="0" max="0.25" step="0.01" value="0.12"></label>
+                  <p class="pane-title">Background</p>
+                  <div class="mini-seg" id="cap-bg"></div>
+                  <div class="swatch-row" id="cap-bg-row"><div class="swatches" id="cap-bg-colors"></div><label class="color-pick" title="Any colour"><input type="color" data-ck="bgColor" aria-label="Pick any background colour"></label></div>
+                </section>
+                <section class="cap-sec" data-capsub="motion" hidden>
+                  <p class="pane-title">Animation</p>
+                  <div class="cap-chips" id="cap-anims"></div>
+                  <p class="pane-title">Effect</p>
+                  <div class="cap-chips" id="cap-effects"></div>
+                </section>
+                <button class="btn ghost sm cap-reset" id="cap-reset"><svg><use href="#i-undo"/></svg>Reset this style</button>
+              </div>
               <details class="transcript-box"><summary>Transcript</summary><div class="transcript" id="transcript"></div></details>
             </div>
 
@@ -677,7 +710,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=44", "./js/app.js": "./js/app.js?v=44", "./js/billing.js": "./js/billing.js?v=44", "./js/constants.js": "./js/constants.js?v=44", "./js/draw.js": "./js/draw.js?v=44", "./js/experience.js": "./js/experience.js?v=44", "./js/images.js": "./js/images.js?v=44", "./js/loader.js": "./js/loader.js?v=44", "./js/planner.js": "./js/planner.js?v=44", "./js/qc.js": "./js/qc.js?v=44", "./js/render.js": "./js/render.js?v=44", "./js/sfx.js": "./js/sfx.js?v=44", "./js/transcribe.js": "./js/transcribe.js?v=44"}}</script>
-  <script type="module" src="js/app.js?v=44"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=45", "./js/app.js": "./js/app.js?v=45", "./js/billing.js": "./js/billing.js?v=45", "./js/captions.js": "./js/captions.js?v=45", "./js/constants.js": "./js/constants.js?v=45", "./js/draw.js": "./js/draw.js?v=45", "./js/experience.js": "./js/experience.js?v=45", "./js/images.js": "./js/images.js?v=45", "./js/loader.js": "./js/loader.js?v=45", "./js/planner.js": "./js/planner.js?v=45", "./js/qc.js": "./js/qc.js?v=45", "./js/render.js": "./js/render.js?v=45", "./js/sfx.js": "./js/sfx.js?v=45", "./js/transcribe.js": "./js/transcribe.js?v=45"}}</script>
+  <script type="module" src="js/app.js?v=45"></script>
 </body>
 </html>
