@@ -663,24 +663,39 @@ $('#drop').addEventListener('keydown', (e) => {
 async function loadFile(file, { reopen = false } = {}) {
   if (!file) return;
   if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|m4v|mkv)$/i.test(file.name)) { toast('That doesn\'t look like a video file.'); return; }
+  // The permission check never silently drops the video: ask, then carry on with it.
   if (!reopen && !$('#rights').checked) {
-    $('#upload-rights-note').hidden = false;
-    $('#rights').setAttribute('aria-invalid', 'true');
-    $('#rights').closest('.check').scrollIntoView({ block: 'center', behavior: 'auto' });
-    $('#rights').focus({ preventScroll: true });
     $('#file').value = '';
-    return;
+    $('#rights-file').textContent = file.name;
+    const ok = await new Promise((resolve) => {
+      const d = $('#rights-dialog');
+      $('#btn-rights-yes').onclick = () => { d.close(); resolve(true); };
+      $('#btn-rights-no').onclick = () => { d.close(); resolve(false); };
+      d.addEventListener('close', () => resolve(false), { once: true });
+      d.showModal();
+    });
+    if (!ok) {
+      $('#upload-rights-note').hidden = false;
+      $('#rights').setAttribute('aria-invalid', 'true');
+      return;
+    }
+    $('#rights').checked = true;
+    $('#rights').dispatchEvent(new Event('change'));
   }
   const video = $('#video');
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
   state.objectUrl = URL.createObjectURL(file);
+  showFileChip(`${icon('film')} ${esc(file.name)}`, 'Opening…');
+  video.preload = 'metadata';
   video.src = state.objectUrl;
+  video.load();
   try {
     await new Promise((resolve, reject) => {
-      video.onloadedmetadata = resolve;
-      video.onerror = () => reject(new Error('This browser can\'t play that video format. Try an MP4 from your phone.'));
+      const timer = setTimeout(() => reject(new Error('This video is taking too long to open. Try an MP4 or a shorter clip.')), 20000);
+      video.onloadedmetadata = () => { clearTimeout(timer); resolve(); };
+      video.onerror = () => { clearTimeout(timer); reject(new Error('This browser can\'t play that video format. Try an MP4 from your phone.')); };
     });
-  } catch (e) { toast(e.message, 6000); return; }
+  } catch (e) { $('#video-info').classList.add('hidden'); toast(e.message, 6000); return; }
   if (!Number.isFinite(video.duration)) { toast('Could not read the video length.'); return; }
   clearTimeout(toast.timer);
   $('#toast').classList.remove('show');
