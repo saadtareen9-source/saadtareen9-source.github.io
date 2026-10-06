@@ -15,7 +15,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Montserrat:wght@800;900&family=Anton&family=Bebas+Neue&family=Bangers&family=Luckiest+Guy&family=Permanent+Marker&family=Poppins:wght@600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
-    (function () { var V=53; try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v; if (j.v > V && !sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} })();
+    // also when you come back to the tab (phones keep old pages in memory), unless something is running
+    (function () { var V=53, last = 0; function check() { if (Date.now() - last < 30000) return; last = Date.now(); try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v, b = document.body; if (j.v > V && !sessionStorage.getItem(k) && !(b && (b.classList.contains('work-open') || b.classList.contains('has-job')))) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} } check(); addEventListener('pageshow', function (e) { if (e.persisted) { last = 0; check(); } }); document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); }); })();
   </script>
   <link rel="stylesheet" href="style.css?v=53">
 </head>
