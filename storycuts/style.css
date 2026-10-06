@@ -1140,7 +1140,8 @@ dialog[open] .modal { animation: modalIn 0.3s var(--ease-out); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 body.has-job:not(.ed-app):not(.ed-full) .toast { bottom: 72px; }
 /* keep messages clear of the sticky Back / Next bar in the studio */
-body.studio-open:not(.ed-app):not(.ed-full) .toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
+body.studio-open:not(.ed-app):not(.ed-full) .toast { top: 84px; bottom: auto; transform: translate(-50%, -12px); }
+body.studio-open:not(.ed-app):not(.ed-full) .toast.show { transform: translate(-50%, 0); }
 
 img.missing { display: none; }
 
@@ -2739,8 +2740,19 @@ body.ed-app .pane-title { font-size: .8rem; }
 .mq-item img { display: block; width: 100%; height: auto; aspect-ratio: 504 / 916; object-fit: cover; object-position: 50% 50%; }
 @media (max-width: 980px) { .style-track.gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640px) {
-  .style-track.gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .style-track.gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .gallery .style-card .meta { min-height: 0; padding: 8px 6px; text-align: center; }
+  .gallery .style-card .meta b { margin: 0; font-size: .72rem; }
+  .gallery .style-card .meta small { display: none; }
+  .gallery .sel-pill { font-size: 0; gap: 0; padding: 4px; }
   .style-stage { grid-template-columns: 96px minmax(0, 1fr); }
   .style-stage-art img { width: 96px; height: auto; }
   .mq-item { width: 112px; }
+}
+.section-intro > div { text-align: left; }
+.section-intro .kicker { display: block; }
+@media (max-width: 720px) {
+  .peek-shots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .peek-shots b { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek-shots span { padding: 0 6px; }
 }

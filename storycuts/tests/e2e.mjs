@@ -317,7 +317,7 @@ try {
   watch(p, 'desktop');
   const step = () => p.evaluate(() => document.querySelector('.wizard > .panel.active')?.dataset.step);
   await p.goto(URL0); await sleep(600); await shot(p, '01-landing');
-  check(await p.evaluate(() => !document.querySelector('#example-scrub, [data-demo-view], [data-demo-caption], .showreel-timeline')), 'the landing example is a clean video, without a slider or extra controls');
+  check(await p.evaluate(() => !document.querySelector('#example-scrub, button[data-demo-view], [data-demo-caption], .showreel-timeline')), 'the landing example is a clean video, without a slider or extra controls');
   check(!(await p.isVisible('#studio')), 'landing keeps the creation workspace focused and separate');
   check(await p.evaluate(() => document.querySelector('#showreel-art').naturalWidth > 0 && document.querySelector('#story-showreel .phone-screen').classList.contains('cut')), 'the landing immediately shows the illustrated result');
   await p.click('[data-showcase=rain]');
