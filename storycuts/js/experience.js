@@ -1,13 +1,26 @@
+import { drawCaptions, presetValues, loadCaptionFonts } from './captions.js';
 // Presentation only. Examples use local licensed media and original artwork.
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const motion = matchMedia('(prefers-reduced-motion: reduce)');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Every shot, phrase, caption and thumbnail uses this same eight-second edit.
+const SHOTS = [
+  { start: 0, end: 2, type: 'face', label: 'The hook' },
+  { start: 2, end: 5, type: 'scene', label: 'The reveal' },
+  { start: 5, end: 6.4, type: 'face', label: 'The reaction' },
+  { start: 6.4, end: 8, type: 'scene', label: 'The payoff' },
+];
 const STORIES = {
-  airport: { clip: 'assets/hero/talk', poster: 'assets/hero/talk.jpg', art: 'assets/examples/airport.jpg', alt: 'A suitcase mix-up at an airport, with an unexpected orange cat', caption: 'THIS WASN’T<br><b>MY SUITCASE.</b>' },
-  rain: { clip: 'assets/examples/man', poster: 'assets/examples/man.jpg', art: 'assets/examples/rain.jpg', alt: 'A young man meets a corgi carrying an umbrella on a rainy street', caption: 'THEN A CORGI<br><b>FOUND ME.</b>' },
-  breakfast: { clip: 'assets/examples/creator', poster: 'assets/examples/creator.jpg', art: 'assets/examples/breakfast.jpg', alt: 'Her little brother holds up a burnt pancake while their dad watches from the doorway', caption: 'MY BROTHER<br><b>TRIED TO COOK.</b>' },
+  airport: { clip: 'assets/hero/talk', poster: 'assets/hero/talk.jpg', art: 'assets/examples/airport.jpg', alt: 'A suitcase mix-up at an airport, with an unexpected orange cat', lines: ['I grabbed my suitcase.', 'There was a CAT inside.', 'Wait a second.', 'Definitely not my suitcase.'] },
+  rain: { clip: 'assets/examples/man', poster: 'assets/examples/man.jpg', art: 'assets/examples/rain.jpg', alt: 'A young man meets a corgi carrying an umbrella on a rainy street', lines: ['I forgot my umbrella.', 'Then a CORGI found me.', 'I was speechless.', 'My new favorite neighbor.'] },
+  breakfast: { clip: 'assets/examples/creator', poster: 'assets/examples/creator.jpg', art: 'assets/examples/breakfast.jpg', alt: 'Her little brother holds up a burnt pancake while their dad watches from the doorway', lines: ['My brother tried cooking.', 'Breakfast was a little BURNT.', 'Then Dad walked in.', 'We ordered breakfast instead.'] },
 };
+const storyPages = (story) => SHOTS.map((shot, i) => {
+  const words = story.lines[i].split(' ');
+  const step = (shot.end - shot.start) / words.length;
+  return { start: shot.start, end: shot.end, words: words.map((w, j) => ({ w, s: shot.start + j * step, e: shot.start + (j + 1) * step })) };
+});
 export function exampleSceneForStyle(style, fallback) {
   return ({ stick: 'assets/examples/airport-doodle.jpg', cartoon: 'assets/examples/airport.jpg', anime: 'assets/examples/rain.jpg', comic: 'assets/examples/breakfast.jpg' })[style] || fallback;
 }
@@ -61,30 +74,49 @@ export function syncCastNavigation(characters) {
 function initShowreel() {
   const reel = $('#story-showreel');
   const screen = reel.querySelector('.phone-screen');
-  const videos = [$('#hero-talk'), $('#example-original')];
-  const scrub = $('#example-scrub');
-  const button = $('#btn-example-play');
+  const master = $('#example-original'), output = $('#hero-talk');
+  const videos = [master, output];
+  const scrub = $('#example-scrub'), button = $('#btn-example-play');
+  const canvas = $('#showreel-captions'), ctx = canvas.getContext('2d');
   let playing = !motion.matches && !navigator.connection?.saveData;
-  let visible = false, time = 0, start = 0, frame = 0, current = 'airport';
-  let userSelectedView = false;
-  let renderedPlaying, renderedSecond = -1;
+  let visible = false, time = 2.15, frame = 0, current = 'airport';
+  let preset = 'bold', pages = storyPages(STORIES.airport), lastShot = -1, lastSync = 0;
+  let playAttempt = 0;
+  const initialized = new WeakSet();
+  const active = () => playing && visible && !document.hidden;
+  const mediaScale = (v) => Number.isFinite(v.duration) && v.duration > 0 ? Math.min(8, v.duration) / 8 : 1;
+  const seekVideo = (v, t) => {
+    if (v.readyState && Number.isFinite(v.duration)) v.currentTime = Math.min(Math.max(0, v.duration - .01), t * mediaScale(v));
+  };
   function render() {
-    const result = reel.dataset.demoView === 'result';
-    screen.classList.toggle('cut', result && (userSelectedView || time < 5 || time >= 7));
+    const index = Math.max(0, SHOTS.findIndex((s) => time >= s.start && time < s.end));
+    const shot = SHOTS[index], result = reel.dataset.demoView === 'result';
+    screen.classList.toggle('cut', result && shot.type === 'scene');
+    reel.dataset.shot = String(index);
+    $('#showreel-shot-label').textContent = result && shot.type === 'scene' ? 'Illustrated scene' : 'You on camera';
+    reel.dataset.playing = String(active() && !master.paused && !master.seeking);
+    if (lastShot !== index) {
+      lastShot = index;
+      $('#showreel-caption').textContent = STORIES[current].lines[index];
+      $('#showreel-chapter').textContent = shot.label;
+      $$('.hero-mini-tl > span').forEach((el, i) => el.classList.toggle('active-shot', index === i));
+    }
+    // The canvas uses exactly the same caption renderer as the editor and export.
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (result) drawCaptions(ctx, canvas.width, canvas.height, pages, time, { ...presetValues(preset), x: .5, y: .79, size: 1.08, anim: motion.matches ? 'none' : presetValues(preset).anim });
+    if (!motion.matches) {
+      const progress = (time - shot.start) / (shot.end - shot.start);
+      $('#showreel-art').style.transform = `scale(${1.025 + progress * .035})`;
+    } else $('#showreel-art').style.transform = 'none';
     scrub.value = time.toFixed(2);
     $('#example-playhead').style.left = `${time / 8 * 100}%`;
-    const second = Math.min(8, Math.floor(time));
-    if (renderedSecond !== second) {
-      renderedSecond = second;
-      $('#showreel-time').textContent = `0:0${second} / 0:08`;
-      scrub.setAttribute('aria-valuetext', `${second} of 8 seconds`);
-    }
-    if (renderedPlaying !== playing) {
-      renderedPlaying = playing;
-      button.setAttribute('aria-label', playing ? 'Pause example' : 'Play example');
+    $('#showreel-time').textContent = `0:0${Math.floor(time)} / 0:08`;
+    scrub.setAttribute('aria-valuetext', `${time.toFixed(1)} of 8 seconds, ${shot.label}`);
+    const label = playing ? 'Pause example' : 'Play example';
+    if (button.getAttribute('aria-label') !== label) {
+      button.setAttribute('aria-label', label);
       button.innerHTML = `<svg><use href="#i-${playing ? 'pause' : 'play'}"/></svg>`;
     }
-    reel.dataset.playing = String(playing && visible && !document.hidden);
   }
   function syncFrames() {
     const story = STORIES[current];
@@ -94,17 +126,24 @@ function initShowreel() {
   }
   function tick(now) {
     frame = 0;
-    if (!playing || !visible || document.hidden) return;
-    time = ((now - start) / 1000) % 8;
-    if (time < 0) time += 8;
-    render();
-    frame = requestAnimationFrame(tick);
+    if (!active()) return;
+    // Media time is authoritative: buffering, seeking and tab changes cannot
+    // send the captions ahead of the footage. No independent animation clock.
+    if (initialized.has(master) && !master.seeking && master.readyState >= 2) {
+      time = Math.min(7.999, master.currentTime / mediaScale(master));
+      if (master.currentTime >= 8) { time = 0; videos.forEach((v) => seekVideo(v, 0)); }
+      if (now - lastSync > 300 && Math.abs(output.currentTime / mediaScale(output) - time) > .12 && !output.seeking) {
+        seekVideo(output, time); lastSync = now;
+      }
+    }
+    render(); frame = requestAnimationFrame(tick);
   }
   function updatePlayback() {
     cancelAnimationFrame(frame); frame = 0;
-    if (playing && visible && !document.hidden) {
-      start = performance.now() - time * 1000;
-      videos.forEach((v) => v.play().catch(() => {}));
+    const attempt = ++playAttempt;
+    if (active()) {
+      master.play().catch(() => { if (attempt !== playAttempt) return; playing = false; updatePlayback(); });
+      output.play().catch(() => {});
       frame = requestAnimationFrame(tick);
     } else videos.forEach((v) => v.pause());
     render();
@@ -112,14 +151,14 @@ function initShowreel() {
   function choose(id) {
     const story = STORIES[id];
     if (!story || current === id) return;
-    current = id; time = 0; userSelectedView = false;
+    ++playAttempt;
+    current = id; time = 2.15; lastShot = -1; pages = storyPages(story);
     reel.dataset.demoStory = id;
     $('#showreel-art').src = story.art; $('#showreel-art').alt = story.alt;
     $('#showreel-bubble').src = story.poster;
-    $('#showreel-caption').innerHTML = story.caption;
     syncFrames();
     videos.forEach((v) => {
-      v.pause(); v.poster = story.poster;
+      initialized.delete(v); v.pause(); v.preload = 'auto'; v.poster = story.poster;
       v.src = `${story.clip}.${v.canPlayType('video/webm; codecs="vp9"') ? 'webm' : 'mp4'}`;
       v.load();
     });
@@ -132,9 +171,17 @@ function initShowreel() {
   reel.addEventListener('click', (e) => {
     const story = e.target.closest('[data-showcase]');
     if (story) choose(story.dataset.showcase);
+    const style = e.target.closest('[data-demo-caption]');
+    if (style) {
+      preset = style.dataset.demoCaption;
+      $$('#story-showreel [data-demo-caption]').forEach((b) => {
+        const on = b === style; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+      });
+      render();
+    }
     const view = e.target.closest('button[data-demo-view]');
     if (view) {
-      reel.dataset.demoView = view.dataset.demoView; userSelectedView = true;
+      reel.dataset.demoView = view.dataset.demoView;
       syncFrames();
       $$('#story-showreel button[data-demo-view]').forEach((b) => {
         const on = b === view; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
@@ -142,15 +189,22 @@ function initShowreel() {
       render();
     }
   });
-  button.addEventListener('click', () => { playing = !playing; userSelectedView = false; updatePlayback(); });
+  button.addEventListener('click', () => { playing = !playing; if (time >= 7.99) { time = 0; videos.forEach((v) => seekVideo(v, 0)); } updatePlayback(); });
   scrub.addEventListener('input', () => {
-    time = +scrub.value; playing = false; userSelectedView = false;
-    videos.forEach((v) => { if (Number.isFinite(v.duration) && v.duration > 0) v.currentTime = Math.min(v.duration - .1, time); });
-    updatePlayback();
+    time = Math.min(7.999, +scrub.value); playing = false;
+    videos.forEach((v) => { if (v.preload !== 'auto') { v.preload = 'auto'; if (!v.readyState) v.load(); } seekVideo(v, time); }); updatePlayback();
   });
+  videos.forEach((v) => {
+    v.addEventListener('loadedmetadata', () => { v.playbackRate = mediaScale(v); });
+    v.addEventListener('loadeddata', () => { if (!initialized.has(v)) { initialized.add(v); seekVideo(v, time); } render(); });
+  });
+  master.addEventListener('waiting', () => { reel.dataset.buffering = 'true'; });
+  master.addEventListener('playing', () => { reel.dataset.buffering = 'false'; });
+  master.addEventListener('error', () => { playing = false; reel.dataset.buffering = 'false'; updatePlayback(); });
   new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; updatePlayback(); }, { threshold: .05 }).observe(reel);
   document.addEventListener('visibilitychange', updatePlayback);
-  motion.addEventListener('change', () => { if (motion.matches) { playing = false; updatePlayback(); } });
+  motion.addEventListener('change', () => { if (motion.matches) playing = false; updatePlayback(); });
+  loadCaptionFonts(['montserrat', 'inter', 'poppins']).then(render);
   render();
 }
 function initSettingsPreview() {

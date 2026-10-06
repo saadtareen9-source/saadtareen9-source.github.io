@@ -49,7 +49,9 @@ function progressModel({ eta = 30, total = 0, perItem = 0, parallel = 1, countTe
     }
     return {
       pct: Math.max(3, Math.min(99, frac * 100)),
-      count: countText && st.total ? countText(st.done, st.total) : st.total ? `${st.done} of ${st.total} done` : `${Math.round(frac * 100)}%`,
+      count: countText && st.total ? countText(st.done, st.total) : st.total ? `${st.done} of ${st.total} done` : `${Math.floor(el)}s elapsed`,
+      actualPct: st.total ? Math.round(st.done / st.total * 100) : null,
+      elapsed: Math.floor(el),
       eta: el > expected() * 1.6 ? 'Taking a little longer than usual' : fmtLeft(left),
     };
   };
@@ -87,6 +89,7 @@ function buildOverlay(job) {
     <div class="work-card">
       <div class="work-brand">StoryCuts studio</div>
       <div class="work-visual" aria-hidden="true">${VISUALS[job.kind] || VISUALS.draw}</div>
+      <div class="work-stage" role="status" aria-live="polite"></div>
       <h2 class="work-title" id="work-title-${job.id}"></h2>
       <p class="work-tip" id="work-tip-${job.id}"></p>
       ${job.steps.length ? `<ol class="work-steps">${job.steps.map((s) => `<li><i></i>${s}</li>`).join('')}</ol>` : ''}
@@ -143,7 +146,12 @@ function paint() {
     const r = j.model.read();
     overlay.querySelector('.work-title').textContent = j.title;
     overlay.querySelector('.work-bar i').style.width = `${r.pct.toFixed(1)}%`;
-    overlay.querySelector('.work-bar').setAttribute('aria-valuenow', String(Math.round(r.pct)));
+    const bar = overlay.querySelector('.work-bar');
+    if (r.actualPct == null) bar.removeAttribute('aria-valuenow');
+    else bar.setAttribute('aria-valuenow', String(r.actualPct));
+    const stage = j.steps.length ? `Step ${Math.min(j.step + 1, j.steps.length)} of ${j.steps.length}` : 'Work in progress';
+    const stageEl = overlay.querySelector('.work-stage');
+    if (stageEl.textContent !== stage) stageEl.textContent = stage;
     overlay.querySelector('.work-bar').setAttribute('aria-valuetext', `${r.count}. ${r.eta}`);
     overlay.querySelector('.wm-count').textContent = r.count;
     overlay.querySelector('.wm-eta').textContent = r.eta;
@@ -156,7 +164,7 @@ function paint() {
     const r = b.model.read();
     pill.querySelector('.fg').setAttribute('stroke-dashoffset', (50.3 * (1 - r.pct / 100)).toFixed(1));
     pill.querySelector('.wp-txt b').textContent = b.short || b.title;
-    pill.querySelector('.wp-txt em').textContent = b.model.st.total ? `${b.model.st.done}/${b.model.st.total}` : `${Math.round(r.pct)}%`;
+    pill.querySelector('.wp-txt em').textContent = b.model.st.total ? `${b.model.st.done}/${b.model.st.total}` : `${r.elapsed}s elapsed`;
     pill.setAttribute('aria-label', `${b.short || b.title}, ${r.count}. View progress`);
   }
 }

@@ -24,8 +24,19 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 const server = http.createServer((req, res) => {
   const p = path.join(ROOT, decodeURIComponent(new URL(req.url, 'http://x').pathname));
   if (!p.startsWith(ROOT) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404); res.end(); return; }
-  res.writeHead(200, { 'content-type': TYPES[path.extname(p)] || 'application/octet-stream', 'cache-control': 'no-store' });
-  fs.createReadStream(p).pipe(res);
+  const size = fs.statSync(p).size;
+  const headers = { 'content-type': TYPES[path.extname(p)] || 'application/octet-stream', 'cache-control': 'no-store', 'accept-ranges': 'bytes' };
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (range) {
+    const start = range[1] ? +range[1] : Math.max(0, size - +range[2]);
+    const end = range[1] && range[2] ? Math.min(size - 1, +range[2]) : size - 1;
+    if (start > end || start >= size) { res.writeHead(416, { 'content-range': `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...headers, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 });
+    fs.createReadStream(p, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, { ...headers, 'content-length': size });
+    fs.createReadStream(p).pipe(res);
+  }
 }).listen(PORT);
 
 // ---------- helpers ----------
@@ -89,7 +100,7 @@ const REVIEW = {
 };
 
 // ---------- run ----------
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.STORYCUTS_BROWSER_PATH ? { executablePath: process.env.STORYCUTS_BROWSER_PATH, args: JSON.parse(process.env.STORYCUTS_BROWSER_ARGS || '["--no-sandbox","--disable-dev-shm-usage"]') } : {});
 const errors = [];
 async function newContext(opts, { mockListening = false, failListening = false, connectAI = true, owner = true } = {}) {
   const ctx = await browser.newContext(opts);
@@ -205,6 +216,40 @@ try {
     await s.click('#cap-sub [data-sub=motion]');
     await s.click('#cap-anims [data-cv=karaoke]');
     check(await s.evaluate(() => { const cs = window.__storycuts.state.project.settings.captionStyle; return cs.font === 'anton' && cs.size === 1.55 && cs.color === '#9be7ff' && cs.highlight === '#ff0066' && cs.anim === 'karaoke'; }), `${tag}: caption font, size, colours and animation can all be changed`);
+    await s.click('#btn-save-caption-style');
+    await s.click('#cap-sub [data-sub=styles]');
+    await s.click('#cap-styles [data-preset=minimal]');
+    await s.click('#btn-apply-caption-style');
+    check(await s.evaluate(() => window.__storycuts.state.project.settings.captionStyle.highlight === '#ff0066'), `${tag}: a saved custom caption style can be reapplied`);
+    await s.locator('#caption-transcript summary').click();
+    await s.locator('#caption-search').fill('suitcase');
+    check(await s.locator('#transcript button:visible').count() === 2, `${tag}: caption word search finds both matching words`);
+    await s.locator('#caption-search').fill('');
+    await s.locator('#transcript [data-i="0"]').click();
+    const originalWord = await s.evaluate(() => ({ ...window.__storycuts.state.project.words[0] }));
+    await s.locator('#caption-word').fill('We');
+    await s.locator('#caption-word-start').fill('0.2');
+    await s.locator('#caption-word-form button').click();
+    check(await s.evaluate(() => window.__storycuts.state.project.words[0].w === 'We' && window.__storycuts.state.project.words[0].s === .2), `${tag}: a word correction changes caption text and timing`);
+    const srt = await s.evaluate(async () => { const r = await import('./js/render.js?v=46'); return r.toSRT(window.__storycuts.state.project.words); });
+    check(srt.includes('We grabbed') && srt.includes('00:00:00,200'), `${tag}: corrected words and timing reach the subtitle export`);
+    await s.locator('#caption-word-end').fill('99');
+    await s.locator('#caption-word-form button').click();
+    check(/Keep this word between/.test(await s.locator('#caption-word-status').textContent()) && await s.evaluate(() => window.__storycuts.state.project.words[0].e < 2), `${tag}: invalid overlapping caption timing is rejected`);
+    if (phone) await s.click('#sheet-done');
+    await s.click('#btn-undo');
+    check(await s.evaluate((original) => JSON.stringify(window.__storycuts.state.project.words[0]) === JSON.stringify(original), originalWord), `${tag}: caption corrections undo cleanly`);
+    await s.click('#btn-safe-area');
+    check(await s.getAttribute('#btn-safe-area', 'aria-pressed') === 'true', `${tag}: safe-area guides toggle in the preview`);
+    await s.click('#btn-safe-area');
+    if (phone) await s.click('#ed-tabs [data-tab=captions]');
+    else {
+      await s.click('#btn-shortcuts');
+      check(await s.locator('#shortcuts-dialog').evaluate((el) => el.open), `${tag}: keyboard shortcut help opens`);
+      await s.keyboard.press('Escape');
+      check(await s.evaluate(() => document.activeElement.id === 'btn-shortcuts'), `${tag}: closing shortcut help restores focus`);
+    }
+    await s.locator('#caption-transcript summary').click();
     await s.click('#cap-sub [data-sub=styles]');
     if (!phone) {
       await s.evaluate(() => { const st = window.__storycuts.state; st.media.seek(st.project.words[1].s + 0.05); });
@@ -238,6 +283,15 @@ try {
     check(await s.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: the sample editor has no sideways page scrolling`);
     await s.click('#btn-sample-start'); await s.click('#btn-demo');
     check(await s.evaluate(() => !window.__storycuts.state.sampleEditor && window.__storycuts.state.project.duration === 44 && !window.__storycuts.state.project.approved), `${tag}: starting the guided demo keeps sample edits separate`);
+    for (const tool of ['captions', 'shot', 'sound']) {
+      await s.goto(`${URL0}#features`);
+      await s.locator('#features').scrollIntoViewIfNeeded();
+      if (tool === 'captions') { await sleep(400); await shot(s, phone ? 'p16-editor-features' : '16-editor-features'); }
+      await s.click(`.feature-card[data-editor-tool=${tool}]`);
+      await s.waitForFunction((tab) => window.__storycuts.state.step === 5 && window.__storycuts.state.tab === tab && !window.__storycuts.state.sampleLoading, tool);
+      check(await s.isVisible(`#pane-${tool}`), `${tag}: the homepage ${tool} feature opens its working editor tool`);
+    }
+    check(sampleCtx.providerRequests.length === 0, `${tag}: the new feature previews stay free of paid AI requests`);
     await sampleCtx.close();
   }
 
@@ -272,14 +326,28 @@ try {
   check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && await p.getAttribute('button[data-demo-view=original]', 'aria-pressed') === 'true', 'Original shows camera footage and marks the comparison choice');
   check(await p.evaluate(() => [...document.querySelectorAll('[data-showreel-frame]')].every((img) => img.getAttribute('src').endsWith('man.jpg'))), 'the Original comparison also shows original footage in the shot strip');
   await p.click('button[data-demo-view=result]');
+  await p.locator('#example-scrub').evaluate((el) => { el.value = '3.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'StoryCuts shows the illustrated comparison');
   await p.locator('#example-scrub').evaluate((el) => { el.value = '6.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   check(await p.getAttribute('#btn-example-play', 'aria-label') === 'Play example' && !(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && (await p.locator('#showreel-time').textContent()).startsWith('0:06'), 'scrubbing pauses the example at the camera shot and updates its time');
-  await p.locator('#example-scrub').evaluate((el) => { el.value = '1.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await p.locator('#example-scrub').evaluate((el) => { el.value = '2.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   check(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'scrubbing back reaches the illustrated shot');
+  check((await p.locator('#showreel-caption').textContent()).includes('CORGI') && await p.getAttribute('#story-showreel', 'data-shot') === '1', 'the illustrated shot and caption refer to the same story beat');
+  await p.click('[data-demo-caption=boxed]');
+  check(await p.getAttribute('[data-demo-caption=boxed]', 'aria-pressed') === 'true' && await p.locator('#showreel-captions').evaluate((cv) => cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data.some((v, i) => i % 4 === 3 && v > 0)), 'the example caption style changes a visible canvas rendered with the export engine');
+  await p.locator('#example-scrub').evaluate((el) => { el.value = '.6'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  check(!(await p.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut'))) && (await p.locator('#showreel-caption').textContent()).includes('umbrella'), 'the example opens on the matching camera hook');
+  await p.click('#btn-example-play'); await sleep(650);
+  check(await p.evaluate(() => Math.abs(+document.querySelector('#example-scrub').value - document.querySelector('#example-original').currentTime) < .15), 'example captions and playhead follow the footage clock during playback');
+  await p.click('#btn-example-play');
   await p.click('[data-showcase=breakfast]'); await sleep(250); await shot(p, '01j-story-example');
   check((await p.getAttribute('#example-original', 'poster')).endsWith('creator.jpg') && await p.getAttribute('[data-showcase=breakfast]', 'aria-pressed') === 'true', 'the third example uses another licensed camera-facing creator');
-  await p.click('[data-showcase=airport]'); await p.click('#btn-example-play');
+  await p.click('[data-showcase=airport]');
+  await p.locator('#example-original').evaluate((v) => v.readyState >= 2 ? Promise.resolve() : new Promise((resolve) => v.addEventListener('loadeddata', resolve, { once: true })));
+  await p.locator('#example-scrub').evaluate((el) => { el.value = '7.8'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await sleep(150);
+  check(await p.evaluate(() => { const v = document.querySelector('#example-original'); return Math.abs(v.currentTime / (Math.min(8, v.duration) / 8) - 7.8) < .12; }) && (await p.locator('#showreel-caption').textContent()).includes('Definitely'), 'a shorter source clip still reaches the correctly timed final caption');
+  await p.click('#btn-example-play');
   for (const [selector, name] of [['#styles', '01c-landing-styles'], ['#how', '01d-landing-how'], ['.story-showcase', '01e-landing-showcase'], ['#pricing', '01f-landing-pricing'], ['#faq', '01g-landing-faq'], ['.cta-band', '01h-landing-footer']]) {
     await p.locator(selector).scrollIntoViewIfNeeded(); await sleep(450); await shot(p, name);
   }
@@ -561,6 +629,7 @@ try {
   await m.click('[data-showcase=rain]');
   await m.click('button[data-demo-view=original]');
   await m.click('button[data-demo-view=result]');
+  await m.locator('#example-scrub').evaluate((el) => { el.value = '3.2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   check(await m.getAttribute('[data-showcase=rain]', 'aria-pressed') === 'true' && await m.locator('#story-showreel .phone-screen').evaluate((el) => el.classList.contains('cut')), 'phone story and comparison controls show the selected illustrated example');
   await shot(m, 'p01i-story-example'); await noSideScroll('interactive example');
   for (const [selector, name] of [['#styles', 'p01b-landing-styles'], ['#how', 'p01c-landing-how'], ['.story-showcase', 'p01d-landing-showcase'], ['#pricing', 'p01e-landing-pricing'], ['#faq', 'p01f-landing-faq'], ['.cta-band', 'p01g-landing-footer']]) {

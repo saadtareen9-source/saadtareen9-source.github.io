@@ -75,3 +75,14 @@ The screenshots in `screenshots/` show the current design. In these screenshots 
 ## Returning the work
 
 The preferred way is a **pull request** to the repository (branch from `main`). Otherwise, send back the full changed files (`index.html`, `style.css`, and `js/app.js` / `js/loader.js` if they were edited). The owner's Claude Code assistant will test every flow before it goes live.
+
+
+## Version 46 controls
+
+- `experience.js` uses the original video as the example playback clock and `captions.js` to draw the caption styles used by the editor. Short clips are paced across the eight-second edit. Seeking applies the correct shot and phrase immediately. The examples remain labeled fictional and silent.
+- `#showreel-captions`, `#showreel-caption`, `#showreel-shot-label`, `#showreel-chapter`, and `[data-demo-caption]` form the live example caption preview.
+- `[data-editor-tool]` opens the free sample editor directly in a selected tab. It must not grant AI or paid access.
+- `#caption-transcript`, `#caption-search`, `#caption-no-results`, `#caption-word-form`, `#caption-word`, `#caption-word-start`, `#caption-word-end`, `#caption-word-status` let creators correct individual words and timestamps. Corrections replace the word array to invalidate the caption cache and are undoable. Neighboring word bounds prevent overlap.
+- `#btn-save-caption-style` and `#btn-apply-caption-style` save one custom style on the current device. Applying it is undoable.
+- `#btn-safe-area` draws guidance only in the preview. It must never appear in exports. `#btn-shortcuts` opens `#shortcuts-dialog`.
+- The automated test can use an existing browser with `STORYCUTS_BROWSER_PATH` and optionally `STORYCUTS_BROWSER_ARGS` (a JSON array). The normal Playwright installation remains the default.
