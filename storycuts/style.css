@@ -2055,7 +2055,7 @@ body.studio-open #panel-style.active > .wiz-nav, body.studio-open #panel-setting
 .cast-jump button:hover { border-color: #b9bdc7; transform: translateY(-1px); }
 .cast-jump button.on { background: #f3f1fa; color: var(--accent-2); border-color: var(--accent); box-shadow: 0 0 0 3px #694bd222; }
 .cast-jump i { position: relative; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 9px; background: #f1f2f4; color: #747b87; font-size: .9rem; font-style: normal; font-weight: 700; overflow: visible; }
-.cast-jump i img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 15%; border-radius: 9px; background: #f1f2f4; }
+.cast-jump i img { position: absolute; inset: 0; width: 42px; height: 42px; max-width: none; max-height: none; object-fit: cover; object-position: 50% 15%; border-radius: 9px; background: #f1f2f4; animation: none; }
 .cast-jump i img:not([src]) { visibility: hidden; }
 .cast-jump .tick { position: absolute; right: -5px; bottom: -5px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #2f8a5f; color: #fff; border: 2px solid #fff; }
 .cast-jump .tick svg { width: 10px; height: 10px; }
@@ -2063,6 +2063,11 @@ body.studio-open #panel-style.active > .wiz-nav, body.studio-open #panel-setting
 .cast-review-nav #btn-cast-next:hover:not(:disabled) { background: var(--accent-2); }
 .cast-review-nav #btn-cast-next:disabled { color: #9aa0aa; background: #f1f2f4; border-color: #e3e5ea; }
 .cast-review-nav #btn-cast-prev { min-height: 44px; font-size: .82rem; }
+@media (max-width: 640px) {
+  .cast-review-nav > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .cast-review-nav #btn-cast-next { padding: 0 14px; font-size: .78rem; }
+  .cast-jump button { min-height: 50px; font-size: .78rem; padding-right: 12px; }
+}
 .char .char-row .char-draw { --h: 44px; min-height: 44px; font-size: .84rem; font-weight: 700; color: var(--accent-2); background: #f6f3ff; border: 1.5px solid #b5a7d8; }
 .char .char-row .char-draw:hover:not(:disabled) { background: #ece6ff; border-color: var(--accent); }
 .chars { grid-template-columns: minmax(0,1fr); gap: 18px; padding-bottom: 0; }
