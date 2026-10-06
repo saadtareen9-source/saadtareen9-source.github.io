@@ -1400,12 +1400,12 @@ const LOADER_KIND = { transcribe: 'listen', plan: 'plan', cast: 'cast', scenes: 
 const LIVE_STEPS = ['Listening to your story', 'Planning the edit', 'Checking every scene'];
 
 /** Full-screen progress while the story is transcribed and planned. */
-function liveStart(stage, title) {
+function liveStart(stage, title, actions = []) {
   const p = state.project;
   const eta = stage === 'transcribe' ? Math.max(20, (p?.duration || 60) * 0.5) : stage === 'plan' ? 50 : 30;
   const step = stage === 'transcribe' ? 0 : 1;
   if (state.live) { state.live.update({ kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], step, eta }); return; }
-  state.live = showWork({ kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], eta, steps: LIVE_STEPS, note: 'This usually takes a minute or two.' });
+  state.live = showWork({ kind: LOADER_KIND[stage], title, tips: TIPS[stage] || [], eta, steps: LIVE_STEPS, note: 'This usually takes a minute or two.', actions });
   state.live.update({ step });
 }
 
@@ -1461,15 +1461,16 @@ async function createVideo() {
     // 1. transcript
     if (!p.words.length) {
       setStage('transcribe', 'active');
-      liveStart('transcribe', 'Listening to your story');
+      const asrAbort = new AbortController();
+      liveStart('transcribe', 'Listening to your story', settingsGet().openai ? [{ label: 'Use the faster backup', onClick: () => asrAbort.abort() }] : []);
       let samples = null, words = null, problem = '';
       const onStatus = (m) => {
         const percent = m.match(/(\d+)%/);
-        state.live?.update({ title: percent ? `Getting ready to listen · ${percent[1]}%` : /Loading/.test(m) ? 'Getting ready to listen' : /along/.test(m) ? 'Listening along with your video' : /Reading/.test(m) ? 'Opening your audio' : 'Listening to your story' });
+        state.live?.update({ title: percent ? (+percent[1] >= 100 ? 'Getting the voice reader ready' : `Getting ready to listen · ${percent[1]}%`) : /Loading/.test(m) ? 'Getting ready to listen' : /along/.test(m) ? 'Listening along with your video' : /Reading/.test(m) ? 'Opening your audio' : 'Listening to your story' });
       };
       try {
         samples = await decodeAudio(state.file, 16000, { onStatus: (k) => k === 'capture' && onStatus('Listening along with your video') });
-        words = await transcribeInBrowser(state.file, { quality: $('#asr-quality').value, onStatus, samples });
+        words = await transcribeInBrowser(state.file, { quality: $('#asr-quality').value, onStatus, samples, signal: asrAbort.signal });
         if (!words.length) throw new Error('no speech found');
       } catch (e) {
         problem = e.code === 'silent' ? 'silent' : errText(e);
@@ -1496,6 +1497,7 @@ async function createVideo() {
         return;
       }
       p.words = words; p.transcriptSource = 'auto'; p.transcriptReviewed = false; save(); renderTranscript(); renderPrep();
+      state.live?.update({ actions: [] });
     }
     setStage('transcribe', 'done');
     if (p.settings.storyMode === 'auto' && !p.transcriptReviewed && !store.get('storycuts:skip-transcript-review', false)) { showTranscriptReview(); return; }

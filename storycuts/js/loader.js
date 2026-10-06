@@ -98,7 +98,15 @@ function buildOverlay(job) {
       <div class="work-actions"></div>
       <p class="work-note"></p>
     </div>`;
+  fillActions(job);
+  overlay.querySelector('.work-note').textContent = job.note || '';
+  document.body.append(overlay);
+  (overlay.querySelector('.work-actions .btn') || overlay).focus({ preventScroll: true });
+}
+
+function fillActions(job) {
   const actions = overlay.querySelector('.work-actions');
+  actions.innerHTML = '';
   if (job.background) {
     const b = document.createElement('button');
     b.className = 'btn primary lg';
@@ -113,9 +121,6 @@ function buildOverlay(job) {
     b.addEventListener('click', () => a.onClick?.(b));
     actions.append(b);
   });
-  overlay.querySelector('.work-note').textContent = job.note || '';
-  document.body.append(overlay);
-  (overlay.querySelector('.work-actions .btn') || overlay).focus({ preventScroll: true });
   job.tipEl = overlay.querySelector('.work-tip');
   job.tipIdx = 0;
   showTip(job, true);
@@ -228,7 +233,8 @@ export function showWork({ kind = 'draw', title = 'Working', short = '', tips = 
   jobs.push(job);
   render();
   return {
-    update({ title: t, short: s, done, total: n, tips: tp, step, kind: k, eta: e } = {}) {
+    update({ title: t, short: s, done, total: n, tips: tp, step, kind: k, eta: e, actions: acts } = {}) {
+      if (acts) { job.actions = acts; if (overlay?.dataset.job === String(job.id)) fillActions(job); }
       if (k && k !== job.kind) {
         job.kind = k;
         const vis = overlay?.dataset.job === String(job.id) && overlay.querySelector('.work-visual');
