@@ -2850,3 +2850,11 @@ body.ed-full .preview-workspace { position: relative; }
 body.ed-full .ed-view { position: static; }
 body.ed-full .view-bar { top: 8px; bottom: auto; }
 body.ed-full .preview-workspace:has(#draw-card:not([hidden]):not(.done):not(.busy)) .view-bar { top: 68px; }
+
+/* clips glide into place after a trim, split or delete; trimming itself follows the finger */
+#timeline .clip { transition: left .22s var(--ease), width .22s var(--ease), box-shadow .15s, filter .15s; }
+#timeline.dragging .clip, #timeline.dragging .cut-plus { transition: none; }
+#timeline .cut-plus { transition: left .22s var(--ease), transform .15s; }
+#timeline.snapped .clip.sel { box-shadow: 0 0 0 2px var(--accent-line, #ae9adf); }
+#timeline.snapped .clip-dur { background: var(--accent-line, #ae9adf); }
+@media (prefers-reduced-motion: reduce) { #timeline .clip, #timeline .cut-plus { transition: none; } }

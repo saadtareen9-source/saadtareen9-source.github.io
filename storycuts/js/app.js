@@ -18,7 +18,7 @@ import { showWork } from './loader.js';
 import { runQC, normalizeScene, normalizeSegments, normalizeCharacters, newId, slug, wordsIn } from './qc.js';
 import { planWithClaude, redoSceneWithClaude, estimateCost, DEFAULT_MODEL } from './planner.js';
 import { trackFaces } from './facetrack.js';
-import { transcribeInBrowser, transcribeWithOpenAI, alignWordsToAudio, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
+import { transcribeInBrowser, transcribeWithOpenAI, alignWordsToAudio, primeAudioCapture, wordsFromText, wordsFromSubtitles, decodeAudio, speechSpans } from './transcribe.js';
 import {
   IMAGE_MODELS, STYLES, canAnimate, modelInfo, storageProblem, deleteBlobs, hasBlob, generateCharacterImage, generateSceneImage, estimateImageCost, getBlob, putBlob, pool, orderForConsistency, loadStyleManifest,
 } from './images.js';
@@ -1468,6 +1468,8 @@ async function createVideo() {
   // Subscription only: creating with AI needs a plan (or the owner switch).
   if (!hasAccess()) { openPaywall(); return; }
   if (!keysReady()) { toast('Connect your Claude and OpenAI accounts to start.', 4500); openSettings(); return; }
+  // still inside the tap: let the backup sound recorder play on phones if it's needed
+  if (!p.words.length && state.file) primeAudioCapture(state.file);
   state.busy = true;
   state.stages = {};
   setStatus('#create-status', '');
@@ -2269,7 +2271,7 @@ function renderTimeline() {
   if (!p?.approved || !$('#tl-scroll').clientWidth) return; // editor not visible yet
   tlSetup();
   const el = $('#timeline');
-  el.innerHTML = p.segments.map((s, i) => {
+  const html = p.segments.map((s, i) => {
     const type = shotType(s, p.settings);
     const st = type === 'face' ? '' : state.cache.pending?.has(s.id) ? 'pending' : !s.image?.key ? 'noimg' : s.image.qc && !s.image.qc.pass ? 'warn' : s.image.stale ? 'stale' : 'hasimg';
     const thumb = type === 'face' ? faceThumb(s.start, tlRefreshSoon) : s.image?.key ? sceneThumb(s.image.key, tlRefreshSoon) : null;
@@ -2287,6 +2289,23 @@ function renderTimeline() {
     const tr = s.transIn || p.settings.transition || 'cut';
     return `<button class="cut-plus ${tr !== 'cut' ? 'has' : ''}" data-cut="${s.id}" style="left:${TL.pad + s.start * TL.pps}px" aria-label="Transition into shot ${k + 2}: ${esc((TRANSITIONS.find((x) => x.id === tr) || TRANSITIONS[0]).name)}">${tr !== 'cut' ? icon('trans') : icon('plus')}</button>`;
   }).join('');
+  // Update clips in place (matched by id) instead of rebuilding them, so a
+  // trim, split or delete makes the neighbours glide into place.
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const old = new Map([...el.querySelectorAll(':scope > .clip')].map((c) => [c.dataset.id, c]));
+  el.querySelectorAll(':scope > .cut-plus').forEach((b) => b.remove());
+  const focused = document.activeElement?.closest?.('#timeline .clip')?.dataset.id;
+  [...tpl.content.children].forEach((n) => {
+    const o = n.classList.contains('clip') && old.get(n.dataset.id);
+    if (!o) { el.append(n); return; }
+    old.delete(n.dataset.id);
+    [...o.attributes].forEach((a) => { if (!n.hasAttribute(a.name)) o.removeAttribute(a.name); });
+    [...n.attributes].forEach((a) => { if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value); });
+    if (o.innerHTML !== n.innerHTML) o.innerHTML = n.innerHTML;
+  });
+  old.forEach((o) => o.remove());
+  if (focused) el.querySelector(`.clip[data-id="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   el.classList.toggle('active', !!state.clipActive);
   renderFxTrack();
   drawWave();
@@ -2412,8 +2431,12 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
     if (!drag.moved && Math.abs(dx) < 4) return;
     if (!drag.moved) { drag.moved = true; if (drag.trim || drag.fx) snapshot(); }
     if (drag.trim) {
-      setBoundary(drag.index, drag.t0 + dx / TL.pps);
-      renderTimeline();
+      const raw = drag.t0 + dx / TL.pps;
+      const snap = snapTime(raw, 9 / TL.pps);
+      setBoundary(drag.index, snap ?? raw);
+      $('#timeline').classList.add('dragging');
+      cancelAnimationFrame(drag.raf);
+      drag.raf = requestAnimationFrame(() => layoutClips(drag.index, snap != null));
     } else if (drag.fx) {
       drag.c.t = Math.max(0, Math.min(state.project.duration - 0.1, drag.t0 + dx / TL.pps));
       renderFxTrack();
@@ -2426,13 +2449,41 @@ window.addEventListener('resize', () => { if (state.project?.approved) renderTim
     drag = null;
     if (d.blank) { if (!d.moved) deselectClip(); return; }
     if (d.moved) {
+      if (d.trim) $('#timeline').classList.remove('dragging', 'snapped');
       if (d.trim || d.fx) { save(); if (d.trim) { renderInspector(); renderTimeline(); } else { renderSoundPane(); renderSelBar(); } }
       return;
     }
     if (d.fx) selectFx(d.fx.dataset.id);
-    else if (d.clip) select(d.clip.dataset.id, true);
+    else if (d.clip) select(d.clip.dataset.id, false);
   });
 }());
+
+// While trimming, only the two clips at the moving edge change: no rebuild.
+function layoutClips(index, snapped) {
+  const p = state.project;
+  [p.segments[index - 1], p.segments[index]].forEach((s) => {
+    const c = s && $(`#timeline .clip[data-id="${CSS.escape(s.id)}"]`);
+    if (!c) return;
+    c.style.left = `${TL.pad + s.start * TL.pps}px`;
+    c.style.width = `${Math.max(6, (s.end - s.start) * TL.pps - 3)}px`;
+    const badge = c.querySelector('.clip-dur');
+    if (badge) badge.textContent = `${(s.end - s.start).toFixed(1)}s`;
+  });
+  const plus = $(`#timeline .cut-plus[data-cut="${CSS.escape(p.segments[index]?.id || '')}"]`);
+  if (plus) plus.style.left = `${TL.pad + p.segments[index].start * TL.pps}px`;
+  $('#timeline').classList.toggle('snapped', !!snapped);
+  renderSelBar();
+}
+
+// Magnetic edges: the playhead and the pauses between words pull a trimmed edge in.
+function snapTime(t, within) {
+  const p = state.project;
+  const spots = [state.media?.time ?? -1];
+  p.words.forEach((w, i) => { const next = p.words[i + 1]; if (next && next.s - w.e > 0.08) spots.push(next.s - Math.min(0.1, (next.s - w.e) / 2)); });
+  let best = null, dist = within;
+  spots.forEach((x) => { if (Math.abs(x - t) < dist) { dist = Math.abs(x - t); best = x; } });
+  return best;
+}
 
 // ---------- CapCut-style clip tools ----------
 // Tapping a clip or a sound selects it in place: handles to trim, and a tool
@@ -2500,18 +2551,7 @@ $('#sel-bar').addEventListener('click', async (e) => {
   if (!seg) return;
   const i = p.segments.indexOf(seg);
   if (act === 'split') {
-    // split at the playhead if it's inside this clip, otherwise in the middle
-    const now = state.media?.time ?? 0;
-    const at = now > seg.start + 0.4 && now < seg.end - 0.4 ? now : (seg.start + seg.end) / 2;
-    if (seg.end - seg.start < 0.9) { toast('This clip is too short to split.'); return; }
-    edit(() => {
-      const copy = JSON.parse(JSON.stringify(seg));
-      copy.id = newId(); copy.start = +at.toFixed(3); copy.reason = 'Split from the previous shot.';
-      seg.end = copy.start;
-      p.segments.splice(i + 1, 0, copy);
-    });
-    renderInspector();
-    toast(`Split at ${fmtTC(at)}.`);
+    splitAtPlayhead();
   } else if (act === 'delete') {
     if (p.segments.length < 2) return;
     // the voice keeps playing, so the neighbour fills the gap
@@ -3087,16 +3127,20 @@ function splitAtPlayhead() {
   const now = state.media.time;
   const seg = segmentAt(p.segments, now);
   const i = p.segments.indexOf(seg);
-  if (now < seg.start + 0.4 || now > seg.end - 0.4) { toast('Move the playhead further inside a clip to split it.'); return; }
+  // like CapCut: split exactly where the playhead is
+  if (now < seg.start + 0.12 || now > seg.end - 0.12) { toast('The playhead is on a cut already. Move it into a clip to split.'); return; }
+  const at = +now.toFixed(3);
   edit(() => {
     const copy = JSON.parse(JSON.stringify(seg));
-    copy.id = newId(); copy.start = now; copy.reason = 'Split from the previous shot.';
-    seg.end = now;
+    copy.id = newId(); copy.start = at; copy.reason = 'Split from the previous shot.';
+    delete copy.transIn;
+    seg.end = at;
     p.segments.splice(i + 1, 0, copy);
     state.selected = copy.id;
+    state.clipActive = true; state.selectedFx = null;
   });
   renderInspector();
-  toast(`Split into two shots at ${fmtTC(now)}. Change either one in Edit.`);
+  toast(`Split at ${fmtTC(at)}.`);
 }
 
 /** Move the playhead to the start of the next shot. */

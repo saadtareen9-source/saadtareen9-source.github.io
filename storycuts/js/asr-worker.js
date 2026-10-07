@@ -32,10 +32,16 @@ self.onmessage = async ({ data }) => {
       asr = await loading;
       self.postMessage({ type: 'ready', fresh: true });
     } else self.postMessage({ type: 'ready', fresh: false });
-    const out = await asr(data.samples, {
-      return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5, task: 'transcribe', ...(data.language ? { language: data.language } : {}),
-    });
-    self.postMessage({ type: 'done', chunks: (out.chunks || []).map((c) => ({ text: c.text, timestamp: c.timestamp })) });
+    // Each piece is under 30 s and starts at a pause, so word times stay exact
+    // (letting the model stitch long audio itself makes timings drift).
+    const chunks = [];
+    for (let i = 0; i < data.pieces.length; i++) {
+      const [offset, samples] = data.pieces[i];
+      self.postMessage({ type: 'piece', index: i, total: data.pieces.length });
+      const out = await asr(samples, { return_timestamps: 'word', task: 'transcribe', ...(data.language ? { language: data.language } : {}) });
+      (out.chunks || []).forEach((c) => chunks.push({ text: c.text, timestamp: [c.timestamp[0] + offset, (c.timestamp[1] ?? c.timestamp[0] + 0.3) + offset] }));
+    }
+    self.postMessage({ type: 'done', chunks });
   } catch (e) {
     loading = null;
     self.postMessage({ type: 'error', message: String(e?.message || e) });
