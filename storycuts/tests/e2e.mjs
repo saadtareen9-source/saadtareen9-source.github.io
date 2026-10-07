@@ -571,6 +571,11 @@ try {
   check(Math.abs(await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - zoomWidth) < 1, 'desktop zoom out restores the previous timeline scale');
   await p.locator('#timeline .clip.face').first().click(); await sleep(400); await shot(p, '09b-editor-demo');
   await p.locator('#timeline .clip.scene').nth(1).click(); await sleep(400);
+  // bring the selected clip under the playhead, as a creator would by scrolling to it
+  await p.evaluate(async () => { const st = window.__storycuts.state; const sg = st.project.segments.find((x) => x.id === st.selected); await st.media.seek(sg.start + 0.3); });
+  await p.evaluate(() => document.querySelector('#zoom-in').click());
+  await p.evaluate(() => document.querySelector('#zoom-out').click());
+  await sleep(400);
   await shot(p, '09-editor');
   // trim
   const before = await p.evaluate(() => { const st = window.__storycuts.state; return st.project.segments.find((x) => x.id === st.selected).start; });
