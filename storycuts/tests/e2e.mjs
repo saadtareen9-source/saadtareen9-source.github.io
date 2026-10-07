@@ -117,9 +117,14 @@ async function newContext(opts, { mockListening = false, failListening = false, 
     await ctx.route('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/+esm', (r) => r.fulfill({ contentType: 'application/javascript', headers: cors, body: `
       export const env = {};
       export async function pipeline() {
-        return async () => {
+        // like the real model: each call hears one piece (under 30 s) and times words from its own start
+        let heard = 0;
+        return async (audio) => {
           await new Promise(resolve => setTimeout(resolve, 650));
-          ${failListening ? "throw new Error('Test speech model unavailable');" : `return { chunks: ${JSON.stringify(chunks)} };`}
+          ${failListening ? "throw new Error('Test speech model unavailable');" : `const all = ${JSON.stringify(chunks)};
+          const from = heard, to = heard + audio.length / 16000;
+          heard = to >= 43.9 ? 0 : to;
+          return { chunks: all.filter((c) => c.timestamp[0] >= from - 0.01 && c.timestamp[0] < to - 0.01).map((c) => ({ text: c.text, timestamp: [c.timestamp[0] - from, c.timestamp[1] - from] })) };`}
         };
       }
     ` }));
@@ -201,11 +206,14 @@ try {
     {
       const segCount = () => s.evaluate(() => window.__storycuts.state.project.segments.length);
       const n0 = await segCount();
+      const headBefore = await s.evaluate(() => window.__storycuts.state.media.time);
       await s.click('#timeline .clip >> nth=1');
+      check(Math.abs(await s.evaluate(() => window.__storycuts.state.media.time) - headBefore) < 0.01, `${tag}: tapping a clip selects it without moving the playhead`);
       check(await s.isVisible('#sel-bar') && !(await s.evaluate(() => document.body.classList.contains('sheet-open'))) && await s.locator('#timeline .clip.sel .trim').count() >= 1, `${tag}: tapping a clip selects it with trim handles and clip tools, without a pop-up`);
       await shot(s, phone ? 'p15b-clip-tools' : '15c-clip-tools');
+      const splitAt = await s.evaluate(async () => { const st = window.__storycuts.state; const sg = st.project.segments[1]; const t = sg.start + (sg.end - sg.start) * 0.27; await st.media.seek(t); return st.media.time; });
       await s.click('#sel-bar [data-sb=split]');
-      check(await segCount() === n0 + 1, `${tag}: the clip toolbar splits the selected clip`);
+      check(await segCount() === n0 + 1 && await s.evaluate((t) => window.__storycuts.state.project.segments.some((sg) => Math.abs(sg.start - t) < 0.01), splitAt), `${tag}: Split cuts exactly at the playhead, not the middle`);
       await s.click('#sel-bar [data-sb=delete]');
       check(await segCount() === n0, `${tag}: the clip toolbar deletes a clip and its neighbour fills the time`);
       await s.click('#btn-undo'); await s.click('#btn-undo');
@@ -563,6 +571,11 @@ try {
   check(Math.abs(await p.locator('#timeline .clip').first().evaluate((el) => el.getBoundingClientRect().width) - zoomWidth) < 1, 'desktop zoom out restores the previous timeline scale');
   await p.locator('#timeline .clip.face').first().click(); await sleep(400); await shot(p, '09b-editor-demo');
   await p.locator('#timeline .clip.scene').nth(1).click(); await sleep(400);
+  // bring the selected clip under the playhead, as a creator would by scrolling to it
+  await p.evaluate(async () => { const st = window.__storycuts.state; const sg = st.project.segments.find((x) => x.id === st.selected); await st.media.seek(sg.start + 0.3); });
+  await p.evaluate(() => document.querySelector('#zoom-in').click());
+  await p.evaluate(() => document.querySelector('#zoom-out').click());
+  await sleep(400);
   await shot(p, '09-editor');
   // trim
   const before = await p.evaluate(() => { const st = window.__storycuts.state; return st.project.segments.find((x) => x.id === st.selected).start; });
@@ -852,6 +865,7 @@ try {
   await a.click('#btn-create'); await sleep(250); await shot(a, '24-listening');
   await a.waitForSelector('#transcript-review:not(.hidden)');
   check(await a.evaluate(() => window.__speechCalls) === 1 && actx.plannerRequests.length === 0, 'automatic transcription pauses for review before Claude sees the words');
+  check(await a.evaluate(() => { const w = window.__storycuts.state.project.words; return w.length > 50 && w.every((x, i) => !i || x.s >= w[i - 1].s) && w.at(-1).s > 30; }), 'long recordings are heard in pieces cut at pauses, with every word keeping its exact time');
   await a.click('#btn-review-edit');
   await a.locator('#review-text').fill(''); await a.click('#btn-review-continue');
   check(await a.isVisible('#transcript-review') && actx.plannerRequests.length === 0 && await a.locator('#review-status').textContent().then((x) => x.includes('Add')), 'an empty transcript stays editable and cannot start planning');

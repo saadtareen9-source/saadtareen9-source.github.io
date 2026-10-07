@@ -16,9 +16,9 @@
   <script>
     // an old copy of this page (browser cache) reloads itself onto the newest version
     // also when you come back to the tab (phones keep old pages in memory), unless something is running
-    (function () { var V=54, last = 0; function check() { if (Date.now() - last < 30000) return; last = Date.now(); try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v, b = document.body; if (j.v > V && !sessionStorage.getItem(k) && !(b && (b.classList.contains('work-open') || b.classList.contains('has-job')))) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} } check(); addEventListener('pageshow', function (e) { if (e.persisted) { last = 0; check(); } }); document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); }); })();
+    (function () { var V=55, last = 0; function check() { if (Date.now() - last < 30000) return; last = Date.now(); try { fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) { var k = 'storycuts:updated-to-' + j.v, b = document.body; if (j.v > V && !sessionStorage.getItem(k) && !(b && (b.classList.contains('work-open') || b.classList.contains('has-job')))) { sessionStorage.setItem(k, '1'); var u = new URL(location.href); u.searchParams.set('v', j.v); location.replace(u.href); } }).catch(function () {}); } catch (e) {} } check(); addEventListener('pageshow', function (e) { if (e.persisted) { last = 0; check(); } }); document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); }); })();
   </script>
-  <link rel="stylesheet" href="style.css?v=54">
+  <link rel="stylesheet" href="style.css?v=55">
 </head>
 <body>
   <a class="skip-link" href="#studio">Skip to the studio</a>
@@ -746,7 +746,7 @@
 
   <video id="video" playsinline preload="auto" hidden></video>
   <div class="toast" id="toast" role="status"></div>
-  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=54", "./js/app.js": "./js/app.js?v=54", "./js/asr-worker.js": "./js/asr-worker.js?v=54", "./js/billing.js": "./js/billing.js?v=54", "./js/captions.js": "./js/captions.js?v=54", "./js/constants.js": "./js/constants.js?v=54", "./js/draw.js": "./js/draw.js?v=54", "./js/experience.js": "./js/experience.js?v=54", "./js/facetrack.js": "./js/facetrack.js?v=54", "./js/images.js": "./js/images.js?v=54", "./js/loader.js": "./js/loader.js?v=54", "./js/planner.js": "./js/planner.js?v=54", "./js/qc.js": "./js/qc.js?v=54", "./js/render.js": "./js/render.js?v=54", "./js/sfx.js": "./js/sfx.js?v=54", "./js/transcribe.js": "./js/transcribe.js?v=54"}}</script>
-  <script type="module" src="js/app.js?v=54"></script>
+  <script type="importmap">{"imports": {"./js/animate.js": "./js/animate.js?v=55", "./js/app.js": "./js/app.js?v=55", "./js/asr-worker.js": "./js/asr-worker.js?v=55", "./js/billing.js": "./js/billing.js?v=55", "./js/captions.js": "./js/captions.js?v=55", "./js/constants.js": "./js/constants.js?v=55", "./js/draw.js": "./js/draw.js?v=55", "./js/experience.js": "./js/experience.js?v=55", "./js/facetrack.js": "./js/facetrack.js?v=55", "./js/images.js": "./js/images.js?v=55", "./js/loader.js": "./js/loader.js?v=55", "./js/mp4audio.js": "./js/mp4audio.js?v=55", "./js/planner.js": "./js/planner.js?v=55", "./js/qc.js": "./js/qc.js?v=55", "./js/render.js": "./js/render.js?v=55", "./js/sfx.js": "./js/sfx.js?v=55", "./js/transcribe.js": "./js/transcribe.js?v=55"}}</script>
+  <script type="module" src="js/app.js?v=55"></script>
 </body>
 </html>

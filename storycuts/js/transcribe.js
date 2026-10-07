@@ -1,3 +1,4 @@
+import { extractAacAsAdts } from './mp4audio.js';
 // Transcription with word-level timestamps.
 //  - transcribeInBrowser: Whisper running locally via transformers.js
 //    (free, private; downloads the model once, then it's cached).
@@ -15,7 +16,9 @@ const MODELS = {
 // plays the video silently once and records its sound.
 export async function decodeAudio(file, sampleRate = 16000, { onStatus = () => {}, capture = true } = {}) {
   try {
-    return await decodeWhole(file, sampleRate);
+    const out = await decodeWhole(file, sampleRate);
+    if (capture && primed?.file === file) releaseAudioCapture();
+    return out;
   } catch (e) {
     if (!capture) throw e;
     console.warn('StoryCuts: direct audio decode failed, recording the sound instead.', e?.message || e);
@@ -24,17 +27,29 @@ export async function decodeAudio(file, sampleRate = 16000, { onStatus = () => {
   }
 }
 
-async function decodeWhole(file, sampleRate) {
-  const buf = await file.arrayBuffer();
+const decodeBuffer = (buf) => {
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const probe = new OAC(1, 1, 44100);
-  const audio = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const pr = probe.decodeAudioData(buf, resolve, reject);
     if (pr?.then) pr.then(resolve, reject);
   });
+};
+
+async function decodeWhole(file, sampleRate) {
+  let audio = null;
+  // phone videos: read only the sound track (fast, and safe for huge files)
+  if (/\.(mov|mp4|m4v|m4a)$/i.test(file.name || '') || /mp4|quicktime/.test(file.type || '')) {
+    try { const adts = await extractAacAsAdts(file); if (adts) audio = await decodeBuffer(adts); } catch (e) { console.warn('StoryCuts: sound-track reader fell back:', e?.message || e); }
+  }
+  if (!audio) {
+    if (file.size > 400 * 1024 * 1024) throw new Error('too big to read at once');
+    audio = await decodeBuffer(await file.arrayBuffer());
+  }
   if (!audio || !audio.length) throw new Error('no audio track');
   if (audio.sampleRate === sampleRate && audio.numberOfChannels === 1) return audio.getChannelData(0);
   // mix to mono and resample in one go
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const out = new OAC(1, Math.max(1, Math.ceil(audio.duration * sampleRate)), sampleRate);
   const src = out.createBufferSource();
   src.buffer = audio;
@@ -44,21 +59,53 @@ async function decodeWhole(file, sampleRate) {
   return rendered.getChannelData(0);
 }
 
+// Phones (iPhone especially) only allow sound to play right after a tap. When
+// the creator taps Create we set up a silent player straight away, so the
+// backup recorder below is allowed to run later if it's needed.
+let primed = null;
+export function primeAudioCapture(file) {
+  releaseAudioCapture();
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ac = new AC();
+    ac.resume?.().catch?.(() => {});
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.src = url; video.playsInline = true; video.preload = 'auto';
+    const src = ac.createMediaElementSource(video);
+    const mute = ac.createGain(); mute.gain.value = 0;
+    src.connect(mute).connect(ac.destination);
+    video.play().then(() => video.pause()).catch(() => {});
+    primed = { file, ac, url, video, src };
+  } catch { primed = null; }
+}
+export function releaseAudioCapture() {
+  if (!primed) return;
+  try { primed.video.pause(); primed.video.removeAttribute('src'); primed.video.load(); } catch { /* already gone */ }
+  URL.revokeObjectURL(primed.url);
+  primed.ac.close?.().catch?.(() => {});
+  primed = null;
+}
+
 /** Slow but works for anything the browser can play: record the sound in real time. */
 async function captureAudio(file, sampleRate) {
-  const url = URL.createObjectURL(file);
-  const video = document.createElement('video');
-  video.src = url; video.playsInline = true; video.preload = 'auto';
+  const ready = primed?.file === file ? primed : null;
+  primed = null;
+  const url = ready ? ready.url : URL.createObjectURL(file);
+  const video = ready ? ready.video : document.createElement('video');
+  if (!ready) { video.src = url; video.playsInline = true; video.preload = 'auto'; }
   const AC = window.AudioContext || window.webkitAudioContext;
-  const ac = new AC();
+  const ac = ready ? ready.ac : new AC();
   try {
-    await new Promise((resolve, reject) => { video.onloadedmetadata = resolve; video.onerror = () => reject(new Error('This video can\'t be played in this browser.')); });
-    const src = ac.createMediaElementSource(video);
+    if (!(video.readyState >= 1)) await new Promise((resolve, reject) => { video.onloadedmetadata = resolve; video.onerror = () => reject(new Error('This video can\'t be played in this browser.')); });
+    video.currentTime = 0;
+    const src = ready ? ready.src : ac.createMediaElementSource(video);
     const proc = ac.createScriptProcessor(4096, 1, 1);
     const mute = ac.createGain(); mute.gain.value = 0;
     const chunks = [];
     proc.onaudioprocess = (e) => { if (!video.paused) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
     src.connect(proc); proc.connect(mute); mute.connect(ac.destination);
+    // the recorder reads the sound before the silent output, so nothing is heard
     if (ac.state === 'suspended') await ac.resume();
     await new Promise((resolve, reject) => {
       video.onended = resolve;
@@ -83,6 +130,37 @@ async function captureAudio(file, sampleRate) {
     URL.revokeObjectURL(url);
     ac.close();
   }
+}
+
+/**
+ * Cut long audio into pieces of at most `maxSec`, each cut placed in the
+ * quietest moment (a pause between words), so no word is split in two.
+ * Returns [[offsetSeconds, samples], ...].
+ */
+export function splitAtPauses(samples, sampleRate = 16000, maxSec = 28, minSec = 14) {
+  const total = samples.length / sampleRate;
+  if (total <= maxSec) return [[0, samples]];
+  const hop = Math.round(sampleRate * 0.02);
+  const energy = (k) => { let e = 0; for (let j = k * hop; j < Math.min(samples.length, (k + 1) * hop); j++) e += samples[j] * samples[j]; return e; };
+  const pieces = [];
+  let start = 0;
+  while (total - start > maxSec) {
+    // the quietest 200 ms window between minSec and maxSec into this piece
+    const from = Math.floor(((start + minSec) * sampleRate) / hop), to = Math.floor(((start + maxSec) * sampleRate) / hop);
+    let best = to, bestE = Infinity, run = 0;
+    const win = [];
+    for (let k = from; k < to; k++) {
+      const e = energy(k);
+      win.push(e); run += e;
+      if (win.length > 10) run -= win.shift();
+      if (win.length === 10 && run < bestE) { bestE = run; best = k - 5; }
+    }
+    const cut = (best * hop) / sampleRate;
+    pieces.push([start, samples.subarray(Math.round(start * sampleRate), Math.round(cut * sampleRate))]);
+    start = cut;
+  }
+  pieces.push([start, samples.subarray(Math.round(start * sampleRate))]);
+  return pieces;
 }
 
 /** True if the samples contain something louder than silence. */
@@ -128,6 +206,7 @@ export async function transcribeInBrowser(file, { quality = 'fast', language = n
         onStatus('Transcribing… (about real-time on most laptops)');
         arm(Math.max(120000, seconds * 4000), 'The voice reader is taking too long on this device.');
       }
+      if (data.type === 'piece') { onStatus(`Transcribing… part ${data.index + 1} of ${data.total}`); arm(Math.max(120000, 30 * 4000), 'The voice reader is taking too long on this device.'); }
       if (data.type === 'done') { cleanup(); window.__speechCalls = (window.__speechCalls || 0) + 1; resolve(data.chunks); }
       if (data.type === 'error') fail(data.message);
     };
@@ -135,8 +214,8 @@ export async function transcribeInBrowser(file, { quality = 'fast', language = n
     w.addEventListener('error', onErr);
     signal?.addEventListener('abort', onAbort, { once: true });
     arm(90000, 'The voice reader did not start.');
-    const copy = audio.slice();
-    w.postMessage({ type: 'run', lib: `${TRANSFORMERS}/+esm`, model: MODELS[quality], samples: copy, language }, [copy.buffer]);
+    const pieces = splitAtPauses(audio, 16000).map(([offset, part]) => [offset, part.slice()]);
+    w.postMessage({ type: 'run', lib: `${TRANSFORMERS}/+esm`, model: MODELS[quality], pieces, language }, pieces.map(([, p]) => p.buffer));
   });
   return tidyWords(chunks.map((c) => ({ w: c.text.trim(), s: c.timestamp[0], e: c.timestamp[1] ?? c.timestamp[0] + 0.3 })));
 }
