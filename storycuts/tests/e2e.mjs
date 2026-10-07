@@ -206,11 +206,14 @@ try {
     {
       const segCount = () => s.evaluate(() => window.__storycuts.state.project.segments.length);
       const n0 = await segCount();
+      const headBefore = await s.evaluate(() => window.__storycuts.state.media.time);
       await s.click('#timeline .clip >> nth=1');
+      check(Math.abs(await s.evaluate(() => window.__storycuts.state.media.time) - headBefore) < 0.01, `${tag}: tapping a clip selects it without moving the playhead`);
       check(await s.isVisible('#sel-bar') && !(await s.evaluate(() => document.body.classList.contains('sheet-open'))) && await s.locator('#timeline .clip.sel .trim').count() >= 1, `${tag}: tapping a clip selects it with trim handles and clip tools, without a pop-up`);
       await shot(s, phone ? 'p15b-clip-tools' : '15c-clip-tools');
+      const splitAt = await s.evaluate(async () => { const st = window.__storycuts.state; const sg = st.project.segments[1]; const t = sg.start + (sg.end - sg.start) * 0.27; await st.media.seek(t); return st.media.time; });
       await s.click('#sel-bar [data-sb=split]');
-      check(await segCount() === n0 + 1, `${tag}: the clip toolbar splits the selected clip`);
+      check(await segCount() === n0 + 1 && await s.evaluate((t) => window.__storycuts.state.project.segments.some((sg) => Math.abs(sg.start - t) < 0.01), splitAt), `${tag}: Split cuts exactly at the playhead, not the middle`);
       await s.click('#sel-bar [data-sb=delete]');
       check(await segCount() === n0, `${tag}: the clip toolbar deletes a clip and its neighbour fills the time`);
       await s.click('#btn-undo'); await s.click('#btn-undo');

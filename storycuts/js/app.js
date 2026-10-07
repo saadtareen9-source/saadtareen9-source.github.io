@@ -667,12 +667,16 @@ async function loadFile(file, { reopen = false } = {}) {
   if (!reopen && !$('#rights').checked) {
     $('#file').value = '';
     $('#rights-file').textContent = file.name;
+    // only this box's own buttons (or Escape) answer it; a late "closed" event
+    // from an earlier box can't answer a new one
     const ok = await new Promise((resolve) => {
       const d = $('#rights-dialog');
-      $('#btn-rights-yes').onclick = () => { d.close(); resolve(true); };
-      $('#btn-rights-no').onclick = () => { d.close(); resolve(false); };
-      d.addEventListener('close', () => resolve(false), { once: true });
-      d.showModal();
+      const answer = (v) => { d.oncancel = null; if (d.open) d.close(); resolve(v); };
+      $('#btn-rights-yes').onclick = () => answer(true);
+      $('#btn-rights-no').onclick = () => answer(false);
+      d.oncancel = (e) => { e.preventDefault(); answer(false); };
+      if (d.open) d.close();
+      try { d.showModal(); } catch { resolve(confirm('Do you own this video or have permission to edit it?')); }
     });
     if (!ok) {
       $('#upload-rights-note').hidden = false;
@@ -3531,11 +3535,11 @@ async function startFaceTracking() {
 function askCloudListening() {
   const d = $('#asr-help');
   return new Promise((resolve) => {
-    const done = (v) => { d.removeEventListener('close', onClose); d.close(); resolve(v); };
-    const onClose = () => resolve(false);
+    const done = (v) => { d.oncancel = null; if (d.open) d.close(); resolve(v); };
     $('#btn-asr-cloud').onclick = () => done(true);
     $('#btn-asr-paste').onclick = () => done(false);
-    d.addEventListener('close', onClose, { once: true });
+    d.oncancel = (e) => { e.preventDefault(); done(false); };
+    if (d.open) d.close();
     d.showModal();
   });
 }
