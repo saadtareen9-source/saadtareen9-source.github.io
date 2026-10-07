@@ -2300,15 +2300,21 @@ function renderTimeline() {
   const old = new Map([...el.querySelectorAll(':scope > .clip')].map((c) => [c.dataset.id, c]));
   el.querySelectorAll(':scope > .cut-plus').forEach((b) => b.remove());
   const focused = document.activeElement?.closest?.('#timeline .clip')?.dataset.id;
+  old.forEach((o, id) => { if (!p.segments.some((x) => x.id === id)) { o.remove(); old.delete(id); } });
+  // keep the clips in time order (keyboard and screen readers follow it), moving a node only when it's out of place
+  let prev = null;
   [...tpl.content.children].forEach((n) => {
     const o = n.classList.contains('clip') && old.get(n.dataset.id);
-    if (!o) { el.append(n); return; }
-    old.delete(n.dataset.id);
-    [...o.attributes].forEach((a) => { if (!n.hasAttribute(a.name)) o.removeAttribute(a.name); });
-    [...n.attributes].forEach((a) => { if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value); });
-    if (o.innerHTML !== n.innerHTML) o.innerHTML = n.innerHTML;
+    const node = o || n;
+    if (o) {
+      [...o.attributes].forEach((a) => { if (!n.hasAttribute(a.name)) o.removeAttribute(a.name); });
+      [...n.attributes].forEach((a) => { if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value); });
+      if (o.innerHTML !== n.innerHTML) o.innerHTML = n.innerHTML;
+    }
+    const want = prev ? prev.nextSibling : el.firstChild;
+    if (node !== want) el.insertBefore(node, want);
+    prev = node;
   });
-  old.forEach((o) => o.remove());
   if (focused) el.querySelector(`.clip[data-id="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   el.classList.toggle('active', !!state.clipActive);
   renderFxTrack();
@@ -2398,13 +2404,18 @@ $('#tl-scroll').addEventListener('scroll', () => {
 function zoom(f) {
   const t = state.media?.time || 0;
   TL.pps = Math.max(12, Math.min(260, TL.pps * f));
+  // zooming is instant; only edits glide
+  const el = $('#timeline');
+  el.classList.add('dragging');
   renderTimeline();
+  void el.offsetWidth;
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('dragging')));
   scrollTimelineTo(t);
 }
 $('#zoom-in').addEventListener('click', () => zoom(1.4));
 $('#zoom-out').addEventListener('click', () => zoom(1 / 1.4));
 $('#tl-scroll').addEventListener('wheel', (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12); } }, { passive: false });
-window.addEventListener('resize', () => { if (state.project?.approved) renderTimeline(); });
+window.addEventListener('resize', () => { if (state.project?.approved) zoom(1); });
 
 // clips: tap to select, drag trim handles, drag sound effects
 (function timelinePointer() {
